@@ -877,6 +877,9 @@ function renderSubmissionCard(story: UserStory, _index: number): string {
           <button data-toggle-user-featured="${story.id}" data-is-featured="${story.isFeatured || false}" style="flex: 1; padding: 7px; border-radius: 8px; border: 1px solid var(--color-border); background: ${story.isFeatured ? '#F59E0B' : 'var(--color-bg)'}; color: ${story.isFeatured ? '#000' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
             \u2B50 ${story.isFeatured ? 'Unfeature' : 'Feature'}
           </button>
+          <button data-toggle-user-pick="${story.id}" data-is-pick="${story.isEditorsPick || false}" style="flex: 1; padding: 7px; border-radius: 8px; border: 1px solid var(--color-border); background: ${story.isEditorsPick ? '#10b981' : 'var(--color-bg)'}; color: ${story.isEditorsPick ? '#fff' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
+            \uD83C\uDFC6 ${story.isEditorsPick ? 'Unpick' : 'Pick'}
+          </button>
           <button data-revert="${story.id}" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;">
             ${ICON.rotate} Revoke
           </button>
@@ -956,6 +959,17 @@ function attachSubmissionCardListeners(): void {
       const id = el.dataset.toggleUserFeatured!;
       const current = el.dataset.isFeatured === 'true';
       await toggleUserStoryFeatured(id, !current);
+      loadAllMetrics();
+      loadTabContent();
+    });
+  });
+
+  document.querySelectorAll('[data-toggle-user-pick]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const el = e.currentTarget as HTMLElement;
+      const id = el.dataset.toggleUserPick!;
+      const current = el.dataset.isPick === 'true';
+      await toggleUserStoryEditorPick(id, !current);
       loadAllMetrics();
       loadTabContent();
     });
@@ -1103,32 +1117,128 @@ function openDenyModal(story: UserStory): void {
 
 function openStoryPreviewModal(story: UserStory): void {
   const pages = story.pages || [];
-  const pagesHtml = pages.map((p, idx) => `
-    <div class="admin-preview-page">
-      <div class="admin-preview-page__num">Page ${idx + 1}</div>
-      ${p.image ? `<img src="${p.image}" class="admin-preview-page__img">` : ''}
-      ${p.text ? `<p class="admin-preview-page__text">${escapeHtml(p.text)}</p>` : ''}
-    </div>
-  `).join('');
+  if (pages.length === 0) {
+    showModal({
+      title: `Preview: "${story.title}"`,
+      content: '<p style="text-align:center; color: var(--color-text-muted);">This story has no pages.</p>',
+      confirmText: 'OK',
+      cancelText: '',
+      onConfirm: () => {},
+    });
+    return;
+  }
 
-  showModal({
-    title: `Preview: "${story.title}" (${story.format})`,
-    hideActions: true,
-    content: `
-      <div class="admin-preview-modal">
-        <button class="modal-close" onclick="document.querySelector('.modal-backdrop').remove()">\u00D7</button>
-        <div class="admin-preview-meta">
-          <span>Author: <strong>${escapeHtml(story.author_name || 'Anonymous')}</strong></span> |
-          <span>Genre: <strong>${story.genre}</strong></span> |
-          <span>Format: <strong>${story.format}</strong></span>
+  let currentPage = 0;
+
+  function renderInspector(): void {
+    const page = pages[currentPage];
+    const totalPages = pages.length;
+
+    // Create fullscreen overlay
+    let overlay = document.getElementById('slide-inspector-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'slide-inspector-overlay';
+      overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); z-index: 10000; display: flex; flex-direction: column; overflow: hidden;';
+      document.body.appendChild(overlay);
+    }
+
+    overlay.innerHTML = `
+      <!-- Header -->
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(30,30,50,0.9); border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
+        <div style="min-width: 0; flex: 1;">
+          <h3 style="margin: 0; font-size: 0.95rem; color: #fff; font-family: var(--font-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(story.title)}</h3>
+          <div style="font-size: 0.72rem; color: rgba(255,255,255,0.5); margin-top: 2px;">
+            by <strong>${escapeHtml(story.author_name || 'Anonymous')}</strong> · ${story.genre} · ${story.format}
+          </div>
         </div>
-        <p style="font-style:italic; color:var(--color-text-muted); margin:8px 0 16px;">${escapeHtml(story.synopsis || 'No synopsis provided.')}</p>
-        <div class="admin-preview-pages-container">
-          ${pagesHtml || '<p>No pages in story.</p>'}
-        </div>
+        <button id="inspector-close" style="background: rgba(255,255,255,0.1); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; flex-shrink: 0; margin-left: 10px;">✕</button>
       </div>
-    `,
-  });
+
+      <!-- Page Content -->
+      <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 16px;">
+        ${page.image
+          ? `<img src="${page.image}" style="max-width: 100%; max-height: 55vh; object-fit: contain; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);" />`
+          : `<div style="width: 100%; max-width: 400px; aspect-ratio: 3/4; background: rgba(255,255,255,0.05); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.3); font-size: 0.9rem;">No image</div>`
+        }
+        ${page.text
+          ? `<div style="margin-top: 16px; max-width: 600px; width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 16px;">
+               <div style="font-size: 0.7rem; font-weight: 700; color: rgba(255,255,255,0.4); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px;">📝 Story Text</div>
+               <p style="margin: 0; color: rgba(255,255,255,0.85); font-size: 0.88rem; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(page.text)}</p>
+             </div>`
+          : ''
+        }
+      </div>
+
+      <!-- Navigation Footer -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: rgba(30,30,50,0.9); border-top: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
+        <button id="inspector-prev" style="padding: 10px 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: ${currentPage > 0 ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.05)'}; color: ${currentPage > 0 ? '#fff' : 'rgba(255,255,255,0.2)'}; cursor: ${currentPage > 0 ? 'pointer' : 'default'}; font-weight: 600; font-size: 0.85rem;">
+          ← Prev
+        </button>
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <span style="font-weight: 700; color: #fff; font-size: 0.95rem;">Page ${currentPage + 1} / ${totalPages}</span>
+          <div style="display: flex; gap: 4px; margin-top: 6px;">
+            ${pages.map((_, i) => `<div style="width: ${Math.min(8, 120 / totalPages)}px; height: 4px; border-radius: 2px; background: ${i === currentPage ? 'var(--color-purple)' : 'rgba(255,255,255,0.2)'};"></div>`).join('')}
+          </div>
+        </div>
+        <button id="inspector-next" style="padding: 10px 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: ${currentPage < totalPages - 1 ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.05)'}; color: ${currentPage < totalPages - 1 ? '#fff' : 'rgba(255,255,255,0.2)'}; cursor: ${currentPage < totalPages - 1 ? 'pointer' : 'default'}; font-weight: 600; font-size: 0.85rem;">
+          Next →
+        </button>
+      </div>
+
+      ${story.status === 'under-review' ? `
+      <!-- Action Bar (only for pending stories) -->
+      <div style="display: flex; gap: 8px; padding: 10px 16px; background: rgba(20,20,40,0.95); border-top: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
+        <button id="inspector-approve" style="flex: 1; padding: 12px; border-radius: 10px; border: none; background: #10b981; color: white; font-weight: 700; font-size: 0.9rem; cursor: pointer;">
+          ✓ Approve Story
+        </button>
+        <button id="inspector-deny" style="flex: 1; padding: 12px; border-radius: 10px; border: none; background: #ef4444; color: white; font-weight: 700; font-size: 0.9rem; cursor: pointer;">
+          ✕ Deny Story
+        </button>
+      </div>
+      ` : ''}
+    `;
+
+    // Attach listeners
+    document.getElementById('inspector-close')?.addEventListener('click', () => {
+      overlay?.remove();
+    });
+
+    document.getElementById('inspector-prev')?.addEventListener('click', () => {
+      if (currentPage > 0) {
+        currentPage--;
+        renderInspector();
+      }
+    });
+
+    document.getElementById('inspector-next')?.addEventListener('click', () => {
+      if (currentPage < totalPages - 1) {
+        currentPage++;
+        renderInspector();
+      }
+    });
+
+    // Keyboard navigation
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' && currentPage > 0) { currentPage--; renderInspector(); }
+      else if (e.key === 'ArrowRight' && currentPage < totalPages - 1) { currentPage++; renderInspector(); }
+      else if (e.key === 'Escape') { overlay?.remove(); document.removeEventListener('keydown', keyHandler); }
+    };
+    document.addEventListener('keydown', keyHandler);
+
+    // Action buttons
+    document.getElementById('inspector-approve')?.addEventListener('click', () => {
+      overlay?.remove();
+      openApproveModal(story);
+    });
+
+    document.getElementById('inspector-deny')?.addEventListener('click', () => {
+      overlay?.remove();
+      openDenyModal(story);
+    });
+  }
+
+  renderInspector();
 }
 
 function escapeHtml(str: string): string {
