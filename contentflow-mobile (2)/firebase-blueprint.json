@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "AppContent": {
+      "title": "App Content",
+      "description": "The global content for the application, including slides and voice settings.",
+      "type": "object",
+      "properties": {
+        "globalVoiceId": { "type": "string" },
+        "slides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "mediaUrl": { "type": "string" },
+              "mediaType": { "type": "string", "enum": ["image", "video", "gif"] },
+              "textContent": { "type": "string" },
+              "voiceId": { "type": "string" },
+              "stability": { "type": "number" },
+              "similarityBoost": { "type": "number" },
+              "style": { "type": "number" },
+              "useSpeakerBoost": { "type": "boolean" }
+            }
+          }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["slides"]
+    },
+    "UserNote": {
+      "title": "User Note",
+      "description": "A note captured by a user.",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["content"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Information about a user, including their role.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/app_content/main": {
+      "schema": "AppContent",
+      "description": "The main content document for the app."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "The profile of a user."
+    },
+    "/users/{userId}/notes/main": {
+      "schema": "UserNote",
+      "description": "The main notes document for a user."
+    }
+  }
+}

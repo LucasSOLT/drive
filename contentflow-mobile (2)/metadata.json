@@ -1,0 +1,7 @@
+{
+  "name": "ContentFlow Mobile",
+  "description": "A mobile-first content delivery system with media, scrollable text, and interactive learning features.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: app_content
+    // Document ID: main
+    // Fields:
+    //   - globalVoiceId: string (optional)
+    //   - slides: list (required) - Array of slide objects
+    //   - updatedAt: string (optional) - ISO date
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - email: string (required)
+    //   - role: string (required) - 'admin' or 'user'
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //
+    // Collection: users/{userId}/notes
+    // Document ID: main
+    // Fields:
+    //   - content: string (required)
+    //   - updatedAt: string (optional) - ISO date
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        (request.auth.token.email == "steve@soltheory.com" && request.auth.token.email_verified == true)
+      );
+    }
+    
+    function isValidAppContent(data) {
+      return data.slides is list && data.slides.size() <= 50;
+    }
+    
+    function isValidUser(data) {
+      return data.email is string && data.role in ['admin', 'user'];
+    }
+    
+    function isValidNote(data) {
+      return data.content is string && data.content.size() <= 10000;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /app_content/main {
+      allow read: if true; // Publicly readable for the app to function
+      allow write: if isAdmin() && isValidAppContent(request.resource.data);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    (request.resource.data.role == 'user' || isAdmin());
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /users/{userId}/notes/main {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isValidNote(request.resource.data);
+    }
+    
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

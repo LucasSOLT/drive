@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" class="dark-mode" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="description" content="DRiVE — A story-driven creative platform. Discover, read, and create AI-powered stories in webtoon, illustrated book, and comic strip formats." />
+    <meta name="theme-color" content="#141424" />
+    <link rel="icon" type="image/jpeg" href="/logo.jpg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <title>DRiVE — Stories That Move You</title>
+    <!-- Early theme init script: prevents any white/light flash before JS bundles load -->
+    <script>
+      (function() {
+        try {
+          var raw = localStorage.getItem('drive_app_settings');
+          if (raw) {
+            var settings = JSON.parse(raw);
+            if (settings.darkMode === false) {
+              document.documentElement.classList.remove('dark-mode');
+              document.documentElement.setAttribute('data-theme', 'light');
+              var meta = document.querySelector('meta[name="theme-color"]');
+              if (meta) meta.setAttribute('content', '#F5F0E8');
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <!-- Critical inline CSS: dark theme default -->
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        background-color: #141424;
+        color: #EDE9F6;
+        min-height: 100%;
+      }
+      html:not(.dark-mode), html:not(.dark-mode) body {
+        background-color: #F5F0E8;
+        color: #2D2438;
+      }
+      #app {
+        background-color: #141424;
+        max-width: 430px;
+        margin: 0 auto;
+        min-height: 100svh;
+        position: relative;
+      }
+      html:not(.dark-mode) #app {
+        background-color: #F5F0E8;
+      }
+      .app-shell { display: flex; flex-direction: column; height: 100%; min-height: 100svh; background-color: inherit; }
+      .app-content { flex-grow: 1; overflow-y: auto; background-color: inherit; }
+      #view-container { background-color: inherit; min-height: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

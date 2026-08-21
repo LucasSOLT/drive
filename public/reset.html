@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>DRiVE - Reset All Data</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #1A1A2E; color: #E8E4F0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #22223A; border-radius: 16px; padding: 40px; max-width: 420px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+    h1 { color: #8B5CF6; margin-bottom: 8px; }
+    p { color: #A8A0C0; margin-bottom: 24px; line-height: 1.5; }
+    button { background: linear-gradient(135deg, #EF4444, #DC2626); color: white; border: none; padding: 14px 32px; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: transform 0.2s; }
+    button:hover { transform: scale(1.05); }
+    .done { color: #22C55E; font-weight: 600; margin-top: 16px; }
+    .info { background: #2A2A44; border-radius: 8px; padding: 12px; margin-top: 16px; font-size: 0.85rem; color: #6B6580; text-align: left; }
+    .info li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🔄 Reset DRiVE</h1>
+    <p>This will clear ALL local data, sign out of Supabase, and force a completely fresh start.</p>
+    <button id="reset-btn" onclick="resetAll()">Reset Everything</button>
+    <div id="status"></div>
+    <div class="info">
+      <strong>What gets cleared:</strong>
+      <ul>
+        <li>All localStorage data (drafts, settings, subscriptions)</li>
+        <li>Supabase auth session</li>
+        <li>Cached user data</li>
+      </ul>
+    </div>
+  </div>
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    const supabase = createClient(
+      'https://yqtsyulvyzgtmxnvddco.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxdHN5dWx2eXpndG14bnZkZGNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzMDAxOTgsImV4cCI6MjEwMTg3NjE5OH0.F3IfUYmDsiTPZV7odIzdqf0C6Wi1VKf41w_GuCou8GA'
+    );
+
+    window.resetAll = async function() {
+      const btn = document.getElementById('reset-btn');
+      const status = document.getElementById('status');
+      btn.disabled = true;
+      btn.textContent = 'Resetting...';
+
+      try {
+        // 1. Sign out from Supabase
+        await supabase.auth.signOut();
+        status.innerHTML = '<p class="done">✓ Signed out of Supabase</p>';
+
+        // 2. Clear ALL localStorage
+        localStorage.clear();
+        status.innerHTML += '<p class="done">✓ Cleared all localStorage</p>';
+
+        // 3. Clear sessionStorage
+        sessionStorage.clear();
+        status.innerHTML += '<p class="done">✓ Cleared sessionStorage</p>';
+
+        // 4. Clear cookies (best effort)
+        document.cookie.split(";").forEach(c => {
+          document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+        status.innerHTML += '<p class="done">✓ Cleared cookies</p>';
+
+        status.innerHTML += '<p class="done" style="font-size:1.1rem; margin-top:16px;">✅ All done! Redirecting to app...</p>';
+
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 2000);
+      } catch (err) {
+        status.innerHTML += `<p style="color:#EF4444;">Error: ${err.message}</p>`;
+        btn.disabled = false;
+        btn.textContent = 'Try Again';
+      }
+    };
+  </script>
+</body>
+</html>
