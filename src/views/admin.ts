@@ -1,8 +1,10 @@
-import type { UserStory, Story } from '../types.ts';
+import type { UserStory, Story, Genre, StoryFormat, ContentRating } from '../types.ts';
 import {
   fetchAdminMetrics,
   fetchAdminStories,
   fetchOfficialStories,
+  saveOfficialStory,
+  reorderOfficialStories,
   approveStoryAdmin,
   denyStoryAdmin,
   revertStoryAdmin,
@@ -302,7 +304,7 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
       </div>
     `;
     document.getElementById('btn-add-original')?.addEventListener('click', () => {
-      showAddOriginalPlaceholder();
+      openStoryEditor();
     });
     return;
   }
@@ -320,7 +322,7 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
   `;
 
   document.getElementById('btn-add-original')?.addEventListener('click', () => {
-    showAddOriginalPlaceholder();
+    openStoryEditor();
   });
   attachOfficialCardListeners();
 }
@@ -353,11 +355,16 @@ function renderOfficialCard(story: Story, index: number): string {
         </div>
         ${story.synopsis ? `<p style="margin: 0 0 10px 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(story.synopsis)}</p>` : ''}
         <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-          <button data-toggle-featured="${story.id}" data-is-featured="${story.isFeatured}" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: ${story.isFeatured ? '#F59E0B' : 'var(--color-bg)'}; color: ${story.isFeatured ? '#000' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
-            \u2B50 ${story.isFeatured ? 'Unfeature' : 'Feature'}
+          <button data-edit-official="${story.id}" style="flex: 2; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
+            ${ICON.eye} Edit
           </button>
-          <button data-toggle-pick="${story.id}" data-is-pick="${story.isEditorPick}" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: ${story.isEditorPick ? '#10b981' : 'var(--color-bg)'}; color: ${story.isEditorPick ? '#fff' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
-            \uD83C\uDFC6 ${story.isEditorPick ? 'Unpick' : 'Pick'}
+          <button data-move-up="${story.id}" title="Move up" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">\u2191</button>
+          <button data-move-down="${story.id}" title="Move down" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">\u2193</button>
+          <button data-toggle-featured="${story.id}" data-is-featured="${story.isFeatured}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: ${story.isFeatured ? '#F59E0B' : 'var(--color-bg)'}; color: ${story.isFeatured ? '#000' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
+            \u2B50
+          </button>
+          <button data-toggle-pick="${story.id}" data-is-pick="${story.isEditorPick}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: ${story.isEditorPick ? '#10b981' : 'var(--color-bg)'}; color: ${story.isEditorPick ? '#fff' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
+            \uD83C\uDFC6
           </button>
           <button data-delete-official="${story.id}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-muted); cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='var(--color-text-muted)';this.style.borderColor='var(--color-border)'">
             ${ICON.trash}
@@ -369,6 +376,42 @@ function renderOfficialCard(story: Story, index: number): string {
 }
 
 function attachOfficialCardListeners(): void {
+  // Edit button → open story editor form
+  document.querySelectorAll('[data-edit-official]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.editOfficial!;
+      const story = currentOfficialStories.find(s => s.id === id);
+      if (story) openStoryEditor(story);
+    });
+  });
+
+  // Move up
+  document.querySelectorAll('[data-move-up]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.moveUp!;
+      const idx = currentOfficialStories.findIndex(s => s.id === id);
+      if (idx <= 0) return;
+      const ids = currentOfficialStories.map(s => s.id);
+      [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
+      await reorderOfficialStories(ids);
+      loadTabContent();
+    });
+  });
+
+  // Move down
+  document.querySelectorAll('[data-move-down]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.moveDown!;
+      const idx = currentOfficialStories.findIndex(s => s.id === id);
+      if (idx < 0 || idx >= currentOfficialStories.length - 1) return;
+      const ids = currentOfficialStories.map(s => s.id);
+      [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
+      await reorderOfficialStories(ids);
+      loadTabContent();
+    });
+  });
+
+  // Feature toggle
   document.querySelectorAll('[data-toggle-featured]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const el = e.currentTarget as HTMLElement;
@@ -410,20 +453,320 @@ function attachOfficialCardListeners(): void {
   });
 }
 
-function showAddOriginalPlaceholder(): void {
-  showModal({
-    title: 'Add Official Story',
-    content: `
-      <div style="text-align: center; padding: 20px;">
-        <div style="font-size: 3rem; margin-bottom: 12px;">\uD83D\uDEA7</div>
-        <p style="color: var(--color-text-secondary);">The full story upload form is coming in <strong>Step 4</strong>.</p>
-        <p style="color: var(--color-text-muted); font-size: 0.85rem;">You'll be able to upload cover images, videos, add pages with scripts, assign genres, and configure TTS audio baking.</p>
+// ═══════════════════════════════════════════
+// STORY EDITOR FORM (Create / Edit Official Story)
+// ═══════════════════════════════════════════
+
+const GENRE_OPTIONS: Genre[] = ['Fantasy','Sci-Fi','Romance','Horror','Comedy','Drama','Mystery','Slice of Life','Action','Adventure','Thriller','Historical','Superhero','Sports','Psychological','Supernatural','Mecha','Musical','Custom'];
+const FORMAT_OPTIONS: { value: StoryFormat; label: string }[] = [
+  { value: 'scroll', label: 'Waterfall Storyboard' },
+  { value: 'book', label: 'Illustrated Book' },
+  { value: 'comic', label: 'Comic Strip' },
+];
+const RATING_OPTIONS: ContentRating[] = ['All Ages', 'PG-13', 'Mature'];
+
+interface EditorPage {
+  image: string;
+  text: string;
+  video: string;
+}
+
+/** Open the story editor, either blank (create) or pre-filled (edit) */
+function openStoryEditor(existing?: Story): void {
+  const isEdit = !!existing;
+  const id = existing?.id || crypto.randomUUID();
+
+  // Build initial pages array from existing story
+  const pages: EditorPage[] = [];
+  if (existing && existing.panels && existing.panels.length > 0) {
+    for (let i = 0; i < existing.panels.length; i++) {
+      pages.push({
+        image: existing.panels[i] || '',
+        text: existing.pageScripts?.[i] || '',
+        video: existing.pageVideos?.[i] || '',
+      });
+    }
+  }
+  if (pages.length === 0) {
+    pages.push({ image: '', text: '', video: '' });
+  }
+
+  const area = document.getElementById('admin-tab-content');
+  if (!area) return;
+
+  function renderEditor(): void {
+    area!.innerHTML = `
+      <div style="max-width: 700px; margin: 0 auto; padding-bottom: 80px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1.1rem; color: var(--color-text-primary);">
+            ${isEdit ? '✏️ Edit Official Story' : '📖 Create Official Story'}
+          </h2>
+          <button id="editor-cancel" style="padding: 6px 14px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem;">Cancel</button>
+        </div>
+
+        <!-- Metadata Fields -->
+        <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px;">
+          <div>
+            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Title *</label>
+            <input id="ed-title" type="text" value="${escapeAttr(existing?.title || '')}" placeholder="Story title" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.9rem; box-sizing: border-box;" />
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Author</label>
+            <input id="ed-author" type="text" value="${escapeAttr(existing?.author || 'DRiVE Studios')}" placeholder="Author name" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.9rem; box-sizing: border-box;" />
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Genre</label>
+              <select id="ed-genre" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;">
+                ${GENRE_OPTIONS.map(g => `<option value="${g}" ${existing?.genre === g ? 'selected' : ''}>${g}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Format</label>
+              <select id="ed-format" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;">
+                ${FORMAT_OPTIONS.map(f => `<option value="${f.value}" ${existing?.format === f.value ? 'selected' : ''}>${f.label}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Synopsis</label>
+            <textarea id="ed-synopsis" rows="3" placeholder="Brief story description..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; resize: vertical; box-sizing: border-box; font-family: var(--font-body);">${escapeHtml(existing?.synopsis || '')}</textarea>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Content Rating</label>
+              <select id="ed-rating" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;">
+                ${RATING_OPTIONS.map(r => `<option value="${r}" ${existing?.contentRating === r ? 'selected' : ''}>${r}</option>`).join('')}
+              </select>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: end;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.8rem; color: var(--color-text-secondary);">
+                <input type="checkbox" id="ed-featured" ${existing?.isFeatured ? 'checked' : ''} /> ⭐ Featured
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.8rem; color: var(--color-text-secondary);">
+                <input type="checkbox" id="ed-pick" ${existing?.isEditorPick ? 'checked' : ''} /> 🏆 Pick
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Cover Image URL</label>
+            <input id="ed-cover-image" type="text" value="${escapeAttr(existing?.coverImage || '')}" placeholder="https://..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;" />
+            ${existing?.coverImage ? `<img src="${existing.coverImage}" style="max-width: 200px; max-height: 120px; border-radius: 8px; margin-top: 8px; object-fit: cover;" />` : ''}
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Cover Video URL (optional, for hover-play tile)</label>
+            <input id="ed-cover-video" type="text" value="${escapeAttr(existing?.coverVideo || '')}" placeholder="https://..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;" />
+          </div>
+        </div>
+
+        <!-- Pages Section -->
+        <div style="border-top: 1px solid var(--color-border); padding-top: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">📄 Story Pages (${pages.length})</h3>
+            <button id="editor-add-page" style="padding: 6px 14px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+              ${ICON.plus} Add Page
+            </button>
+          </div>
+
+          <div id="editor-pages" style="display: flex; flex-direction: column; gap: 16px;">
+            ${pages.map((p, i) => renderEditorPage(p, i, pages.length)).join('')}
+          </div>
+        </div>
+
+        <!-- Save Bar -->
+        <div style="position: fixed; bottom: 56px; left: 0; right: 0; background: var(--color-surface); border-top: 1px solid var(--color-border); padding: 12px 20px; display: flex; gap: 10px; justify-content: center; z-index: 100; box-shadow: 0 -4px 16px rgba(0,0,0,0.3);">
+          <button id="editor-save" style="flex: 1; max-width: 300px; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--color-purple), #8a2be2); color: white; font-weight: 700; font-size: 0.95rem; cursor: pointer; box-shadow: var(--shadow-md);">
+            ${isEdit ? '💾 Save Changes' : '📖 Create Story'}
+          </button>
+          <button id="editor-cancel-bottom" style="padding: 12px 20px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); font-weight: 600; font-size: 0.9rem; cursor: pointer;">
+            Cancel
+          </button>
+        </div>
       </div>
-    `,
-    confirmText: 'OK',
-    cancelText: '',
-    onConfirm: () => {},
+    `;
+
+    // Attach page-level listeners
+    attachEditorListeners(pages, id, isEdit, existing, renderEditor);
+  }
+
+  renderEditor();
+}
+
+function renderEditorPage(page: EditorPage, index: number, total: number): string {
+  return `
+    <div class="editor-page-card" data-page-index="${index}" style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 14px; position: relative;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <span style="font-weight: 700; font-size: 0.8rem; color: var(--color-purple);">Page ${index + 1}</span>
+        <div style="display: flex; gap: 4px;">
+          ${index > 0 ? `<button data-page-move-up="${index}" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-secondary); cursor: pointer; font-size: 0.75rem;">↑</button>` : ''}
+          ${index < total - 1 ? `<button data-page-move-down="${index}" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-secondary); cursor: pointer; font-size: 0.75rem;">↓</button>` : ''}
+          ${total > 1 ? `<button data-page-delete="${index}" style="padding: 4px 8px; border-radius: 6px; border: 1px solid #ef4444; background: rgba(239,68,68,0.1); color: #ef4444; cursor: pointer; font-size: 0.75rem;">✕</button>` : ''}
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div>
+          <label style="display: block; font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 3px;">Image URL</label>
+          <input data-page-image="${index}" type="text" value="${escapeAttr(page.image)}" placeholder="https://..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-primary); font-size: 0.8rem; box-sizing: border-box;" />
+          ${page.image ? `<img src="${page.image}" style="max-width: 150px; max-height: 80px; border-radius: 6px; margin-top: 6px; object-fit: cover;" />` : ''}
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 3px;">Script / Story Text</label>
+          <textarea data-page-text="${index}" rows="3" placeholder="Page narration or dialogue text..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-primary); font-size: 0.8rem; resize: vertical; box-sizing: border-box; font-family: var(--font-body);">${escapeHtml(page.text)}</textarea>
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 3px;">Video URL (optional)</label>
+          <input data-page-video="${index}" type="text" value="${escapeAttr(page.video)}" placeholder="https://..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-primary); font-size: 0.8rem; box-sizing: border-box;" />
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function attachEditorListeners(
+  pages: EditorPage[],
+  storyId: string,
+  isEdit: boolean,
+  existing: Story | undefined,
+  rerender: () => void
+): void {
+  // Sync page data from DOM
+  function syncPagesFromDOM(): void {
+    pages.forEach((_, i) => {
+      const imgInput = document.querySelector(`[data-page-image="${i}"]`) as HTMLInputElement;
+      const textInput = document.querySelector(`[data-page-text="${i}"]`) as HTMLTextAreaElement;
+      const videoInput = document.querySelector(`[data-page-video="${i}"]`) as HTMLInputElement;
+      if (imgInput) pages[i].image = imgInput.value.trim();
+      if (textInput) pages[i].text = textInput.value;
+      if (videoInput) pages[i].video = videoInput.value.trim();
+    });
+  }
+
+  // Add page
+  document.getElementById('editor-add-page')?.addEventListener('click', () => {
+    syncPagesFromDOM();
+    pages.push({ image: '', text: '', video: '' });
+    rerender();
   });
+
+  // Move page up
+  document.querySelectorAll('[data-page-move-up]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      syncPagesFromDOM();
+      const idx = parseInt((btn as HTMLElement).dataset.pageMoveUp!);
+      if (idx > 0) [pages[idx - 1], pages[idx]] = [pages[idx], pages[idx - 1]];
+      rerender();
+    });
+  });
+
+  // Move page down
+  document.querySelectorAll('[data-page-move-down]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      syncPagesFromDOM();
+      const idx = parseInt((btn as HTMLElement).dataset.pageMoveDown!);
+      if (idx < pages.length - 1) [pages[idx], pages[idx + 1]] = [pages[idx + 1], pages[idx]];
+      rerender();
+    });
+  });
+
+  // Delete page
+  document.querySelectorAll('[data-page-delete]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      syncPagesFromDOM();
+      const idx = parseInt((btn as HTMLElement).dataset.pageDelete!);
+      if (pages.length > 1) pages.splice(idx, 1);
+      rerender();
+    });
+  });
+
+  // Cancel buttons
+  const cancelHandler = () => {
+    loadTabContent();
+  };
+  document.getElementById('editor-cancel')?.addEventListener('click', cancelHandler);
+  document.getElementById('editor-cancel-bottom')?.addEventListener('click', cancelHandler);
+
+  // Save button
+  document.getElementById('editor-save')?.addEventListener('click', async () => {
+    syncPagesFromDOM();
+
+    const title = (document.getElementById('ed-title') as HTMLInputElement)?.value.trim();
+    const author = (document.getElementById('ed-author') as HTMLInputElement)?.value.trim() || 'DRiVE Studios';
+    const genre = (document.getElementById('ed-genre') as HTMLSelectElement)?.value as Genre;
+    const format = (document.getElementById('ed-format') as HTMLSelectElement)?.value as StoryFormat;
+    const synopsis = (document.getElementById('ed-synopsis') as HTMLTextAreaElement)?.value.trim();
+    const contentRating = (document.getElementById('ed-rating') as HTMLSelectElement)?.value as ContentRating;
+    const isFeatured = (document.getElementById('ed-featured') as HTMLInputElement)?.checked || false;
+    const isEditorPick = (document.getElementById('ed-pick') as HTMLInputElement)?.checked || false;
+    const coverImage = (document.getElementById('ed-cover-image') as HTMLInputElement)?.value.trim();
+    const coverVideo = (document.getElementById('ed-cover-video') as HTMLInputElement)?.value.trim();
+
+    if (!title) {
+      showModal({ title: 'Missing Title', content: '<p>Please enter a story title.</p>', confirmText: 'OK', cancelText: '', onConfirm: () => {} });
+      return;
+    }
+
+    // Build panels, pageScripts, pageVideos from pages array
+    const panels: string[] = pages.map(p => p.image);
+    const pageScripts: Record<number, string> = {};
+    const pageVideos: Record<number, string> = {};
+    pages.forEach((p, i) => {
+      if (p.text) pageScripts[i] = p.text;
+      if (p.video) pageVideos[i] = p.video;
+    });
+
+    const saveBtn = document.getElementById('editor-save') as HTMLButtonElement;
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+    }
+
+    try {
+      await saveOfficialStory({
+        id: storyId,
+        title,
+        author,
+        genre,
+        format,
+        synopsis,
+        coverImage,
+        coverVideo: coverVideo || undefined,
+        isFeatured,
+        isEditorPick,
+        sortOrder: existing?.sortOrder ?? currentOfficialStories.length + 1,
+        panels,
+        pageScripts,
+        pageVideos,
+        contentRating,
+      });
+
+      // Show success toast
+      const toast = document.createElement('div');
+      toast.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #10b981; color: white; padding: 10px 24px; border-radius: 12px; font-weight: 700; font-size: 0.9rem; z-index: 9999; box-shadow: var(--shadow-lg);';
+      toast.textContent = isEdit ? '✅ Story Updated!' : '✅ Story Created!';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2500);
+
+      loadAllMetrics();
+      loadTabContent();
+    } catch (err: any) {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = isEdit ? '💾 Save Changes' : '📖 Create Story';
+      }
+      showModal({ title: 'Save Error', content: `<p style="color: #ef4444;">${err.message || 'Unknown error'}</p>`, confirmText: 'OK', cancelText: '', onConfirm: () => {} });
+    }
+  });
+}
+
+/** Escape for HTML attribute values */
+function escapeAttr(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ═══════════════════════════════════════════
