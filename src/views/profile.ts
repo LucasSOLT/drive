@@ -6,7 +6,7 @@ import type { SocialPlatform } from '../state.ts';
 import { MONSTER_AVATARS } from '../data/avatars.ts';
 import { showModal } from '../components/modal.ts';
 import { isBetaTester } from '../lib/auth.ts';
-import { checkIsGameMaster, hasAdminPrivileges } from '../lib/db.ts';
+import { checkIsGameMaster, hasAdminPrivileges, updateProfile } from '../lib/db.ts';
 
 // ─── Social Media Config ───
 const SOCIALS: { key: SocialPlatform; svg: string; label: string; color: string; placeholder: string }[] = [
@@ -383,15 +383,16 @@ export function init(): void {
         if (newName) {
           localStorage.setItem('drive_username', newName);
           localStorage.setItem('drive_display_name', newName);
+          // Persist username to Supabase so it survives reloads
+          updateProfile({ username: newName, avatar_index: selectedAvatarIdx });
           // Update displayed name in profile hero
           const heroName = document.querySelector('.profile-hero__name');
           if (heroName) heroName.textContent = newName.replace(/_/g, ' ');
           const heroHandle = document.querySelector('.profile-hero__handle');
           if (heroHandle) heroHandle.textContent = '@' + newName;
-        }
-        const newId = (document.getElementById('modal-user-id') as HTMLInputElement)?.value?.trim();
-        if (newId) {
-          localStorage.setItem('drive_user_id', newId);
+        } else {
+          // Still save avatar even if name wasn't changed
+          updateProfile({ avatar_index: selectedAvatarIdx });
         }
       }
     });

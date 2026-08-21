@@ -156,6 +156,7 @@ export async function updateProfile(updates: Partial<CachedProfile>): Promise<vo
   if (!userId) return;
 
   const dbUpdates: Record<string, any> = {};
+  if (updates.username !== undefined) dbUpdates.username = updates.username;
   if (updates.avatar_index !== undefined) dbUpdates.avatar_index = updates.avatar_index;
   if (updates.social_links !== undefined) dbUpdates.social_links = updates.social_links;
   if (updates.library_unlocked !== undefined) dbUpdates.library_unlocked = updates.library_unlocked;
@@ -170,6 +171,7 @@ export async function updateProfile(updates: Partial<CachedProfile>): Promise<vo
   }
 
   // Sync localStorage
+  if (updates.username !== undefined) localStorage.setItem('drive_username', updates.username);
   if (updates.avatar_index !== undefined) localStorage.setItem('drive_selected_avatar', String(updates.avatar_index));
   if (updates.social_links !== undefined) localStorage.setItem('drive_social_links', JSON.stringify(updates.social_links));
   if (updates.library_unlocked) localStorage.setItem('drive_library_unlocked', 'true');
