@@ -1,6 +1,6 @@
 import { supabase } from './supabase.ts';
 import { getUser, isAuthenticated, getUserId } from './auth.ts';
-import type { UserStory, UserSubscription, UserPlan } from '../types.ts';
+import type { Story, UserStory, UserSubscription, UserPlan } from '../types.ts';
 
 // ═══════════════════════════════════════════════════════════
 // DRiVE Database Service Layer
