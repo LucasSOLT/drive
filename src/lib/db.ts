@@ -32,7 +32,11 @@ let _dataLoaded = false;
 // ─── Load All User Data (call after login) ───
 export async function loadUserData(): Promise<void> {
   const userId = getUserId();
-  if (!userId) return;
+  console.log('[DB] loadUserData called. userId:', userId);
+  if (!userId) {
+    console.warn('[DB] No userId available, skipping loadUserData');
+    return;
+  }
 
   try {
     const [profileRes, subRes, storiesRes, bookmarksRes, likesRes] = await Promise.all([
@@ -42,6 +46,13 @@ export async function loadUserData(): Promise<void> {
       supabase.from('bookmarks').select('story_id').eq('user_id', userId),
       supabase.from('story_likes').select('story_id').eq('user_id', userId),
     ]);
+
+    // Debug: log each query result
+    if (profileRes.error) console.error('[DB] profiles query error:', profileRes.error.message, profileRes.error.code, profileRes.error.details);
+    if (subRes.error) console.warn('[DB] subscriptions query error:', subRes.error.message);
+    if (storiesRes.error) console.error('[DB] user_stories query error:', storiesRes.error.message, storiesRes.error.code);
+    if (bookmarksRes.error) console.warn('[DB] bookmarks query error:', bookmarksRes.error.message);
+    if (likesRes.error) console.warn('[DB] story_likes query error:', likesRes.error.message);
 
     _profile = profileRes.data ? {
       id: profileRes.data.id,
