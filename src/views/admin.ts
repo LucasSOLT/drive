@@ -491,7 +491,7 @@ function openStoryEditor(existing?: Story): void {
     pages.push({ image: '', text: '', video: '' });
   }
 
-  const area = document.getElementById('admin-tab-content');
+  const area = document.getElementById('admin-content-area');
   if (!area) return;
 
   function renderEditor(): void {
