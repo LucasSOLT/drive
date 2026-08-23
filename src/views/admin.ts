@@ -465,18 +465,140 @@ const FORMAT_OPTIONS: { value: StoryFormat; label: string }[] = [
 ];
 const RATING_OPTIONS: ContentRating[] = ['All Ages', 'PG-13', 'Mature'];
 
+const EDITOR_DRAFT_KEY = 'drive_admin_editor_draft';
+
 interface EditorPage {
   image: string;
   text: string;
   video: string;
 }
 
+interface EditorDraft {
+  id: string;
+  title: string;
+  author: string;
+  genre: string;
+  format: string;
+  synopsis: string;
+  contentRating: string;
+  coverImage: string;
+  coverVideo: string;
+  pages: EditorPage[];
+  savedAt: string;
+}
+
+// ─── Image compression (matches create.ts pattern) ───
+
+function editorCompressImage(dataUrl: string, maxWidth = 1024): Promise<string> {
+  return new Promise((resolve) => {
+    if (!dataUrl.startsWith('data:image/')) return resolve(dataUrl);
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      } else {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+function editorFileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  }).then(url => editorCompressImage(url as string));
+}
+
+// ─── Upload box HTML ───
+
+function renderUploadBox(id: string, currentImage: string, label: string, height: string = '140px'): string {
+  if (currentImage) {
+    return `
+      <div style="position: relative;">
+        <img src="${currentImage}" style="width: 100%; height: ${height}; object-fit: cover; border-radius: 10px; border: 1px solid var(--color-border);" />
+        <button data-clear-upload="${id}" style="position: absolute; top: 6px; right: 6px; background: rgba(239,68,68,0.9); color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; justify-content: center;">✕</button>
+        <button data-change-upload="${id}" style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 0.7rem;">Change</button>
+        <input type="file" accept="image/*" data-file-input="${id}" style="display: none;" />
+      </div>
+    `;
+  }
+  return `
+    <div data-upload-area="${id}" style="width: 100%; height: ${height}; border: 2px dashed var(--color-border); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: var(--color-bg); transition: border-color 0.2s, background 0.2s;" onmouseover="this.style.borderColor='var(--color-purple)';this.style.background='rgba(139,92,246,0.05)'" onmouseout="this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)'">
+      <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(139,92,246,0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 6px;">
+        ${ICON.plus}
+      </div>
+      <span style="font-size: 0.75rem; color: var(--color-text-muted);">${label}</span>
+    </div>
+    <input type="file" accept="image/*" data-file-input="${id}" style="display: none;" />
+  `;
+}
+
+// ─── Auto-save helpers ───
+
+function saveEditorDraft(id: string, pages: EditorPage[]): void {
+  const title = (document.getElementById('ed-title') as HTMLInputElement)?.value || '';
+  const author = (document.getElementById('ed-author') as HTMLInputElement)?.value || '';
+  const genre = (document.getElementById('ed-genre') as HTMLSelectElement)?.value || '';
+  const format = (document.getElementById('ed-format') as HTMLSelectElement)?.value || '';
+  const synopsis = (document.getElementById('ed-synopsis') as HTMLTextAreaElement)?.value || '';
+  const contentRating = (document.getElementById('ed-rating') as HTMLSelectElement)?.value || '';
+  const coverImage = (document.querySelector('[data-editor-cover-image]') as HTMLElement)?.dataset.editorCoverImage || '';
+  const coverVideo = (document.getElementById('ed-cover-video') as HTMLInputElement)?.value || '';
+
+  const draft: EditorDraft = { id, title, author, genre, format, synopsis, contentRating, coverImage, coverVideo, pages, savedAt: new Date().toISOString() };
+  try { localStorage.setItem(EDITOR_DRAFT_KEY, JSON.stringify(draft)); } catch {}
+}
+
+function loadEditorDraft(): EditorDraft | null {
+  try {
+    const raw = localStorage.getItem(EDITOR_DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as EditorDraft;
+  } catch { return null; }
+}
+
+function clearEditorDraft(): void {
+  try { localStorage.removeItem(EDITOR_DRAFT_KEY); } catch {}
+}
+
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleAutoSave(id: string, pages: EditorPage[]): void {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => saveEditorDraft(id, pages), 1000);
+}
+
+// ─── Main editor function ───
+
 /** Open the story editor, either blank (create) or pre-filled (edit) */
 function openStoryEditor(existing?: Story): void {
   const isEdit = !!existing;
-  const id = existing?.id || crypto.randomUUID();
+  let coverImageData = existing?.coverImage || '';
 
-  // Build initial pages array from existing story
+  // Check for saved draft when creating new
+  let draft: EditorDraft | null = null;
+  if (!isEdit) {
+    draft = loadEditorDraft();
+  }
+
+  const id = existing?.id || draft?.id || crypto.randomUUID();
+
+  // Build initial pages array
   const pages: EditorPage[] = [];
   if (existing && existing.panels && existing.panels.length > 0) {
     for (let i = 0; i < existing.panels.length; i++) {
@@ -486,6 +608,9 @@ function openStoryEditor(existing?: Story): void {
         video: existing.pageVideos?.[i] || '',
       });
     }
+  } else if (draft) {
+    pages.push(...draft.pages);
+    coverImageData = draft.coverImage || '';
   }
   if (pages.length === 0) {
     pages.push({ image: '', text: '', video: '' });
@@ -495,8 +620,17 @@ function openStoryEditor(existing?: Story): void {
   if (!area) return;
 
   function renderEditor(): void {
+    const draftTitle = draft?.title || existing?.title || '';
+    const draftAuthor = draft?.author || existing?.author || 'DRiVE Studios';
+    const draftGenre = draft?.genre || existing?.genre || 'Fantasy';
+    const draftFormat = draft?.format || existing?.format || 'book';
+    const draftSynopsis = draft?.synopsis || existing?.synopsis || '';
+    const draftRating = draft?.contentRating || existing?.contentRating || 'All Ages';
+    const draftCoverVideo = draft?.coverVideo || existing?.coverVideo || '';
+
     area!.innerHTML = `
-      <div style="max-width: 700px; margin: 0 auto; padding-bottom: 80px;">
+      <div style="max-width: 700px; margin: 0 auto; padding-bottom: 100px;">
+        ${draft && !isEdit ? `<div style="background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--color-purple);"><span>📝</span> Draft restored from your last session</div>` : ''}
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1.1rem; color: var(--color-text-primary);">
             ${isEdit ? '✏️ Edit Official Story' : '📖 Create Official Story'}
@@ -508,60 +642,51 @@ function openStoryEditor(existing?: Story): void {
         <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px;">
           <div>
             <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Title *</label>
-            <input id="ed-title" type="text" value="${escapeAttr(existing?.title || '')}" placeholder="Story title" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.9rem; box-sizing: border-box;" />
+            <input id="ed-title" type="text" value="${escapeAttr(draftTitle)}" placeholder="Story title" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.9rem; box-sizing: border-box;" />
           </div>
 
           <div>
             <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Author</label>
-            <input id="ed-author" type="text" value="${escapeAttr(existing?.author || 'DRiVE Studios')}" placeholder="Author name" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.9rem; box-sizing: border-box;" />
+            <input id="ed-author" type="text" value="${escapeAttr(draftAuthor)}" placeholder="Author name" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.9rem; box-sizing: border-box;" />
           </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div>
               <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Genre</label>
               <select id="ed-genre" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;">
-                ${GENRE_OPTIONS.map(g => `<option value="${g}" ${existing?.genre === g ? 'selected' : ''}>${g}</option>`).join('')}
+                ${GENRE_OPTIONS.map(g => `<option value="${g}" ${draftGenre === g ? 'selected' : ''}>${g}</option>`).join('')}
               </select>
             </div>
             <div>
               <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Format</label>
               <select id="ed-format" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;">
-                ${FORMAT_OPTIONS.map(f => `<option value="${f.value}" ${existing?.format === f.value ? 'selected' : ''}>${f.label}</option>`).join('')}
+                ${FORMAT_OPTIONS.map(f => `<option value="${f.value}" ${draftFormat === f.value ? 'selected' : ''}>${f.label}</option>`).join('')}
               </select>
             </div>
           </div>
 
           <div>
             <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Synopsis</label>
-            <textarea id="ed-synopsis" rows="3" placeholder="Brief story description..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; resize: vertical; box-sizing: border-box; font-family: var(--font-body);">${escapeHtml(existing?.synopsis || '')}</textarea>
-          </div>
-
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-            <div>
-              <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Content Rating</label>
-              <select id="ed-rating" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;">
-                ${RATING_OPTIONS.map(r => `<option value="${r}" ${existing?.contentRating === r ? 'selected' : ''}>${r}</option>`).join('')}
-              </select>
-            </div>
-            <div style="display: flex; gap: 12px; align-items: end;">
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.8rem; color: var(--color-text-secondary);">
-                <input type="checkbox" id="ed-featured" ${existing?.isFeatured ? 'checked' : ''} /> ⭐ Featured
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.8rem; color: var(--color-text-secondary);">
-                <input type="checkbox" id="ed-pick" ${existing?.isEditorPick ? 'checked' : ''} /> 🏆 Pick
-              </label>
-            </div>
+            <textarea id="ed-synopsis" rows="3" placeholder="Brief story description..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; resize: vertical; box-sizing: border-box; font-family: var(--font-body);">${escapeHtml(draftSynopsis)}</textarea>
           </div>
 
           <div>
-            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Cover Image URL</label>
-            <input id="ed-cover-image" type="text" value="${escapeAttr(existing?.coverImage || '')}" placeholder="https://..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;" />
-            ${existing?.coverImage ? `<img src="${existing.coverImage}" style="max-width: 200px; max-height: 120px; border-radius: 8px; margin-top: 8px; object-fit: cover;" />` : ''}
+            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Content Rating</label>
+            <select id="ed-rating" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;">
+              ${RATING_OPTIONS.map(r => `<option value="${r}" ${draftRating === r ? 'selected' : ''}>${r}</option>`).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Cover Image</label>
+            <div id="cover-image-upload" data-editor-cover-image="${escapeAttr(coverImageData)}">
+              ${renderUploadBox('cover-image', coverImageData, 'Click to upload cover image', '180px')}
+            </div>
           </div>
 
           <div>
             <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Cover Video URL (optional, for hover-play tile)</label>
-            <input id="ed-cover-video" type="text" value="${escapeAttr(existing?.coverVideo || '')}" placeholder="https://..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;" />
+            <input id="ed-cover-video" type="text" value="${escapeAttr(draftCoverVideo)}" placeholder="https://..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;" />
           </div>
         </div>
 
@@ -579,10 +704,10 @@ function openStoryEditor(existing?: Story): void {
           </div>
         </div>
 
-        <!-- Save Bar -->
-        <div style="position: fixed; bottom: 56px; left: 0; right: 0; background: var(--color-surface); border-top: 1px solid var(--color-border); padding: 12px 20px; display: flex; gap: 10px; justify-content: center; z-index: 100; box-shadow: 0 -4px 16px rgba(0,0,0,0.3);">
-          <button id="editor-save" style="flex: 1; max-width: 300px; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--color-purple), #8a2be2); color: white; font-weight: 700; font-size: 0.95rem; cursor: pointer; box-shadow: var(--shadow-md);">
-            ${isEdit ? '💾 Save Changes' : '📖 Create Story'}
+        <!-- Save Bar (constrained to mobile width) -->
+        <div style="position: fixed; bottom: 56px; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--color-surface); border-top: 1px solid var(--color-border); padding: 12px 20px; display: flex; gap: 10px; justify-content: center; z-index: 100; box-shadow: 0 -4px 16px rgba(0,0,0,0.3); box-sizing: border-box; border-radius: 12px 12px 0 0;">
+          <button id="editor-save" style="flex: 1; max-width: 260px; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--color-purple), #8a2be2); color: white; font-weight: 700; font-size: 0.95rem; cursor: pointer; box-shadow: var(--shadow-md);">
+            💾 Save and Quit
           </button>
           <button id="editor-cancel-bottom" style="padding: 12px 20px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); font-weight: 600; font-size: 0.9rem; cursor: pointer;">
             Cancel
@@ -591,8 +716,12 @@ function openStoryEditor(existing?: Story): void {
       </div>
     `;
 
-    // Attach page-level listeners
-    attachEditorListeners(pages, id, isEdit, existing, renderEditor);
+    // After first render, clear the draft reference so subsequent re-renders don't show "restored" toast
+    draft = null;
+
+    // Attach all listeners
+    attachEditorListeners(pages, id, isEdit, existing, coverImageData, renderEditor);
+    attachUploadListeners(pages, id, coverImageData, renderEditor);
   }
 
   renderEditor();
@@ -611,9 +740,8 @@ function renderEditorPage(page: EditorPage, index: number, total: number): strin
       </div>
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <div>
-          <label style="display: block; font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 3px;">Image URL</label>
-          <input data-page-image="${index}" type="text" value="${escapeAttr(page.image)}" placeholder="https://..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-primary); font-size: 0.8rem; box-sizing: border-box;" />
-          ${page.image ? `<img src="${page.image}" style="max-width: 150px; max-height: 80px; border-radius: 6px; margin-top: 6px; object-fit: cover;" />` : ''}
+          <label style="display: block; font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 3px;">Page Image</label>
+          ${renderUploadBox('page-' + index, page.image, 'Click to upload page image', '120px')}
         </div>
         <div>
           <label style="display: block; font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 3px;">Script / Story Text</label>
@@ -628,28 +756,119 @@ function renderEditorPage(page: EditorPage, index: number, total: number): strin
   `;
 }
 
+/** Attach file upload click/change listeners for cover image and all page images */
+function attachUploadListeners(pages: EditorPage[], storyId: string, coverImageData: string, rerender: () => void): void {
+  // Cover image upload
+  const coverArea = document.querySelector('[data-upload-area="cover-image"]');
+  const coverFileInput = document.querySelector('[data-file-input="cover-image"]') as HTMLInputElement;
+  const coverChangeBtn = document.querySelector('[data-change-upload="cover-image"]');
+  const coverClearBtn = document.querySelector('[data-clear-upload="cover-image"]');
+
+  if (coverArea && coverFileInput) {
+    coverArea.addEventListener('click', () => coverFileInput.click());
+  }
+  if (coverChangeBtn && coverFileInput) {
+    coverChangeBtn.addEventListener('click', (e) => { e.stopPropagation(); coverFileInput.click(); });
+  }
+  if (coverClearBtn) {
+    coverClearBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const container = document.getElementById('cover-image-upload');
+      if (container) {
+        container.dataset.editorCoverImage = '';
+        container.innerHTML = renderUploadBox('cover-image', '', 'Click to upload cover image', '180px');
+        attachUploadListeners(pages, storyId, '', rerender);
+        scheduleAutoSave(storyId, pages);
+      }
+    });
+  }
+  if (coverFileInput) {
+    coverFileInput.addEventListener('change', async () => {
+      const file = coverFileInput.files?.[0];
+      if (!file) return;
+      const dataUrl = await editorFileToDataUrl(file);
+      const container = document.getElementById('cover-image-upload');
+      if (container) {
+        container.dataset.editorCoverImage = dataUrl;
+        container.innerHTML = renderUploadBox('cover-image', dataUrl, 'Click to upload cover image', '180px');
+        attachUploadListeners(pages, storyId, dataUrl, rerender);
+        scheduleAutoSave(storyId, pages);
+      }
+    });
+  }
+
+  // Page image uploads
+  pages.forEach((page, i) => {
+    const uploadId = 'page-' + i;
+    const area = document.querySelector(`[data-upload-area="${uploadId}"]`);
+    const fileInput = document.querySelector(`[data-file-input="${uploadId}"]`) as HTMLInputElement;
+    const changeBtn = document.querySelector(`[data-change-upload="${uploadId}"]`);
+    const clearBtn = document.querySelector(`[data-clear-upload="${uploadId}"]`);
+
+    if (area && fileInput) {
+      area.addEventListener('click', () => fileInput.click());
+    }
+    if (changeBtn && fileInput) {
+      changeBtn.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        syncPagesFromDOMGlobal(pages);
+        pages[i].image = '';
+        rerender();
+      });
+    }
+    if (fileInput) {
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files?.[0];
+        if (!file) return;
+        syncPagesFromDOMGlobal(pages);
+        const dataUrl = await editorFileToDataUrl(file);
+        pages[i].image = dataUrl;
+        rerender();
+      });
+    }
+  });
+}
+
+/** Global sync function that reads text/video from DOM into pages array */
+function syncPagesFromDOMGlobal(pages: EditorPage[]): void {
+  pages.forEach((_, i) => {
+    const textInput = document.querySelector(`[data-page-text="${i}"]`) as HTMLTextAreaElement;
+    const videoInput = document.querySelector(`[data-page-video="${i}"]`) as HTMLInputElement;
+    if (textInput) pages[i].text = textInput.value;
+    if (videoInput) pages[i].video = videoInput.value.trim();
+    // Note: image is set directly via upload, not synced from a text input
+  });
+}
+
 function attachEditorListeners(
   pages: EditorPage[],
   storyId: string,
   isEdit: boolean,
   existing: Story | undefined,
+  coverImageData: string,
   rerender: () => void
 ): void {
-  // Sync page data from DOM
-  function syncPagesFromDOM(): void {
-    pages.forEach((_, i) => {
-      const imgInput = document.querySelector(`[data-page-image="${i}"]`) as HTMLInputElement;
-      const textInput = document.querySelector(`[data-page-text="${i}"]`) as HTMLTextAreaElement;
-      const videoInput = document.querySelector(`[data-page-video="${i}"]`) as HTMLInputElement;
-      if (imgInput) pages[i].image = imgInput.value.trim();
-      if (textInput) pages[i].text = textInput.value;
-      if (videoInput) pages[i].video = videoInput.value.trim();
-    });
-  }
+  // Auto-save on input changes
+  const autoSaveHandler = () => {
+    syncPagesFromDOMGlobal(pages);
+    scheduleAutoSave(storyId, pages);
+  };
+  document.querySelectorAll('#ed-title, #ed-author, #ed-synopsis, #ed-cover-video').forEach(el => {
+    el.addEventListener('input', autoSaveHandler);
+  });
+  document.querySelectorAll('#ed-genre, #ed-format, #ed-rating').forEach(el => {
+    el.addEventListener('change', autoSaveHandler);
+  });
+  document.querySelectorAll('[data-page-text], [data-page-video]').forEach(el => {
+    el.addEventListener('input', autoSaveHandler);
+  });
 
   // Add page
   document.getElementById('editor-add-page')?.addEventListener('click', () => {
-    syncPagesFromDOM();
+    syncPagesFromDOMGlobal(pages);
     pages.push({ image: '', text: '', video: '' });
     rerender();
   });
@@ -657,7 +876,7 @@ function attachEditorListeners(
   // Move page up
   document.querySelectorAll('[data-page-move-up]').forEach(btn => {
     btn.addEventListener('click', () => {
-      syncPagesFromDOM();
+      syncPagesFromDOMGlobal(pages);
       const idx = parseInt((btn as HTMLElement).dataset.pageMoveUp!);
       if (idx > 0) [pages[idx - 1], pages[idx]] = [pages[idx], pages[idx - 1]];
       rerender();
@@ -667,7 +886,7 @@ function attachEditorListeners(
   // Move page down
   document.querySelectorAll('[data-page-move-down]').forEach(btn => {
     btn.addEventListener('click', () => {
-      syncPagesFromDOM();
+      syncPagesFromDOMGlobal(pages);
       const idx = parseInt((btn as HTMLElement).dataset.pageMoveDown!);
       if (idx < pages.length - 1) [pages[idx], pages[idx + 1]] = [pages[idx + 1], pages[idx]];
       rerender();
@@ -677,7 +896,7 @@ function attachEditorListeners(
   // Delete page
   document.querySelectorAll('[data-page-delete]').forEach(btn => {
     btn.addEventListener('click', () => {
-      syncPagesFromDOM();
+      syncPagesFromDOMGlobal(pages);
       const idx = parseInt((btn as HTMLElement).dataset.pageDelete!);
       if (pages.length > 1) pages.splice(idx, 1);
       rerender();
@@ -686,14 +905,28 @@ function attachEditorListeners(
 
   // Cancel buttons
   const cancelHandler = () => {
-    loadTabContent();
+    const hasContent = (document.getElementById('ed-title') as HTMLInputElement)?.value.trim();
+    if (hasContent && !isEdit) {
+      showModal({
+        title: 'Discard Draft?',
+        content: '<p>You have unsaved changes. Do you want to discard them?</p>',
+        confirmText: 'Discard',
+        cancelText: 'Keep Editing',
+        onConfirm: () => {
+          clearEditorDraft();
+          loadTabContent();
+        },
+      });
+    } else {
+      loadTabContent();
+    }
   };
   document.getElementById('editor-cancel')?.addEventListener('click', cancelHandler);
   document.getElementById('editor-cancel-bottom')?.addEventListener('click', cancelHandler);
 
   // Save button
   document.getElementById('editor-save')?.addEventListener('click', async () => {
-    syncPagesFromDOM();
+    syncPagesFromDOMGlobal(pages);
 
     const title = (document.getElementById('ed-title') as HTMLInputElement)?.value.trim();
     const author = (document.getElementById('ed-author') as HTMLInputElement)?.value.trim() || 'DRiVE Studios';
@@ -701,9 +934,7 @@ function attachEditorListeners(
     const format = (document.getElementById('ed-format') as HTMLSelectElement)?.value as StoryFormat;
     const synopsis = (document.getElementById('ed-synopsis') as HTMLTextAreaElement)?.value.trim();
     const contentRating = (document.getElementById('ed-rating') as HTMLSelectElement)?.value as ContentRating;
-    const isFeatured = (document.getElementById('ed-featured') as HTMLInputElement)?.checked || false;
-    const isEditorPick = (document.getElementById('ed-pick') as HTMLInputElement)?.checked || false;
-    const coverImage = (document.getElementById('ed-cover-image') as HTMLInputElement)?.value.trim();
+    const finalCoverImage = (document.querySelector('[data-editor-cover-image]') as HTMLElement)?.dataset.editorCoverImage || '';
     const coverVideo = (document.getElementById('ed-cover-video') as HTMLInputElement)?.value.trim();
 
     if (!title) {
@@ -734,10 +965,10 @@ function attachEditorListeners(
         genre,
         format,
         synopsis,
-        coverImage,
+        coverImage: finalCoverImage,
         coverVideo: coverVideo || undefined,
-        isFeatured,
-        isEditorPick,
+        isFeatured: existing?.isFeatured ?? false,
+        isEditorPick: existing?.isEditorPick ?? false,
         sortOrder: existing?.sortOrder ?? currentOfficialStories.length + 1,
         panels,
         pageScripts,
@@ -745,10 +976,12 @@ function attachEditorListeners(
         contentRating,
       });
 
+      clearEditorDraft();
+
       // Show success toast
       const toast = document.createElement('div');
       toast.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #10b981; color: white; padding: 10px 24px; border-radius: 12px; font-weight: 700; font-size: 0.9rem; z-index: 9999; box-shadow: var(--shadow-lg);';
-      toast.textContent = isEdit ? '✅ Story Updated!' : '✅ Story Created!';
+      toast.textContent = isEdit ? '✅ Story Updated!' : '✅ Story Saved!';
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 2500);
 
@@ -757,7 +990,7 @@ function attachEditorListeners(
     } catch (err: any) {
       if (saveBtn) {
         saveBtn.disabled = false;
-        saveBtn.textContent = isEdit ? '💾 Save Changes' : '📖 Create Story';
+        saveBtn.textContent = '💾 Save and Quit';
       }
       showModal({ title: 'Save Error', content: `<p style="color: #ef4444;">${err.message || 'Unknown error'}</p>`, confirmText: 'OK', cancelText: '', onConfirm: () => {} });
     }
