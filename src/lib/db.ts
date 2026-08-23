@@ -751,6 +751,7 @@ export async function fetchOfficialStories(): Promise<Story[]> {
     pageAudio: s.page_audio || {},
     contentRating: s.content_rating || 'All Ages',
     isOfficial: true,
+    officialStatus: s.status || 'draft',
   }));
 }
 
@@ -774,6 +775,7 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     page_scripts: story.pageScripts || {},
     page_audio: story.pageAudio || {},
     content_rating: story.contentRating || 'All Ages',
+    status: story.officialStatus || 'draft',
     created_by: userId,
     updated_at: new Date().toISOString(),
   };
@@ -815,6 +817,70 @@ export async function reorderOfficialStories(orderedIds: string[]): Promise<void
       .update({ sort_order: item.sort_order, updated_at: item.updated_at })
       .eq('id', item.id);
   }
+}
+
+/** Fetch only LIVE official stories (for public feeds: Featured, Explore, Home) */
+export async function fetchLiveOfficialStories(): Promise<Story[]> {
+  const { data, error } = await supabase
+    .from('official_stories')
+    .select('*')
+    .eq('status', 'live')
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.warn('[DB] Error fetching live official stories:', error);
+    return [];
+  }
+
+  return (data || []).map((s: any) => ({
+    id: s.id,
+    title: s.title,
+    author: s.author || 'DRiVE Studios',
+    genre: s.genre,
+    format: s.format,
+    synopsis: s.synopsis || '',
+    coverImage: s.cover_image || '',
+    coverVideo: s.cover_video || undefined,
+    readCount: s.read_count || 0,
+    isFeatured: s.is_featured || false,
+    isEditorPick: s.is_editor_pick || false,
+    sortOrder: s.sort_order || 0,
+    panels: Array.isArray(s.panels) ? s.panels : [],
+    pageVideos: s.page_videos || {},
+    pageScripts: s.page_scripts || {},
+    pageAudio: s.page_audio || {},
+    contentRating: s.content_rating || 'All Ages',
+    isOfficial: true,
+    officialStatus: 'live' as const,
+  }));
+}
+
+/** Set an official story to LIVE */
+export async function goOfficialStoryLive(storyId: string, options?: { isFeatured?: boolean; isEditorPick?: boolean }): Promise<void> {
+  const update: any = {
+    status: 'live',
+    updated_at: new Date().toISOString(),
+  };
+  if (options?.isFeatured !== undefined) update.is_featured = options.isFeatured;
+  if (options?.isEditorPick !== undefined) update.is_editor_pick = options.isEditorPick;
+
+  const { error } = await supabase
+    .from('official_stories')
+    .update(update)
+    .eq('id', storyId);
+
+  if (error) throw error;
+}
+
+/** Take an official story OFFLINE (back to draft) */
+export async function takeOfficialStoryOffline(storyId: string): Promise<void> {
+  const { error } = await supabase
+    .from('official_stories')
+    .update({ status: 'draft', is_featured: false, is_editor_pick: false, updated_at: new Date().toISOString() })
+    .eq('id', storyId);
+
+  if (error) throw error;
 }
 
 /** Toggle Featured status on an official story */
@@ -867,7 +933,7 @@ export async function fetchUnifiedExploreStories(options?: {
   featuredOnly?: boolean;
 }): Promise<Story[]> {
   const [officialStories, userStories, likesCounts] = await Promise.all([
-    fetchOfficialStories(),
+    fetchLiveOfficialStories(),
     fetchPublishedExploreStories(),
     supabase.from('story_likes').select('story_id'),
   ]);

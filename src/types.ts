@@ -23,6 +23,7 @@ export interface Story {
   coverVideo?: string;                   // video URL for hover-to-play cover
   contentRating?: ContentRating;
   isOfficial?: boolean;
+  officialStatus?: 'draft' | 'live';
 }
 
 export interface UserStory {

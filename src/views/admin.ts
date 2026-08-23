@@ -14,6 +14,8 @@ import {
   toggleOfficialStoryEditorPick,
   toggleUserStoryFeatured,
   toggleUserStoryEditorPick,
+  goOfficialStoryLive,
+  takeOfficialStoryOffline,
   checkIsGameMaster,
   hasAdminPrivileges,
   getUserRole,
@@ -330,9 +332,14 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
 function renderOfficialCard(story: Story, index: number): string {
   const coverSrc = story.coverImage || (story.panels?.[0]) || '';
   const hasCoverVideo = !!story.coverVideo;
+  const isLive = story.officialStatus === 'live';
+  const statusColor = isLive ? '#10b981' : '#ef4444';
+  const statusBg = isLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+  const statusBorder = isLive ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+  const statusLabel = isLive ? '🟢 LIVE' : '🔴 DRAFT';
 
   return `
-    <div class="admin-original-card" data-id="${story.id}" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-sm); transition: transform 0.15s, box-shadow 0.15s;">
+    <div class="admin-original-card" data-id="${story.id}" style="background: var(--color-surface); border: 2px solid ${statusBorder}; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-sm); transition: transform 0.15s, box-shadow 0.15s;">
       <div style="position: relative; aspect-ratio: 16/10; background: var(--color-bg); overflow: hidden;">
         ${coverSrc
           ? `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" />`
@@ -341,7 +348,7 @@ function renderOfficialCard(story: Story, index: number): string {
             : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`
         }
         <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 4px;">
-          <span style="background: var(--color-purple); color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; text-transform: uppercase;">OFFICIAL</span>
+          <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; text-transform: uppercase;">${statusLabel}</span>
           ${story.isFeatured ? `<span style="background: #F59E0B; color: #000; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">\u2B50 FEATURED</span>` : ''}
           ${story.isEditorPick ? `<span style="background: #10b981; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">\uD83C\uDFC6 PICK</span>` : ''}
         </div>
@@ -354,21 +361,33 @@ function renderOfficialCard(story: Story, index: number): string {
           ${escapeHtml(story.author)} \u00B7 ${story.genre} \u00B7 ${story.panels?.length || 0} pages \u00B7 ${formatNumber(story.readCount)} reads
         </div>
         ${story.synopsis ? `<p style="margin: 0 0 10px 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(story.synopsis)}</p>` : ''}
-        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
           <button data-edit-official="${story.id}" style="flex: 2; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
             ${ICON.eye} Edit
           </button>
           <button data-move-up="${story.id}" title="Move up" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">\u2191</button>
           <button data-move-down="${story.id}" title="Move down" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">\u2193</button>
-          <button data-toggle-featured="${story.id}" data-is-featured="${story.isFeatured}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: ${story.isFeatured ? '#F59E0B' : 'var(--color-bg)'}; color: ${story.isFeatured ? '#000' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
-            \u2B50
-          </button>
-          <button data-toggle-pick="${story.id}" data-is-pick="${story.isEditorPick}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: ${story.isEditorPick ? '#10b981' : 'var(--color-bg)'}; color: ${story.isEditorPick ? '#fff' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
-            \uD83C\uDFC6
-          </button>
           <button data-delete-official="${story.id}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-muted); cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='var(--color-text-muted)';this.style.borderColor='var(--color-border)'">
             ${ICON.trash}
           </button>
+        </div>
+        <!-- Status Action Bar -->
+        <div style="background: ${statusBg}; border: 1px solid ${statusBorder}; border-radius: 10px; padding: 8px; display: flex; gap: 6px; align-items: center;">
+          ${isLive ? `
+            <button data-toggle-featured="${story.id}" data-is-featured="${story.isFeatured}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: ${story.isFeatured ? '#F59E0B' : 'var(--color-bg)'}; color: ${story.isFeatured ? '#000' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
+              \u2B50 ${story.isFeatured ? 'Unfeature' : 'Feature'}
+            </button>
+            <button data-toggle-pick="${story.id}" data-is-pick="${story.isEditorPick}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: ${story.isEditorPick ? 'var(--color-purple)' : 'var(--color-bg)'}; color: ${story.isEditorPick ? '#fff' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
+              \uD83C\uDFC6 ${story.isEditorPick ? 'Unpick' : 'Pick'}
+            </button>
+            <button data-take-offline="${story.id}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: none; background: #ef4444; color: white; cursor: pointer; font-size: 0.7rem; font-weight: 700;">
+              📴 Offline
+            </button>
+          ` : `
+            <button data-go-live="${story.id}" style="flex: 1; padding: 8px; border-radius: 8px; border: none; background: #10b981; color: white; cursor: pointer; font-size: 0.8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px;">
+              🚀 Go Live
+            </button>
+          `}
         </div>
       </div>
     </div>
@@ -445,6 +464,58 @@ function attachOfficialCardListeners(): void {
         cancelText: 'Cancel',
         onConfirm: async () => {
           await deleteOfficialStory(id);
+          loadAllMetrics();
+          loadTabContent();
+        },
+      });
+    });
+  });
+
+  // Go Live
+  document.querySelectorAll('[data-go-live]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.goLive!;
+      const story = currentOfficialStories.find(s => s.id === id);
+      showModal({
+        title: `🚀 Go Live: "${story?.title || 'Story'}"`,
+        content: `
+          <div style="text-align: center; padding: 8px 0;">
+            <p style="margin: 0 0 16px;">This story will become visible on the Explore feed and (if Featured/Picked) on the Featured page.</p>
+            <div style="display: flex; flex-direction: column; gap: 10px; text-align: left;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="golive-featured" /> ⭐ Also mark as <strong>Featured</strong> (Home hero carousel)
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="golive-pick" /> 🏆 Also mark as <strong>Editor's Pick</strong>
+              </label>
+            </div>
+          </div>
+        `,
+        confirmText: '🚀 Go Live Now',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+          const isFeatured = (document.getElementById('golive-featured') as HTMLInputElement)?.checked || false;
+          const isEditorPick = (document.getElementById('golive-pick') as HTMLInputElement)?.checked || false;
+          await goOfficialStoryLive(id, { isFeatured, isEditorPick });
+          loadAllMetrics();
+          loadTabContent();
+        },
+      });
+    });
+  });
+
+  // Take Offline
+  document.querySelectorAll('[data-take-offline]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.takeOffline!;
+      const story = currentOfficialStories.find(s => s.id === id);
+      showModal({
+        title: `📴 Take Offline: "${story?.title || 'Story'}"`,
+        content: '<p>This will remove the story from Featured and Explore feeds. It will become a draft and can be re-published later.</p>',
+        confirmText: 'Take Offline',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+          await takeOfficialStoryOffline(id);
           loadAllMetrics();
           loadTabContent();
         },
@@ -974,6 +1045,7 @@ function attachEditorListeners(
         pageScripts,
         pageVideos,
         contentRating,
+        officialStatus: existing?.officialStatus || 'draft',
       });
 
       clearEditorDraft();
