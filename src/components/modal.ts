@@ -7,8 +7,10 @@ export function showModal(options: {
   content: string; 
   confirmText?: string; 
   cancelText?: string; 
+  extraText?: string;
   onConfirm?: () => void; 
-  onCancel?: () => void;
+  onCancel?: () => void; 
+  onExtra?: () => void;
   hideActions?: boolean;
   showCloseBtn?: boolean;
 }): void {
@@ -27,6 +29,7 @@ export function showModal(options: {
         <div class="modal-content">${options.content}</div>
         ${options.hideActions ? '' : `
           <div class="modal-actions">
+            ${options.extraText ? `<button class="btn btn--secondary" id="modal-extra-btn">${options.extraText}</button>` : ''}
             ${options.cancelText ? `<button class="btn btn--ghost" id="modal-cancel-btn">${options.cancelText}</button>` : ''}
             ${options.confirmText ? `<button class="btn btn--primary" id="modal-confirm-btn">${options.confirmText}</button>` : ''}
           </div>
@@ -38,6 +41,7 @@ export function showModal(options: {
   const backdrop = container.querySelector('.modal-backdrop');
   const cancelBtn = container.querySelector('#modal-cancel-btn');
   const confirmBtn = container.querySelector('#modal-confirm-btn');
+  const extraBtn = container.querySelector('#modal-extra-btn');
   const closeXBtn = container.querySelector('#modal-close-x');
   
   const close = () => {
@@ -65,6 +69,16 @@ export function showModal(options: {
     confirmBtn.addEventListener('click', () => {
       if (options.onConfirm) options.onConfirm();
       close();
+    });
+  }
+
+  if (extraBtn) {
+    extraBtn.addEventListener('click', () => {
+      if (options.onExtra) {
+        options.onExtra();
+      } else {
+        close();
+      }
     });
   }
 }

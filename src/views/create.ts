@@ -1940,17 +1940,71 @@ export function init(): void {
     });
   }
 
+  function promptSaveDraftUser(): void {
+    if (storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled') {
+      saveDraft();
+      hideModal();
+      navigate('library');
+      return;
+    }
+
+    showModal({
+      title: 'Story Title Required',
+      content: `
+        <p style="line-height:1.5; margin-bottom:14px; font-size:0.88rem; color:var(--color-text-secondary);">
+          Please enter a title for your story to save it as a draft:
+        </p>
+        <div style="margin-bottom:8px;">
+          <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="${storyTitle && storyTitle !== 'Untitled' ? storyTitle : ''}" maxlength="80" style="width:100%; box-sizing:border-box;" />
+        </div>
+      `,
+      confirmText: 'Save Draft',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
+        const enteredTitle = input?.value.trim();
+        if (!enteredTitle) {
+          return;
+        }
+        storyTitle = enteredTitle;
+        const titleInput = document.getElementById('ss-title') as HTMLInputElement | null;
+        if (titleInput) titleInput.value = enteredTitle;
+        const page0Title = document.getElementById('page0-title') as HTMLInputElement | null;
+        if (page0Title) page0Title.value = enteredTitle;
+
+        saveDraft();
+        hideModal();
+        navigate('library');
+      },
+    });
+
+    setTimeout(() => {
+      const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
+      input?.focus();
+      input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const confirmBtn = document.getElementById('modal-confirm-btn');
+          confirmBtn?.click();
+        }
+      });
+    }, 100);
+  }
+
   const attachListeners = () => {
     // ─── SHARED CANVAS TOOLBAR ───
     if (phase === 'canvas') {
-      // Quit without saving
+      // Quit without saving / with draft save
       document.getElementById('btn-toolbar-quit')?.addEventListener('click', () => {
         showModal({
           title: 'Discard Changes?',
           content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          confirmText: 'Discard',
+          extraText: 'Save as Draft?',
           cancelText: 'Keep Editing',
+          confirmText: 'Discard',
           onConfirm: () => { clearDraft(); navigate('library'); },
+          onExtra: () => {
+            promptSaveDraftUser();
+          },
         });
       });
 

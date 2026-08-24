@@ -262,6 +262,40 @@ function isVideoMedia(url?: string | null, vidUrl?: string | null): boolean {
   return /\.(mp4|webm|mov|ogg|m4v)($|\?)/i.test(target);
 }
 
+function getFormData(): void {
+  storyTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value || storyTitle || 'Untitled';
+  storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || 'DRiVE Studios';
+  storyGenre = ((document.getElementById('ss-genre') as HTMLSelectElement)?.value || 'Fantasy') as Genre;
+  storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || '';
+  storyContentRating = ((document.getElementById('ss-rating') as HTMLSelectElement)?.value || 'All Ages') as any;
+  storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || storyCoverVideo || '';
+}
+
+function buildStory(status: 'draft' | 'live'): Story {
+  getFormData();
+  const pages = selectedFormat === 'book'
+    ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent }))
+    : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
+  return {
+    id: editStoryId || 'story_' + Date.now(),
+    title: storyTitle,
+    author: storyAuthorName,
+    genre: storyGenre,
+    format: selectedFormat as StoryFormat,
+    synopsis: storySynopsis,
+    coverImage: _coverThumbnail || pages[0]?.image || '',
+    readCount: 0,
+    isFeatured: false,
+    isEditorPick: false,
+    panels: selectedFormat === 'book' ? pages.map(p => p.image || '') : scrollPanels.map(p => p.image || ''),
+    pageScripts: selectedFormat === 'book' ? Object.fromEntries(pages.map((p, i) => [i, p.text])) : Object.fromEntries(scrollPanels.map((p, i) => [i, p.notes])),
+    contentRating: storyContentRating,
+    coverVideo: storyCoverVideo || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined),
+    isOfficial: true,
+    officialStatus: status,
+  };
+}
+
 function openStorySettings(): void {
   const wizard = document.getElementById('admin-admin-create-wizard');
   if (!wizard) return;
@@ -422,40 +456,6 @@ function openStorySettings(): void {
     getFormData();
     updateView();
   });
-
-  const getFormData = () => {
-    storyTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value || storyTitle || 'Untitled';
-    storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || 'DRiVE Studios';
-    storyGenre = ((document.getElementById('ss-genre') as HTMLSelectElement)?.value || 'Fantasy') as Genre;
-    storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || '';
-    storyContentRating = ((document.getElementById('ss-rating') as HTMLSelectElement)?.value || 'All Ages') as any;
-    storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || '';
-  };
-
-  const buildStory = (status: 'draft' | 'live'): Story => {
-    getFormData();
-    const pages = selectedFormat === 'book'
-      ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent }))
-      : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
-    return {
-      id: editStoryId || 'story_' + Date.now(),
-      title: storyTitle,
-      author: storyAuthorName,
-      genre: storyGenre,
-      format: selectedFormat as StoryFormat,
-      synopsis: storySynopsis,
-      coverImage: _coverThumbnail || pages[0]?.image || '',
-      readCount: 0,
-      isFeatured: false,
-      isEditorPick: false,
-      panels: selectedFormat === 'book' ? pages.map(p => p.image || '') : scrollPanels.map(p => p.image || ''),
-      pageScripts: selectedFormat === 'book' ? Object.fromEntries(pages.map((p, i) => [i, p.text])) : Object.fromEntries(scrollPanels.map((p, i) => [i, p.notes])),
-      contentRating: storyContentRating,
-      coverVideo: storyCoverVideo || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined),
-      isOfficial: true,
-      officialStatus: status,
-    };
-  };
 
   document.getElementById('ss-save-draft-btn')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
@@ -1558,17 +1558,77 @@ export function init(): void {
 
   loadData();
 
-const attachListeners = () => {
-    // â”€â”€â”€ SHARED CANVAS TOOLBAR â”€â”€â”€
+  function promptSaveDraftAdmin(): void {
+    if (storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled') {
+      saveDraft();
+      saveOfficialStory(buildStory('draft')).catch(e => console.warn('Draft save error', e));
+      hideModal();
+      navigate('library');
+      return;
+    }
+
+    showModal({
+      title: 'Story Title Required',
+      content: `
+        <p style="line-height:1.5; margin-bottom:14px; font-size:0.88rem; color:var(--color-text-secondary);">
+          Please enter a title for your story to save it as a draft:
+        </p>
+        <div style="margin-bottom:8px;">
+          <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="${storyTitle && storyTitle !== 'Untitled' ? storyTitle : ''}" maxlength="80" style="width:100%; box-sizing:border-box;" />
+        </div>
+      `,
+      confirmText: 'Save Draft',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
+        const enteredTitle = input?.value.trim();
+        if (!enteredTitle) {
+          return;
+        }
+        storyTitle = enteredTitle;
+        const titleInput = document.getElementById('ss-title') as HTMLInputElement | null;
+        if (titleInput) titleInput.value = enteredTitle;
+        const page0Title = document.getElementById('page0-title') as HTMLInputElement | null;
+        if (page0Title) page0Title.value = enteredTitle;
+
+        saveDraft();
+        try {
+          await saveOfficialStory(buildStory('draft'));
+        } catch (e) {
+          console.warn('Draft save error', e);
+        }
+        hideModal();
+        navigate('library');
+      },
+    });
+
+    setTimeout(() => {
+      const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
+      input?.focus();
+      input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const confirmBtn = document.getElementById('modal-confirm-btn');
+          confirmBtn?.click();
+        }
+      });
+    }, 100);
+  }
+
+  const attachListeners = () => {
+    // ─── SHARED CANVAS TOOLBAR ───
     if (phase === 'canvas') {
-      // Quit without saving
+      // Quit without saving / with draft save
       document.getElementById('btn-toolbar-quit')?.addEventListener('click', () => {
         showModal({
           title: 'Discard Changes?',
           content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          confirmText: 'Discard',
+          extraText: 'Save as Draft?',
           cancelText: 'Keep Editing',
-          onConfirm: () => { clearDraft(); navigate('admin'); },
+          confirmText: 'Discard',
+          onConfirm: () => { clearDraft(); navigate('library'); },
+          onExtra: () => {
+            promptSaveDraftAdmin();
+          },
         });
       });
 
