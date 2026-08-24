@@ -8,7 +8,8 @@ import {
   LayoutDashboard, Monitor, Smartphone, Upload, X,
   GripVertical, Sparkles, Loader2, LogOut, LogIn,
   Maximize, Minimize, Frame, Wifi, Signal, Battery, RotateCcw, Hash,
-  Video
+  Video, BookOpen, Filter, Clock, CheckCircle2, AlertCircle, Eye, 
+  Edit, Copy, ArrowLeft, FileText, MoreVertical, Search
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { cn } from '@/src/lib/utils';
@@ -25,6 +26,7 @@ import {
 } from './firebase';
 import { 
   doc, onSnapshot, setDoc, updateDoc, getDoc,
+  collection, getDocs, addDoc, deleteDoc, query, orderBy, serverTimestamp,
   Timestamp 
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -115,6 +117,91 @@ const DEFAULT_CONTENT: ContentData = {
       deeperDiveMediaType: 'image'
     }
   ]
+};
+
+type StoryStatus = 'draft' | 'review' | 'verified' | 'published';
+
+interface StoryData {
+  id: string;
+  title: string;
+  description: string;
+  status: StoryStatus;
+  slides: SlideData[];
+  globalVoiceId: string;
+  createdBy: string;
+  createdByEmail: string;
+  createdAt: string;
+  updatedAt: string;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  publishedAt?: string;
+}
+
+// --- Toast Notification ---
+
+interface ToastMessage {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  message: string;
+}
+
+const Toast = ({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: string) => void }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => onDismiss(toast.id), 4000);
+    return () => clearTimeout(timer);
+  }, [toast.id, onDismiss]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 50, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.9 }}
+      className={cn(
+        "flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl border backdrop-blur-sm cursor-pointer",
+        toast.type === 'success' && "bg-emerald-50/95 border-emerald-200 text-emerald-800",
+        toast.type === 'error' && "bg-red-50/95 border-red-200 text-red-800",
+        toast.type === 'info' && "bg-blue-50/95 border-blue-200 text-blue-800"
+      )}
+      onClick={() => onDismiss(toast.id)}
+    >
+      {toast.type === 'success' && <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />}
+      {toast.type === 'error' && <AlertCircle size={18} className="text-red-500 shrink-0" />}
+      {toast.type === 'info' && <Info size={18} className="text-blue-500 shrink-0" />}
+      <span className="text-sm font-semibold">{toast.message}</span>
+    </motion.div>
+  );
+};
+
+const ToastContainer = ({ toasts, onDismiss }: { toasts: ToastMessage[]; onDismiss: (id: string) => void }) => (
+  <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3">
+    <AnimatePresence>
+      {toasts.map(t => <Toast key={t.id} toast={t} onDismiss={onDismiss} />)}
+    </AnimatePresence>
+  </div>
+);
+
+const useToast = () => {
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  
+  const addToast = (type: ToastMessage['type'], message: string) => {
+    const id = `toast-${Date.now()}`;
+    setToasts(prev => [...prev, { id, type, message }]);
+  };
+
+  const dismissToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  return { toasts, addToast, dismissToast };
+};
+
+// --- Status Helpers ---
+
+const STATUS_CONFIG: Record<StoryStatus, { label: string; color: string; bgColor: string; borderColor: string; icon: React.ReactNode }> = {
+  draft: { label: 'Draft', color: 'text-neutral-500', bgColor: 'bg-neutral-100', borderColor: 'border-neutral-200', icon: <Edit size={12} /> },
+  review: { label: 'In Review', color: 'text-amber-600', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', icon: <Eye size={12} /> },
+  verified: { label: 'Verified', color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', icon: <CheckCircle2 size={12} /> },
+  published: { label: 'Published', color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200', icon: <CheckCircle2 size={12} /> },
 };
 
 // --- Components ---
@@ -1822,14 +1909,558 @@ const SortableSlide: React.FC<{
   );
 };
 
+// --- Story Metadata Modal ---
+
+const StoryMetadataModal = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  initialTitle = '',
+  initialDescription = '',
+  mode = 'create'
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (title: string, description: string) => void;
+  initialTitle?: string;
+  initialDescription?: string;
+  mode?: 'create' | 'edit';
+}) => {
+  const [title, setTitle] = useState(initialTitle);
+  const [description, setDescription] = useState(initialDescription);
+
+  useEffect(() => {
+    setTitle(initialTitle);
+    setDescription(initialDescription);
+  }, [initialTitle, initialDescription, isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="relative bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl border border-neutral-100 z-10"
+      >
+        <h2 className="text-xl font-black text-neutral-900 mb-1">
+          {mode === 'create' ? 'Create New Story' : 'Edit Story Details'}
+        </h2>
+        <p className="text-sm text-neutral-500 mb-6">
+          {mode === 'create' ? 'Give your story a title and description.' : 'Update the story metadata.'}
+        </p>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Title</Label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g., Introduction to Visual Storytelling"
+              className="bg-neutral-50 border-neutral-200"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Description</Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="A brief description of this story..."
+              className="min-h-[100px] bg-neutral-50 border-neutral-200 resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-8">
+          <Button variant="ghost" onClick={onClose} className="rounded-full px-6">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (!title.trim()) return;
+              onSubmit(title.trim(), description.trim());
+            }}
+            disabled={!title.trim()}
+            className="bg-orange-500 hover:bg-orange-600 text-white rounded-full px-8 font-bold shadow-lg shadow-orange-200"
+          >
+            {mode === 'create' ? 'Create Story' : 'Save Details'}
+          </Button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- Story Library ---
+
+const StoryLibrary = ({
+  onEditStory,
+  onToast,
+  user,
+  onExit
+}: {
+  onEditStory: (story: StoryData) => void;
+  onToast: (type: ToastMessage['type'], message: string) => void;
+  user: User;
+  onExit: () => void;
+}) => {
+  const [stories, setStories] = useState<StoryData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<StoryStatus | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editMetaStory, setEditMetaStory] = useState<StoryData | null>(null);
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+
+  // Fetch stories
+  const fetchStories = async () => {
+    try {
+      const q = query(collection(db, 'stories'), orderBy('updatedAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const fetched = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as StoryData));
+      setStories(fetched);
+    } catch (error) {
+      console.error('Failed to fetch stories:', error);
+      onToast('error', 'Failed to load stories.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchStories(); }, []);
+
+  // Create new story
+  const handleCreateStory = async (title: string, description: string) => {
+    try {
+      const now = new Date().toISOString();
+      const newStory: Omit<StoryData, 'id'> = {
+        title,
+        description,
+        status: 'draft',
+        slides: [{
+          id: `slide-${Date.now()}`,
+          mediaType: 'image',
+          mediaUrl: 'https://picsum.photos/seed/new/800/800',
+          textContent: 'Start writing your story here...',
+          slideType: 'photo',
+          aspectRatio: '1:1',
+          voiceId: 'F1QAmjRIjqM9llULermx',
+          stability: 0.5,
+          similarityBoost: 0.75,
+          style: 0.0,
+          useSpeakerBoost: true
+        }],
+        globalVoiceId: 'F1QAmjRIjqM9llULermx',
+        createdBy: user.uid,
+        createdByEmail: user.email || '',
+        createdAt: now,
+        updatedAt: now,
+      };
+      const docRef = await addDoc(collection(db, 'stories'), newStory);
+      const created = { id: docRef.id, ...newStory };
+      setStories(prev => [created, ...prev]);
+      setShowCreateModal(false);
+      onToast('success', `Story "${title}" created!`);
+      onEditStory(created);
+    } catch (error) {
+      console.error('Failed to create story:', error);
+      onToast('error', 'Failed to create story.');
+    }
+  };
+
+  // Update story metadata
+  const handleUpdateMeta = async (title: string, description: string) => {
+    if (!editMetaStory) return;
+    try {
+      await updateDoc(doc(db, 'stories', editMetaStory.id), {
+        title,
+        description,
+        updatedAt: new Date().toISOString()
+      });
+      setStories(prev => prev.map(s => s.id === editMetaStory.id ? { ...s, title, description } : s));
+      setEditMetaStory(null);
+      onToast('success', 'Story details updated!');
+    } catch (error) {
+      onToast('error', 'Failed to update story details.');
+    }
+  };
+
+  // Update story status
+  const handleStatusChange = async (storyId: string, newStatus: StoryStatus) => {
+    try {
+      const updates: Record<string, any> = {
+        status: newStatus,
+        updatedAt: new Date().toISOString()
+      };
+      if (newStatus === 'verified') {
+        updates.verifiedBy = user.uid;
+        updates.verifiedAt = new Date().toISOString();
+      }
+      if (newStatus === 'published') {
+        updates.publishedAt = new Date().toISOString();
+      }
+      await updateDoc(doc(db, 'stories', storyId), updates);
+      setStories(prev => prev.map(s => s.id === storyId ? { ...s, ...updates } : s));
+      setActionMenuId(null);
+      onToast('success', `Story status changed to ${STATUS_CONFIG[newStatus].label}.`);
+    } catch (error) {
+      onToast('error', 'Failed to update status.');
+    }
+  };
+
+  // Publish story — copy to app_content/main
+  const handlePublish = async (story: StoryData) => {
+    try {
+      // First update story status
+      await handleStatusChange(story.id, 'published');
+      
+      // Then copy to app_content/main (the live viewer reads from here)
+      await setDoc(doc(db, 'app_content/main'), {
+        slides: story.slides,
+        globalVoiceId: story.globalVoiceId,
+        updatedAt: new Date().toISOString()
+      });
+      
+      onToast('success', `"${story.title}" is now LIVE! Content updated.`);
+    } catch (error) {
+      console.error('Publish failed:', error);
+      onToast('error', 'Failed to publish story.');
+    }
+  };
+
+  // Delete story
+  const handleDeleteStory = async (storyId: string) => {
+    try {
+      await deleteDoc(doc(db, 'stories', storyId));
+      setStories(prev => prev.filter(s => s.id !== storyId));
+      setActionMenuId(null);
+      onToast('success', 'Story deleted.');
+    } catch (error) {
+      onToast('error', 'Failed to delete story.');
+    }
+  };
+
+  // Duplicate story
+  const handleDuplicate = async (story: StoryData) => {
+    try {
+      const now = new Date().toISOString();
+      const copy: Omit<StoryData, 'id'> = {
+        title: `${story.title} (Copy)`,
+        description: story.description,
+        status: 'draft',
+        slides: story.slides.map(s => ({ ...s, id: `slide-${Date.now()}-${Math.random().toString(36).slice(2)}` })),
+        globalVoiceId: story.globalVoiceId,
+        createdBy: user.uid,
+        createdByEmail: user.email || '',
+        createdAt: now,
+        updatedAt: now,
+      };
+      const docRef = await addDoc(collection(db, 'stories'), copy);
+      setStories(prev => [{ id: docRef.id, ...copy }, ...prev]);
+      setActionMenuId(null);
+      onToast('success', `Story duplicated!`);
+    } catch (error) {
+      onToast('error', 'Failed to duplicate story.');
+    }
+  };
+
+  // Filter stories
+  const filteredStories = stories.filter(s => {
+    if (statusFilter !== 'all' && s.status !== statusFilter) return false;
+    if (searchQuery && !s.title.toLowerCase().includes(searchQuery.toLowerCase()) && !s.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    return true;
+  });
+
+  const statusCounts = {
+    all: stories.length,
+    draft: stories.filter(s => s.status === 'draft').length,
+    review: stories.filter(s => s.status === 'review').length,
+    verified: stories.filter(s => s.status === 'verified').length,
+    published: stories.filter(s => s.status === 'published').length,
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
+      {/* Header */}
+      <header className="h-16 bg-white border-b border-neutral-200 flex items-center justify-between px-8 sticky top-0 z-50">
+        <div className="flex items-center gap-4">
+          <div className="bg-orange-500 p-2 rounded-lg text-white">
+            <BookOpen size={20} />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-neutral-900">Story Library</h1>
+            <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold">
+              {stories.length} {stories.length === 1 ? 'Story' : 'Stories'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={onExit} className="rounded-full px-6">
+            <Smartphone className="mr-2 h-4 w-4" />
+            Preview App
+          </Button>
+          <Button
+            onClick={() => setShowCreateModal(true)}
+            className="bg-orange-500 hover:bg-orange-600 text-white rounded-full px-6 font-bold shadow-lg shadow-orange-200"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            New Story
+          </Button>
+        </div>
+      </header>
+
+      <main className="flex-1 p-8 max-w-[1400px] mx-auto w-full">
+        {/* Search & Filter Bar */}
+        <div className="flex flex-wrap items-center gap-4 mb-8">
+          <div className="relative flex-1 min-w-[280px]">
+            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search stories..."
+              className="pl-10 bg-white border-neutral-200 rounded-xl h-11"
+            />
+          </div>
+          <div className="flex bg-white rounded-xl border border-neutral-200 p-1 gap-1">
+            {(['all', 'draft', 'review', 'verified', 'published'] as const).map(status => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                  statusFilter === status
+                    ? "bg-neutral-900 text-white shadow-sm"
+                    : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
+                )}
+              >
+                {status === 'all' ? 'All' : STATUS_CONFIG[status].label}
+                <span className="ml-1.5 opacity-60">{statusCounts[status]}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Stories Grid */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="animate-spin text-orange-500" size={32} />
+          </div>
+        ) : filteredStories.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mb-4">
+              <FileText size={28} className="text-neutral-400" />
+            </div>
+            <h3 className="text-lg font-bold text-neutral-700 mb-2">
+              {stories.length === 0 ? 'No stories yet' : 'No matching stories'}
+            </h3>
+            <p className="text-sm text-neutral-500 mb-6">
+              {stories.length === 0 
+                ? 'Create your first story to get started.' 
+                : 'Try adjusting your filters or search query.'}
+            </p>
+            {stories.length === 0 && (
+              <Button
+                onClick={() => setShowCreateModal(true)}
+                className="bg-orange-500 hover:bg-orange-600 text-white rounded-full px-8 font-bold"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Create First Story
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredStories.map(story => {
+              const statusConfig = STATUS_CONFIG[story.status];
+              const firstSlide = story.slides[0];
+              
+              return (
+                <Card
+                  key={story.id}
+                  className="group bg-white border-neutral-200 hover:shadow-lg hover:border-orange-200 transition-all cursor-pointer overflow-hidden relative"
+                  onClick={() => onEditStory(story)}
+                >
+                  {/* Thumbnail */}
+                  <div className="relative h-44 bg-neutral-100 overflow-hidden">
+                    {firstSlide?.mediaUrl && firstSlide.mediaType !== 'video' ? (
+                      <img
+                        src={firstSlide.mediaUrl}
+                        alt={story.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : firstSlide?.mediaType === 'video' ? (
+                      <div className="w-full h-full flex items-center justify-center bg-neutral-800">
+                        <Video size={32} className="text-white/60" />
+                      </div>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <FileText size={32} className="text-neutral-300" />
+                      </div>
+                    )}
+                    
+                    {/* Status Badge */}
+                    <div className={cn(
+                      "absolute top-3 left-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border",
+                      statusConfig.bgColor, statusConfig.color, statusConfig.borderColor
+                    )}>
+                      {statusConfig.icon}
+                      {statusConfig.label}
+                    </div>
+
+                    {/* Slide Count */}
+                    <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
+                      {story.slides.length} {story.slides.length === 1 ? 'slide' : 'slides'}
+                    </div>
+                  </div>
+
+                  <CardContent className="p-5">
+                    <h3 className="text-sm font-bold text-neutral-900 mb-1 line-clamp-1">{story.title}</h3>
+                    <p className="text-xs text-neutral-500 mb-3 line-clamp-2">{story.description || 'No description'}</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-[10px] text-neutral-400">
+                        <Clock size={10} />
+                        <span>{new Date(story.updatedAt).toLocaleDateString()}</span>
+                      </div>
+                      <span className="text-[10px] text-neutral-400 font-medium">{story.createdByEmail}</span>
+                    </div>
+                  </CardContent>
+
+                  {/* Action Menu */}
+                  <div
+                    className="absolute top-3 right-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => setActionMenuId(actionMenuId === story.id ? null : story.id)}
+                      className="p-1.5 rounded-full bg-black/40 backdrop-blur-sm text-white hover:bg-black/60 transition-colors"
+                    >
+                      <MoreVertical size={14} />
+                    </button>
+
+                    <AnimatePresence>
+                      {actionMenuId === story.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setActionMenuId(null)} />
+                          <motion.div
+                            initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                            className="absolute right-0 top-10 w-52 bg-white rounded-xl p-1.5 shadow-2xl border border-neutral-100 z-50"
+                          >
+                            <button
+                              onClick={() => { onEditStory(story); setActionMenuId(null); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
+                            >
+                              <Edit size={14} /> Edit Story
+                            </button>
+                            <button
+                              onClick={() => { setEditMetaStory(story); setActionMenuId(null); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
+                            >
+                              <FileText size={14} /> Edit Details
+                            </button>
+                            <button
+                              onClick={() => handleDuplicate(story)}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
+                            >
+                              <Copy size={14} /> Duplicate
+                            </button>
+                            
+                            <div className="h-px bg-neutral-100 my-1" />
+                            <div className="px-3 py-1">
+                              <span className="text-[9px] font-bold uppercase text-neutral-400 tracking-widest">Status</span>
+                            </div>
+                            
+                            {story.status === 'draft' && (
+                              <button
+                                onClick={() => handleStatusChange(story.id, 'review')}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-amber-600 hover:bg-amber-50 transition-colors"
+                              >
+                                <Eye size={14} /> Submit for Review
+                              </button>
+                            )}
+                            {(story.status === 'draft' || story.status === 'review') && (
+                              <button
+                                onClick={() => handleStatusChange(story.id, 'verified')}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-blue-600 hover:bg-blue-50 transition-colors"
+                              >
+                                <CheckCircle2 size={14} /> Mark as Verified
+                              </button>
+                            )}
+                            {story.status !== 'published' && (
+                              <button
+                                onClick={() => handlePublish(story)}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-600 hover:bg-emerald-50 transition-colors"
+                              >
+                                <Sparkles size={14} /> Publish (Go Live)
+                              </button>
+                            )}
+                            {story.status !== 'draft' && (
+                              <button
+                                onClick={() => handleStatusChange(story.id, 'draft')}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-neutral-500 hover:bg-neutral-50 transition-colors"
+                              >
+                                <RotateCcw size={14} /> Revert to Draft
+                              </button>
+                            )}
+                            
+                            <div className="h-px bg-neutral-100 my-1" />
+                            <button
+                              onClick={() => handleDeleteStory(story.id)}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-red-500 hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 size={14} /> Delete Story
+                            </button>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </main>
+
+      {/* Create Story Modal */}
+      <StoryMetadataModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={handleCreateStory}
+        mode="create"
+      />
+
+      {/* Edit Story Metadata Modal */}
+      <StoryMetadataModal
+        isOpen={!!editMetaStory}
+        onClose={() => setEditMetaStory(null)}
+        onSubmit={handleUpdateMeta}
+        initialTitle={editMetaStory?.title || ''}
+        initialDescription={editMetaStory?.description || ''}
+        mode="edit"
+      />
+    </div>
+  );
+};
+
 const AdminDashboard = ({ 
   content, 
   onSave, 
-  onExit 
+  onExit,
+  onToast,
+  storyTitle,
+  onBackToLibrary
 }: { 
   content: ContentData, 
-  onSave: (newContent: ContentData) => void,
-  onExit: () => void
+  onSave: (newContent: ContentData) => Promise<void>,
+  onExit: () => void,
+  onToast?: (type: ToastMessage['type'], message: string) => void,
+  storyTitle?: string,
+  onBackToLibrary?: () => void
 }) => {
   const [form, setForm] = useState<ContentData>(content);
   const [isSaving, setIsSaving] = useState(false);
@@ -1921,8 +2552,15 @@ const AdminDashboard = ({
 
   const handleSave = async () => {
     setIsSaving(true);
-    onSave(form);
-    setTimeout(() => setIsSaving(false), 500);
+    try {
+      await onSave(form);
+      onToast?.('success', 'Story saved successfully!');
+    } catch (error) {
+      console.error('Save failed:', error);
+      onToast?.('error', 'Failed to save. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const applyVoiceToAll = () => {
@@ -1938,11 +2576,18 @@ const AdminDashboard = ({
       {/* Dashboard Header */}
       <header className="h-16 bg-white border-b border-neutral-200 flex items-center justify-between px-8 sticky top-0 z-50">
         <div className="flex items-center gap-4">
+          {onBackToLibrary && (
+            <Button variant="ghost" size="sm" onClick={onBackToLibrary} className="rounded-full">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
           <div className="bg-orange-500 p-2 rounded-lg text-white">
             <LayoutDashboard size={20} />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-neutral-900">Content Storyboard</h1>
+            <h1 className="text-sm font-bold text-neutral-900">
+              {storyTitle || 'Content Storyboard'}
+            </h1>
             <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold">Admin Dashboard</p>
           </div>
         </div>
@@ -2241,6 +2886,8 @@ const LoginView = () => {
 
 export default function App() {
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [adminView, setAdminView] = useState<'library' | 'editor'>('library');
+  const [editingStory, setEditingStory] = useState<StoryData | null>(null);
   const [activeView, setActiveView] = useState('lesson');
   const [isLandscape, setIsLandscape] = useState(false);
   const [content, setContent] = useState<ContentData>(DEFAULT_CONTENT);
@@ -2248,23 +2895,34 @@ export default function App() {
   const [userRole, setUserRole] = useState<'admin' | 'user' | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const { toasts, addToast, dismissToast } = useToast();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       if (user) {
-        // Fetch user role
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const userRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userRef);
+
+        // Admin whitelist — always enforced, not just on first login
+        const ADMIN_EMAILS = ['lucas@soltheory.com', 'steve@soltheory.com', 'gerard@soltheory.com'];
+        const shouldBeAdmin = ADMIN_EMAILS.includes(user.email || '');
+
         if (userDoc.exists()) {
-          setUserRole(userDoc.data().role);
+          const currentRole = userDoc.data().role;
+          if (shouldBeAdmin && currentRole !== 'admin') {
+            await updateDoc(userRef, { role: 'admin' });
+            setUserRole('admin');
+          } else {
+            setUserRole(currentRole);
+          }
         } else {
-          // New user, default to 'user' role
-          const role = user.email === 'steve@soltheory.com' ? 'admin' : 'user';
-          await setDoc(doc(db, 'users', user.uid), {
+          const role = shouldBeAdmin ? 'admin' : 'user';
+          await setDoc(userRef, {
             email: user.email,
-            role: role,
+            role,
             displayName: user.displayName,
-            photoURL: user.photoURL
+            photoURL: user.photoURL,
           });
           setUserRole(role);
         }
@@ -2289,22 +2947,46 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Save content to app_content/main (legacy direct save)
   const handleSaveContent = async (newContent: ContentData) => {
     const path = 'app_content/main';
-    try {
-      await setDoc(doc(db, path), {
-        ...newContent,
-        updatedAt: new Date().toISOString()
-      });
-      setContent(newContent);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
+    await setDoc(doc(db, path), {
+      ...newContent,
+      updatedAt: new Date().toISOString()
+    });
+    setContent(newContent);
+  };
+
+  // Save a story to its /stories/{id} document
+  const handleSaveStory = async (newContent: ContentData) => {
+    if (!editingStory) return;
+    const storyRef = doc(db, 'stories', editingStory.id);
+    await updateDoc(storyRef, {
+      slides: newContent.slides,
+      globalVoiceId: newContent.globalVoiceId,
+      updatedAt: new Date().toISOString()
+    });
+    setEditingStory(prev => prev ? {
+      ...prev,
+      slides: newContent.slides,
+      globalVoiceId: newContent.globalVoiceId || prev.globalVoiceId,
+      updatedAt: new Date().toISOString()
+    } : null);
   };
 
   const handleNavigate = (view: string) => {
     setActiveView(view);
     setIsLandscape(false);
+  };
+
+  const handleEditStory = (story: StoryData) => {
+    setEditingStory(story);
+    setAdminView('editor');
+  };
+
+  const handleBackToLibrary = () => {
+    setEditingStory(null);
+    setAdminView('library');
   };
 
   if (isAuthLoading) {
@@ -2321,50 +3003,69 @@ export default function App() {
 
   if (isAdminMode && userRole === 'admin') {
     return (
-      <AdminDashboard 
-        content={content} 
-        onSave={handleSaveContent}
-        onExit={() => setIsAdminMode(false)}
-      />
+      <>
+        {adminView === 'library' ? (
+          <StoryLibrary
+            onEditStory={handleEditStory}
+            onToast={addToast}
+            user={user}
+            onExit={() => setIsAdminMode(false)}
+          />
+        ) : (
+          <AdminDashboard
+            content={editingStory ? { slides: editingStory.slides, globalVoiceId: editingStory.globalVoiceId } : content}
+            onSave={editingStory ? handleSaveStory : handleSaveContent}
+            onExit={() => setIsAdminMode(false)}
+            onToast={addToast}
+            storyTitle={editingStory?.title}
+            onBackToLibrary={handleBackToLibrary}
+          />
+        )}
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
     );
   }
 
   return (
-    <MobileFrame 
-      onToggleAdmin={() => userRole === 'admin' && setIsAdminMode(true)}
-      isLandscape={isLandscape}
-    >
-      <div className="flex-1 relative overflow-hidden">
-        <LessonView 
-          content={content} 
-          onNavigate={handleNavigate} 
-          user={user}
-          isLandscape={isLandscape}
-          onToggleLandscape={() => setIsLandscape(!isLandscape)}
-          currentSlideIndex={currentSlideIndex}
-          setCurrentSlideIndex={setCurrentSlideIndex}
-        />
-        
-        <AnimatePresence>
-          {activeView === 'notes' && (
-            <NotesView onBack={() => handleNavigate('lesson')} user={user} />
-          )}
-          {activeView === 'more' && (
-            <MoreView 
-              onBack={() => handleNavigate('lesson')} 
-              slide={content.slides[currentSlideIndex]}
-              isLandscape={isLandscape}
-              onToggleLandscape={() => setIsLandscape(!isLandscape)}
-              globalVoiceId={content.globalVoiceId}
-              currentSlideIndex={currentSlideIndex}
-              totalSlides={content.slides.length}
-            />
-          )}
-          {activeView === 'connect' && (
-            <ConnectView onBack={() => handleNavigate('lesson')} />
-          )}
-        </AnimatePresence>
-      </div>
-    </MobileFrame>
+    <>
+      <MobileFrame 
+        onToggleAdmin={() => userRole === 'admin' && setIsAdminMode(true)}
+        isLandscape={isLandscape}
+      >
+        <div className="flex-1 relative overflow-hidden">
+          <LessonView 
+            content={content} 
+            onNavigate={handleNavigate} 
+            user={user}
+            isLandscape={isLandscape}
+            onToggleLandscape={() => setIsLandscape(!isLandscape)}
+            currentSlideIndex={currentSlideIndex}
+            setCurrentSlideIndex={setCurrentSlideIndex}
+          />
+          
+          <AnimatePresence>
+            {activeView === 'notes' && (
+              <NotesView onBack={() => handleNavigate('lesson')} user={user} />
+            )}
+            {activeView === 'more' && (
+              <MoreView 
+                onBack={() => handleNavigate('lesson')} 
+                slide={content.slides[currentSlideIndex]}
+                isLandscape={isLandscape}
+                onToggleLandscape={() => setIsLandscape(!isLandscape)}
+                globalVoiceId={content.globalVoiceId}
+                currentSlideIndex={currentSlideIndex}
+                totalSlides={content.slides.length}
+              />
+            )}
+            {activeView === 'connect' && (
+              <ConnectView onBack={() => handleNavigate('lesson')} />
+            )}
+          </AnimatePresence>
+        </div>
+      </MobileFrame>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
   );
 }
+

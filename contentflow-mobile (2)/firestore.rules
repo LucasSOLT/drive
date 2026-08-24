@@ -45,7 +45,11 @@ service cloud.firestore {
       return isAuthenticated() && (
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-        (request.auth.token.email == "steve@soltheory.com" && request.auth.token.email_verified == true)
+        (request.auth.token.email in [
+          "lucas@soltheory.com", 
+          "steve@soltheory.com", 
+          "gerard@soltheory.com"
+        ] && request.auth.token.email_verified == true)
       );
     }
     
@@ -81,6 +85,14 @@ service cloud.firestore {
     match /users/{userId}/notes/main {
       allow read: if isOwner(userId);
       allow write: if isOwner(userId) && isValidNote(request.resource.data);
+    }
+
+    // Story Library — admin-only CRUD
+    match /stories/{storyId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
     
     match /{path=**} {

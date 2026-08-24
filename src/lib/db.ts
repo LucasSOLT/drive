@@ -40,7 +40,7 @@ export async function loadUserData(): Promise<void> {
 
   try {
     const [profileRes, subRes, storiesRes, bookmarksRes, likesRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', userId).single(),
+      supabase.from('profiles').select('*, is_admin').eq('id', userId).single(),
       supabase.from('user_subscriptions').select('*').eq('user_id', userId).single(),
       supabase.from('user_stories').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('bookmarks').select('story_id').eq('user_id', userId),
@@ -65,8 +65,8 @@ export async function loadUserData(): Promise<void> {
       role: (profileRes.data.role as UserRole) || (profileRes.data.is_admin === true ? 'admin' : 'user'),
     } : null;
     
-    // Debug: log what Supabase returned for role
-    console.log('[DB] Profile loaded. Raw role from Supabase:', profileRes.data?.role, '| Mapped role:', _profile?.role, '| Full profile keys:', profileRes.data ? Object.keys(profileRes.data) : 'null');
+    // Debug: log what Supabase returned for role and admin status
+    console.log('[DB] Profile loaded. is_admin:', profileRes.data?.is_admin, '| role column:', profileRes.data?.role, '| Mapped role:', _profile?.role, '| Full profile data:', JSON.stringify(profileRes.data));
     _subscription = subRes.data ? {
       plan: (subRes.data.plan || 'free') as UserPlan,
       tokensRemaining: subRes.data.tokens_remaining || 0,

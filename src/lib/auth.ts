@@ -45,17 +45,14 @@ export function getUserId(): string | null {
 
 /**
  * Check if user has admin privileges (admin or game_master).
- * Delegates to the db layer which reads the cached profile role.
- * NOTE: This returns false until loadUserData() has been called.
+ * NOTE: For the actual check, use hasAdminPrivileges() from db.ts instead.
+ * This function cannot import db.ts due to circular dependency.
+ * It is kept for backwards compatibility but always returns false.
+ * The router guard and UI already use hasAdminPrivileges() from db.ts directly.
  */
 export function isAdmin(): boolean {
-  // Dynamically import to avoid circular deps at module level
-  // For synchronous check, we use the cached approach
   if (!_currentUser) return false;
-  // We'll rely on the db.ts checkIsAdmin() for the real role check,
-  // but this function needs to be available pre-load for the router guard.
-  // The router will use requireAdminAuth() separately.
-  return false;
+  return false; // Use hasAdminPrivileges() from db.ts for the real check
 }
 
 export function isBetaTester(): boolean {
