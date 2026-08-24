@@ -76,8 +76,10 @@ interface BookPage {
   stability: number;
   deeperDiveContent: string;
   audioUrl: string | null;
+  dialogText: string;
+  dialogAudioUrl: string | null;
 }
-const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null });
+const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null });
 let bookPages: BookPage[] = [
   defaultBookPage(), defaultBookPage(), defaultBookPage(),
   defaultBookPage(), defaultBookPage(),
@@ -274,7 +276,7 @@ function getFormData(): void {
 function buildStory(status: 'draft' | 'live'): Story {
   getFormData();
   const pages = selectedFormat === 'book'
-    ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent }))
+    ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent, dialogText: p.dialogText }))
     : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
   return {
     id: editStoryId || 'story_' + Date.now(),
@@ -1260,8 +1262,13 @@ function openStoryboard(): void {
   overlay.className = 'storyboard-overlay';
 
   const cardsHtml = bookPages.map((page, i) => `
-    <div class="sb-card" data-sb-card="${i}">
+    <div class="sb-card" data-sb-card="${i}" draggable="true">
       <div class="sb-card__header">
+        <div class="sb-card__drag-handle" title="Drag to reorder">
+          <div class="sb-card__drag-handle-dot"><span></span><span></span></div>
+          <div class="sb-card__drag-handle-dot"><span></span><span></span></div>
+          <div class="sb-card__drag-handle-dot"><span></span><span></span></div>
+        </div>
         <span class="sb-card__num">${i + 1}</span>
         <span class="sb-card__label">SLIDE CONTENT</span>
         <button class="sb-card__delete" data-sb-delete="${i}" title="Delete page">
@@ -1283,6 +1290,15 @@ function openStoryboard(): void {
       </div>
 
       <div class="sb-card__section">
+        <div class="sb-card__section-label">DIALOG</div>
+        <textarea class="sb-card__dialog-textarea" data-sb-dialog="${i}" rows="3" placeholder="Write dialog for this page...">${page.dialogText || ''}</textarea>
+        <div class="sb-card__prerecord-row">
+          <button class="sb-card__record-btn" data-sb-record="${i}" type="button">🎙️ Record</button>
+          <button class="sb-card__play-btn" data-sb-play="${i}" type="button" ${page.dialogAudioUrl ? '' : 'disabled'}>▶ Play</button>
+        </div>
+      </div>
+
+      <div class="sb-card__section">
         <div class="sb-card__section-label">
           VOICE TUNING
           <span class="sb-card__pct" data-sb-pct="${i}">${Math.round((page.stability ?? 0.5) * 100)}%</span>
@@ -1292,7 +1308,7 @@ function openStoryboard(): void {
       </div>
 
       <details class="sb-card__deeper-dive">
-        <summary class="sb-card__dd-summary">ðŸŽ“ DEEPER DIVE</summary>
+        <summary class="sb-card__dd-summary">🎓 DEEPER DIVE</summary>
         <textarea class="sb-card__dd-textarea" data-sb-dd="${i}" rows="4" placeholder="Deeper dive content...">${page.deeperDiveContent || ''}</textarea>
       </details>
     </div>
@@ -1379,6 +1395,130 @@ function openStoryboard(): void {
       if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
       overlay.remove();
       openStoryboard();
+    });
+  });
+
+  // Dialog text editing
+  overlay.querySelectorAll('[data-sb-dialog]').forEach(ta => {
+    ta.addEventListener('input', () => {
+      const idx = parseInt(ta.getAttribute('data-sb-dialog') || '0');
+      bookPages[idx].dialogText = (ta as HTMLTextAreaElement).value;
+    });
+  });
+
+  // --- Drag and Drop reordering ---
+  let dragSrcIdx: number | null = null;
+  const track = document.getElementById('sb-track');
+  const cards = overlay.querySelectorAll('.sb-card');
+
+  cards.forEach(card => {
+    card.addEventListener('dragstart', (e: Event) => {
+      const de = e as DragEvent;
+      dragSrcIdx = parseInt((card as HTMLElement).getAttribute('data-sb-card') || '0');
+      (card as HTMLElement).classList.add('sb-card--dragging');
+      de.dataTransfer!.effectAllowed = 'move';
+      de.dataTransfer!.setData('text/plain', String(dragSrcIdx));
+    });
+
+    card.addEventListener('dragover', (e: Event) => {
+      e.preventDefault();
+      (e as DragEvent).dataTransfer!.dropEffect = 'move';
+      (card as HTMLElement).classList.add('sb-card--drag-over');
+    });
+
+    card.addEventListener('dragleave', () => {
+      (card as HTMLElement).classList.remove('sb-card--drag-over');
+    });
+
+    card.addEventListener('drop', (e: Event) => {
+      e.preventDefault();
+      (card as HTMLElement).classList.remove('sb-card--drag-over');
+      const dropIdx = parseInt((card as HTMLElement).getAttribute('data-sb-card') || '0');
+      if (dragSrcIdx !== null && dragSrcIdx !== dropIdx) {
+        // Reorder bookPages
+        const [movedPage] = bookPages.splice(dragSrcIdx, 1);
+        bookPages.splice(dropIdx, 0, movedPage);
+        const [movedPrompt] = bookPrompts.splice(dragSrcIdx, 1);
+        bookPrompts.splice(dropIdx, 0, movedPrompt);
+        // Re-render storyboard
+        overlay.remove();
+        openStoryboard();
+      }
+    });
+
+    card.addEventListener('dragend', () => {
+      (card as HTMLElement).classList.remove('sb-card--dragging');
+      cards.forEach(c => (c as HTMLElement).classList.remove('sb-card--drag-over'));
+      dragSrcIdx = null;
+    });
+  });
+
+  // --- Dialog audio recording (MediaRecorder) ---
+  const activeRecorders: Map<number, MediaRecorder> = new Map();
+  const audioBlobs: Map<number, Blob> = new Map();
+
+  overlay.querySelectorAll('[data-sb-record]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt((btn as HTMLElement).getAttribute('data-sb-record') || '0');
+      const recBtn = btn as HTMLElement;
+
+      // If already recording, stop
+      if (activeRecorders.has(idx)) {
+        activeRecorders.get(idx)!.stop();
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream);
+        const chunks: Blob[] = [];
+
+        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+        recorder.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          activeRecorders.delete(idx);
+          recBtn.classList.remove('sb-card__record-btn--active');
+          recBtn.innerHTML = '🎙️ Record';
+
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          audioBlobs.set(idx, blob);
+          const url = URL.createObjectURL(blob);
+          bookPages[idx].dialogAudioUrl = url;
+
+          // Enable the play button
+          const playBtn = overlay.querySelector(`[data-sb-play="${idx}"]`) as HTMLButtonElement;
+          if (playBtn) playBtn.disabled = false;
+        };
+
+        recorder.start();
+        activeRecorders.set(idx, recorder);
+        recBtn.classList.add('sb-card__record-btn--active');
+        recBtn.innerHTML = '⏹ Stop';
+
+        // Auto-stop after 60 seconds
+        setTimeout(() => {
+          if (activeRecorders.has(idx)) activeRecorders.get(idx)!.stop();
+        }, 60000);
+      } catch (err) {
+        console.error('Microphone access denied:', err);
+        alert('Microphone access is required to record dialog.');
+      }
+    });
+  });
+
+  // Play recorded dialog audio
+  overlay.querySelectorAll('[data-sb-play]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt((btn as HTMLElement).getAttribute('data-sb-play') || '0');
+      const url = bookPages[idx].dialogAudioUrl;
+      if (url) {
+        const audio = new Audio(url);
+        const playBtn = btn as HTMLButtonElement;
+        playBtn.innerHTML = '⏸ Playing';
+        audio.play();
+        audio.onended = () => { playBtn.innerHTML = '▶ Play'; };
+      }
     });
   });
 }
@@ -1524,7 +1664,7 @@ export function init(): void {
 
         if (selectedFormat === 'book') {
            bookPages = storyToEdit.panels.map((p, i) => ({
-             image: p, text: storyToEdit.pageScripts?.[i] || '', stability: 0.5, deeperDiveContent: '', audioUrl: null
+             image: p, text: storyToEdit.pageScripts?.[i] || '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null
            }));
            bookPrompts = Array.from({length: bookPages.length}, () => '');
         } else {
