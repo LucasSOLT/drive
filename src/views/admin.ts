@@ -22,6 +22,7 @@ import {
   type AdminMetrics,
 } from '../lib/db.ts';
 import { showModal, hideModal } from '../components/modal.ts';
+import { navigate } from '../router.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -306,7 +307,7 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
       </div>
     `;
     document.getElementById('btn-add-original')?.addEventListener('click', () => {
-      openStoryEditor();
+      openFormatPopup();
     });
     return;
   }
@@ -324,7 +325,7 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
   `;
 
   document.getElementById('btn-add-original')?.addEventListener('click', () => {
-    openStoryEditor();
+    openFormatPopup();
   });
   attachOfficialCardListeners();
 }
@@ -395,12 +396,11 @@ function renderOfficialCard(story: Story, index: number): string {
 }
 
 function attachOfficialCardListeners(): void {
-  // Edit button → open story editor form
+  // Edit button → navigate to admin creation studio
   document.querySelectorAll('[data-edit-official]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const id = (e.currentTarget as HTMLElement).dataset.editOfficial!;
-      const story = currentOfficialStories.find(s => s.id === id);
-      if (story) openStoryEditor(story);
+      navigate('admin-create/' + id);
     });
   });
 
@@ -649,6 +649,59 @@ function editorFileToVideoDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+// ─── Format Selection Popup ───
+
+function openFormatPopup(): void {
+  const formatContent = `
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <button id="fmt-book" style="display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 16px; border: 2px solid var(--color-border); background: var(--color-surface); cursor: pointer; text-align: left; transition: all 0.2s;">
+          <div style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #8b5cf6, #a78bfa); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;">
+            <svg width="24" height="24" viewBox="0 0 48 48" fill="none"><path d="M6 8c0-2 2-4 6-4h6c4 0 6 2 6 2s2-2 6-2h6c4 0 6 2 6 4v28c0 2-2 4-6 4h-6c-4 0-6 2-6 2s-2-2-6-2h-6c-4 0-6-2-6-4V8z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M24 6v34" stroke="currentColor" stroke-width="2"/></svg>
+          </div>
+          <div>
+            <div style="font-weight: 700; font-size: 0.95rem; color: var(--color-text-primary); margin-bottom: 2px;">📖 Illustrated Book</div>
+            <div style="font-size: 0.78rem; color: var(--color-text-muted);">Single-page slides with AI illustrations, voice tuning & Deeper Dive notes</div>
+          </div>
+        </button>
+        
+        <button id="fmt-scroll" style="display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 16px; border: 2px solid var(--color-border); background: var(--color-surface); cursor: pointer; text-align: left; transition: all 0.2s;">
+          <div style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #06b6d4, #22d3ee); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;">
+            <svg width="24" height="24" viewBox="0 0 48 48" fill="none"><rect x="12" y="4" width="24" height="40" rx="4" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="14" x2="30" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="20" x2="28" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="26" x2="26" y2="26" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </div>
+          <div>
+            <div style="font-weight: 700; font-size: 0.95rem; color: var(--color-text-primary); margin-bottom: 2px;">🎬 Waterfall Storyboard</div>
+            <div style="font-size: 0.78rem; color: var(--color-text-muted);">Vertical scrolling panels with multi-tile grids & Character Sheet Studio</div>
+          </div>
+        </button>
+        
+        <button disabled style="display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 16px; border: 2px dashed var(--color-border); background: var(--color-surface); cursor: not-allowed; text-align: left; opacity: 0.5;">
+          <div style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #6b7280, #9ca3af); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;">
+            <svg width="24" height="24" viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="4" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="4" y="26" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="26" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/></svg>
+          </div>
+          <div>
+            <div style="font-weight: 700; font-size: 0.95rem; color: var(--color-text-primary); margin-bottom: 2px;">💬 Comic Strip</div>
+            <div style="font-size: 0.78rem; color: var(--color-text-muted);">Coming soon</div>
+          </div>
+        </button>
+      </div>`;
+
+  showModal({
+    title: 'Choose Story Format',
+    content: formatContent,
+    hideActions: true,
+    showCloseBtn: true,
+  });
+
+  document.getElementById('fmt-book')?.addEventListener('click', () => {
+    hideModal();
+    navigate('admin-create?format=book');
+  });
+  document.getElementById('fmt-scroll')?.addEventListener('click', () => {
+    hideModal();
+    navigate('admin-create?format=scroll');
   });
 }
 

@@ -11,9 +11,18 @@ const _authCallbacks: ((user: User | null) => void)[] = [];
 export function initAuth(): Promise<User | null> {
   return new Promise((resolve) => {
     // Listen for auth state changes (login, logout, token refresh)
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
       _currentUser = session?.user ?? null;
       _authReady = true;
+
+      // Only notify UI callbacks for real auth changes (sign-in, sign-out, etc.).
+      // TOKEN_REFRESHED and INITIAL_SESSION are background events that should NOT
+      // trigger a full re-render — doing so destroys in-progress forms (e.g. the
+      // admin story editor) and causes the screen to "glitch" and kick the user out.
+      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        return;
+      }
+
       _authCallbacks.forEach(cb => cb(_currentUser));
     });
 

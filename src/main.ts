@@ -30,6 +30,7 @@ import * as lfgBioView from './views/lfg-bio.ts';
 import * as lfgBrowseView from './views/lfg-browse.ts';
 import * as sparcCheckpointView from './views/sparc-checkpoint.ts';
 import * as betaInviteView from './views/beta-invite.ts';
+import * as adminCreateView from './views/admin-create.ts';
 
 function getHeaderAvatarHtml(): string {
   if (!isAuthenticated()) {
@@ -179,6 +180,7 @@ function renderView(route: string) {
     case 'shared': viewModule = guestViewerView; title = ''; break;
     case 'login': case 'signup': viewModule = authView; title = ''; break;
     case 'admin': viewModule = adminView; title = 'Admin Dashboard'; break;
+    case 'admin-create': viewModule = adminCreateView; title = ''; break;
     case 'path-select': viewModule = pathSelectView; title = 'Choose Path'; break;
     case 'squad-lobby': viewModule = squadLobbyView; title = 'Squad Lobby'; break;
     case 'lfg-bio': viewModule = lfgBioView; title = 'Join Queue'; break;
@@ -198,7 +200,7 @@ function renderView(route: string) {
   container.innerHTML = html;
   viewModule.init();
   
-  const isFullScreen = ['story', 'book', 'shared', 'login', 'signup', 'beta'].includes(baseRoute);
+  const isFullScreen = ['story', 'book', 'shared', 'login', 'signup', 'beta', 'admin-create'].includes(baseRoute);
   
   if (isFullScreen) {
     header.style.display = 'none';
