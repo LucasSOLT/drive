@@ -32,6 +32,14 @@ import * as sparcCheckpointView from './views/sparc-checkpoint.ts';
 import * as betaInviteView from './views/beta-invite.ts';
 
 function getHeaderAvatarHtml(): string {
+  if (!isAuthenticated()) {
+    // Question mark icon for logged-out / new users — hints to click
+    return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.7;">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>`;
+  }
   const idx = getSelectedAvatar();
   return MONSTER_AVATARS[idx];
 }
@@ -114,10 +122,12 @@ async function initApp() {
   applyTheme();
   applyTextSize();
 
-  // Header avatar click → profile
+  // Header avatar click → profile (logged in) or login (logged out)
   const avatarBtn = document.getElementById('header-avatar-btn');
   if (avatarBtn) {
-    avatarBtn.addEventListener('click', () => navigate('profile'));
+    avatarBtn.addEventListener('click', () => {
+      navigate(isAuthenticated() ? 'profile' : 'login');
+    });
   }
 
   // Settings gear click → open settings drawer
