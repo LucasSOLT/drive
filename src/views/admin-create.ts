@@ -255,6 +255,13 @@ function clearDraft() {
   editStoryId = null;
 }
 
+function isVideoMedia(url?: string | null, vidUrl?: string | null): boolean {
+  const target = vidUrl || url;
+  if (!target) return false;
+  if (target.startsWith('data:video/')) return true;
+  return /\.(mp4|webm|mov|ogg|m4v)($|\?)/i.test(target);
+}
+
 function openStorySettings(): void {
   const wizard = document.getElementById('admin-admin-create-wizard');
   if (!wizard) return;
@@ -283,16 +290,21 @@ function openStorySettings(): void {
 
       <div class="story-settings-fs__body">
         <div class="ss-section">
-          <div class="ss-section__label">Cover Thumbnail</div>
+          <div class="ss-section__label">Thumbnail Image/Video</div>
           <div class="ss-field">
             <div id="modal-cover-thumb-zone" style="width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: var(--color-surface);">
-              <div id="modal-cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${_coverThumbnail ? 'display: none;' : ''}">
+              <div id="modal-cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${(_coverThumbnail || storyCoverVideo) ? 'display: none;' : ''}">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload cover image</p>
+                <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload thumbnail image or video</p>
               </div>
-              <img id="modal-cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${_coverThumbnail ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
+              <img id="modal-cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${(_coverThumbnail && !isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
+              <video id="modal-cover-video-preview" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover; ${(storyCoverVideo || isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${(storyCoverVideo || _coverThumbnail) ? `src="${storyCoverVideo || _coverThumbnail}"` : ''}></video>
             </div>
-            <input type="file" id="modal-cover-thumb-input" accept="image/*" style="display: none;" />
+            <input type="file" id="modal-cover-thumb-input" accept="image/*,video/*" style="display: none;" />
+          </div>
+          <div class="ss-field" style="margin-top: 10px;">
+            <label class="ss-field__label" for="ss-cover-video">Or Media Link (optional image/video URL)</label>
+            <input type="text" id="ss-cover-video" class="ss-field__input" value="${storyCoverVideo || ''}" placeholder="https://... (image or video URL)" />
           </div>
         </div>
 
@@ -329,10 +341,6 @@ function openStorySettings(): void {
               <option value="Mature" ${storyContentRating === 'Mature' ? 'selected' : ''}>Mature</option>
             </select>
           </div>
-          <div class="ss-field">
-            <label class="ss-field__label" for="ss-cover-video">Cover Video URL (optional)</label>
-            <input type="text" id="ss-cover-video" class="ss-field__input" value="${storyCoverVideo}" placeholder="https://..." />
-          </div>
         </div>
 
         <div class="ss-actions">
@@ -346,6 +354,7 @@ function openStorySettings(): void {
   const modalThumbZone = document.getElementById('modal-cover-thumb-zone');
   const modalThumbInput = document.getElementById('modal-cover-thumb-input') as HTMLInputElement;
   const modalThumbPreview = document.getElementById('modal-cover-thumb-preview') as HTMLImageElement;
+  const modalThumbVideoPreview = document.getElementById('modal-cover-video-preview') as HTMLVideoElement;
   const modalThumbPlaceholder = document.getElementById('modal-cover-thumb-placeholder');
 
   if (modalThumbZone && modalThumbInput) {
@@ -354,20 +363,60 @@ function openStorySettings(): void {
       const file = modalThumbInput.files?.[0];
       if (file) {
         try {
-          const dataUrl = await fileToDataUrl(file);
-          _coverThumbnail = await compressImage(dataUrl);
-          if (modalThumbPreview && modalThumbPlaceholder) {
-            modalThumbPreview.src = _coverThumbnail;
-            modalThumbPreview.style.display = 'block';
-            modalThumbPlaceholder.style.display = 'none';
+          const isVid = file.type.startsWith('video/');
+          if (isVid) {
+            const dataUrl = await fileToDataUrl(file);
+            storyCoverVideo = dataUrl;
+            _coverThumbnail = dataUrl;
+            if (modalThumbVideoPreview && modalThumbPreview && modalThumbPlaceholder) {
+              modalThumbVideoPreview.src = dataUrl;
+              modalThumbVideoPreview.style.display = 'block';
+              modalThumbPreview.style.display = 'none';
+              modalThumbPlaceholder.style.display = 'none';
+            }
+          } else {
+            const dataUrl = await fileToDataUrl(file);
+            _coverThumbnail = await compressImage(dataUrl);
+            storyCoverVideo = '';
+            if (modalThumbPreview && modalThumbVideoPreview && modalThumbPlaceholder) {
+              modalThumbPreview.src = _coverThumbnail;
+              modalThumbPreview.style.display = 'block';
+              modalThumbVideoPreview.style.display = 'none';
+              modalThumbPlaceholder.style.display = 'none';
+            }
           }
           saveDraft();
         } catch (e) {
-          console.error('Error compressing cover image', e);
+          console.error('Error uploading cover media', e);
         }
       }
     });
   }
+
+  const coverVideoInput = document.getElementById('ss-cover-video') as HTMLInputElement | null;
+  coverVideoInput?.addEventListener('input', () => {
+    const val = coverVideoInput.value.trim();
+    storyCoverVideo = val;
+    if (val) {
+      const isVid = isVideoMedia(val, val);
+      if (isVid) {
+        if (modalThumbVideoPreview && modalThumbPreview && modalThumbPlaceholder) {
+          modalThumbVideoPreview.src = val;
+          modalThumbVideoPreview.style.display = 'block';
+          modalThumbPreview.style.display = 'none';
+          modalThumbPlaceholder.style.display = 'none';
+        }
+      } else {
+        _coverThumbnail = val;
+        if (modalThumbPreview && modalThumbVideoPreview && modalThumbPlaceholder) {
+          modalThumbPreview.src = val;
+          modalThumbPreview.style.display = 'block';
+          modalThumbVideoPreview.style.display = 'none';
+          modalThumbPlaceholder.style.display = 'none';
+        }
+      }
+    }
+  });
 
   document.getElementById('ss-back')?.addEventListener('click', () => {
     getFormData();
@@ -402,7 +451,7 @@ function openStorySettings(): void {
       panels: selectedFormat === 'book' ? pages.map(p => p.image || '') : scrollPanels.map(p => p.image || ''),
       pageScripts: selectedFormat === 'book' ? Object.fromEntries(pages.map((p, i) => [i, p.text])) : Object.fromEntries(scrollPanels.map((p, i) => [i, p.notes])),
       contentRating: storyContentRating,
-      coverVideo: storyCoverVideo,
+      coverVideo: storyCoverVideo || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined),
       isOfficial: true,
       officialStatus: status,
     };
@@ -795,15 +844,16 @@ function renderBookCanvas(): string {
         </div>
         <div style="padding: 20px; display:flex; flex-direction:column; gap:16px;">
           <div class="page-section" style="margin-bottom: 16px;">
-            <label class="page-section__label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--color-text-muted); font-weight: 700;">Cover Thumbnail</label>
+            <label class="page-section__label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--color-text-muted); font-weight: 700;">Thumbnail Image/Video</label>
             <div id="cover-thumb-zone" style="width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: var(--color-surface);">
-              <div id="cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${_coverThumbnail ? 'display: none;' : ''}">
+              <div id="cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${(_coverThumbnail || storyCoverVideo) ? 'display: none;' : ''}">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload cover image</p>
+                <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload thumbnail image or video</p>
               </div>
-              <img id="cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${_coverThumbnail ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
+              <img id="cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${(_coverThumbnail && !isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
+              <video id="cover-video-preview" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover; ${(storyCoverVideo || isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${(storyCoverVideo || _coverThumbnail) ? `src="${storyCoverVideo || _coverThumbnail}"` : ''}></video>
             </div>
-            <input type="file" id="cover-thumb-input" accept="image/*" style="display: none;" />
+            <input type="file" id="cover-thumb-input" accept="image/*,video/*" style="display: none;" />
           </div>
           <div class="page0-form-group">
             <label class="page0-label">STORY TITLE</label>
@@ -2382,6 +2432,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         const thumbZone = document.getElementById('cover-thumb-zone');
         const thumbInput = document.getElementById('cover-thumb-input') as HTMLInputElement;
         const thumbPreview = document.getElementById('cover-thumb-preview') as HTMLImageElement;
+        const thumbVideoPreview = document.getElementById('cover-video-preview') as HTMLVideoElement;
         const thumbPlaceholder = document.getElementById('cover-thumb-placeholder');
 
         if (thumbZone && thumbInput) {
@@ -2390,16 +2441,31 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
             const file = thumbInput.files?.[0];
             if (file) {
               try {
-                const dataUrl = await fileToDataUrl(file);
-                _coverThumbnail = await compressImage(dataUrl);
-                if (thumbPreview && thumbPlaceholder) {
-                  thumbPreview.src = _coverThumbnail;
-                  thumbPreview.style.display = 'block';
-                  thumbPlaceholder.style.display = 'none';
+                const isVid = file.type.startsWith('video/');
+                if (isVid) {
+                  const dataUrl = await fileToDataUrl(file);
+                  storyCoverVideo = dataUrl;
+                  _coverThumbnail = dataUrl;
+                  if (thumbVideoPreview && thumbPreview && thumbPlaceholder) {
+                    thumbVideoPreview.src = dataUrl;
+                    thumbVideoPreview.style.display = 'block';
+                    thumbPreview.style.display = 'none';
+                    thumbPlaceholder.style.display = 'none';
+                  }
+                } else {
+                  const dataUrl = await fileToDataUrl(file);
+                  _coverThumbnail = await compressImage(dataUrl);
+                  storyCoverVideo = '';
+                  if (thumbPreview && thumbVideoPreview && thumbPlaceholder) {
+                    thumbPreview.src = _coverThumbnail;
+                    thumbPreview.style.display = 'block';
+                    thumbVideoPreview.style.display = 'none';
+                    thumbPlaceholder.style.display = 'none';
+                  }
                 }
                 saveDraft();
               } catch (e) {
-                console.error('Error compressing cover image', e);
+                console.error('Error uploading thumbnail media', e);
               }
             }
           });
