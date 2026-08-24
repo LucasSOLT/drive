@@ -259,6 +259,9 @@ function openStorySettings(): void {
   const wizard = document.getElementById('admin-admin-create-wizard');
   if (!wizard) return;
 
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  document.getElementById('app-content')?.scrollTo({ top: 0, behavior: 'instant' });
+
   const formatLabels: Record<string, string> = {
     'scroll': 'Waterfall Storyboard',
     'book': 'Illustrated Book',
@@ -726,13 +729,10 @@ function renderScrollCanvas(): string {
                 <label style="font-family:var(--font-heading); font-size:0.78rem; font-weight:600; color:var(--color-text-muted); display:block; margin-bottom:4px;">
                   Dialogue
                 </label>
-                <div style="position:relative;">
+                <div>
                   <textarea class="create-annotation__inline" data-notes="${i}"
                     placeholder="Add dialogue..."
-                    rows="2" style="width:100%; box-sizing:border-box; padding-bottom:28px;">${panel.notes}</textarea>
-                  <button class="dialogue-tts-btn" data-tts-panel="${i}" type="button" title="Read aloud">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                  </button>
+                    rows="2" style="width:100%; box-sizing:border-box;">${panel.notes}</textarea>
                 </div>
                 <div class="prerecord-row" style="margin-top:6px;">
                   <button class="prerecord-btn ${panel.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-scroll="${i}" type="button">
@@ -2232,25 +2232,6 @@ document.querySelectorAll('[data-color-ov]').forEach(btn => {
   });
 });
 
-// TTS play button for dialogue
-document.querySelectorAll('[data-tts-panel]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const panelIdx = parseInt(btn.getAttribute('data-tts-panel') || '0');
-    const text = scrollPanels[panelIdx]?.notes;
-    if (!text || !text.trim()) return;
-    // Stop any current speech
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 1.0;
-    utter.pitch = 1.0;
-    // Toggle button appearance
-    btn.classList.add('dialogue-tts-btn--playing');
-    utter.onend = () => btn.classList.remove('dialogue-tts-btn--playing');
-    utter.onerror = () => btn.classList.remove('dialogue-tts-btn--playing');
-    window.speechSynthesis.speak(utter);
-  });
-});
 
 // Pre-record button for waterfall dialogue
 document.querySelectorAll('[data-prerecord-scroll]').forEach(btn => {
