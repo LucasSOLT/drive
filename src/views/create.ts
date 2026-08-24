@@ -2255,11 +2255,13 @@ export function init(): void {
               ? `${prompt}, webtoon comic panel style, high detail. Characters: ${charContext}`
               : `${prompt}, webtoon comic panel style, high detail`;
             const result = await generateImage(fullPrompt, storySynopsis);
+            const compressed = await compressImage(result.imageUrl);
             // Set the generated image into the correct tile
             if (!scrollPanels[idx].tiles) scrollPanels[idx].tiles = [null];
             while (scrollPanels[idx].tiles.length <= targetTile) scrollPanels[idx].tiles.push(null);
-            scrollPanels[idx].tiles[targetTile] = result.imageUrl;
-            scrollPanels[idx].image = result.imageUrl; // keep legacy field in sync
+            scrollPanels[idx].tiles[targetTile] = compressed;
+            scrollPanels[idx].image = compressed; // keep legacy field in sync
+            saveDraft();
           } catch (err: any) {
             showModal({ title: 'Generation Error', content: `<p>${err.message}</p>`, confirmText: 'OK' });
           } finally {

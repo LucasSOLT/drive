@@ -88,6 +88,23 @@ body {
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
+  transition: max-width 0.2s ease;
+}
+
+@media (min-width: 640px) {
+  #app:has(.create-phase--canvas),
+  #app:has(.view-create--canvas),
+  #app:has(.view-create),
+  #app:has(.view-admin) {
+    max-width: 620px;
+  }
+}
+
+@media (min-width: 960px) {
+  #app:has(.create-phase--canvas),
+  #app:has(.view-create--canvas) {
+    max-width: 680px;
+  }
 }
 
 .app-shell {
@@ -5226,14 +5243,18 @@ button.profile-avatar {
 .book-single-view {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 12px;
   padding: var(--space-sm) 0 var(--space-md);
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .book-nav-arrow {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 1.5px solid var(--color-border);
   background: var(--color-surface);
@@ -5243,7 +5264,7 @@ button.profile-avatar {
   justify-content: center;
   cursor: pointer;
   transition: all 0.15s ease;
-  margin-top: 120px;
+  margin-top: 140px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 .book-nav-arrow:hover {
