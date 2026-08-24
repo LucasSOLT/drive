@@ -90,6 +90,8 @@ export async function speakText(text: string): Promise<void> {
 export async function preRecordAudio(text: string, stability = 0.5): Promise<string> {
   const voiceId = getSelectedVoiceId();
 
+  console.log('[TTS Pre-record] Calling ElevenLabs proxy with voice:', voiceId, 'stability:', stability, 'text length:', text.length);
+
   const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
     body: {
       endpoint: `/v1/text-to-speech/${voiceId}`,
@@ -97,13 +99,26 @@ export async function preRecordAudio(text: string, stability = 0.5): Promise<str
       body: {
         text,
         model_id: 'eleven_monolingual_v1',
-        voice_settings: { stability, similarity_boost: 0.75 },
+        voice_settings: { stability: Number(stability), similarity_boost: 0.75 },
       }
     }
   });
 
-  if (error || data?.error) {
-    throw new Error(data?.error || error?.message || 'TTS pre-recording failed');
+  if (error) {
+    console.error('[TTS Pre-record] Edge function error:', error);
+    // Try to extract a meaningful message
+    const msg = typeof error === 'object' && error.message ? error.message : String(error);
+    throw new Error(msg || 'TTS pre-recording failed');
+  }
+
+  if (data?.error) {
+    console.error('[TTS Pre-record] API error:', data.error);
+    throw new Error(data.error);
+  }
+
+  if (!data?.audio_base64) {
+    console.error('[TTS Pre-record] No audio data in response:', data);
+    throw new Error('No audio data returned from ElevenLabs.');
   }
 
   const contentType = data.content_type || 'audio/mpeg';

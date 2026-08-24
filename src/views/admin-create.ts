@@ -2503,6 +2503,25 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         });
 
         // Pre-record Audio for book page
+        const doPrerecordBookPage = async (pageIdx: number) => {
+          const text = bookPages[pageIdx].text;
+          const btn = wizard?.querySelector(`[data-prerecord-book="${pageIdx}"]`) as HTMLButtonElement | null;
+          const span = btn?.querySelector('span');
+          if (btn) btn.setAttribute('disabled', 'true');
+          if (span) span.textContent = 'Recording...';
+          try {
+            const audioUrl = await preRecordAudio(text, bookPages[pageIdx].stability ?? 0.5);
+            bookPages[pageIdx].audioUrl = audioUrl;
+            saveDraft();
+          } catch (err: any) {
+            console.error('[Pre-record] Failed:', err);
+            showModal({ title: 'Pre-record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
+          } finally {
+            if (btn) btn.removeAttribute('disabled');
+            updateView();
+          }
+        };
+
         wizard.querySelector(`[data-prerecord-book="${i}"]`)?.addEventListener('click', async (e) => {
           e.stopPropagation();
           const text = bookPages[i].text;
@@ -2525,24 +2544,6 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           }
           await doPrerecordBookPage(i);
         });
-
-        async function doPrerecordBookPage(pageIdx: number) {
-          const text = bookPages[pageIdx].text;
-          const btn = wizard?.querySelector(`[data-prerecord-book="${pageIdx}"]`) as HTMLButtonElement | null;
-          const span = btn?.querySelector('span');
-          if (btn) btn.setAttribute('disabled', 'true');
-          if (span) span.textContent = 'Recording...';
-          try {
-            const audioUrl = await preRecordAudio(text, bookPages[pageIdx].stability ?? 0.5);
-            bookPages[pageIdx].audioUrl = audioUrl;
-            saveDraft();
-          } catch (err: any) {
-            showModal({ title: 'Pre-record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
-          } finally {
-            if (btn) btn.removeAttribute('disabled');
-            updateView();
-          }
-        }
 
         // Play pre-recorded book audio
         wizard.querySelector(`[data-prerecord-play-book="${i}"]`)?.addEventListener('click', (e) => {
