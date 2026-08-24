@@ -68,6 +68,8 @@ let generatingPanelIdx: number | null = null;
 let selectedLayout: string = 'single';
 let layoutPickerOpen = false;
 let panelLayoutOverlay: number | null = null; // which panel has layout overlay open
+let selectedGenTile: Record<number, number | null> = {}; // per-panel selected tile for generation
+let promptActivePanel: number | null = null; // which panel's prompt input is active (has text)
 
 // Illustrated Book state
 interface BookPage {
@@ -386,15 +388,28 @@ function getTileCount(layout: string): number {
   }
 }
 
-function renderTileGrid(panelIndex: number, layout: string, tiles: (string | null)[], isGenerating: boolean): string {
+function renderTileGrid(panelIndex: number, layout: string, tiles: (string | null)[], isGenerating: boolean, generatingTile: number = 0): string {
   const count = getTileCount(layout);
   
   // Ensure tiles array has enough entries
   while (tiles.length < count) tiles.push(null);
+
+  // Show checkboxes when prompt is active for this panel
+  const showCheckboxes = promptActivePanel === panelIndex && count > 1;
+  const selTile = selectedGenTile[panelIndex] ?? null;
   
   const renderSingleTile = (tileIdx: number) => {
     const tileImage = tiles[tileIdx];
-    if (isGenerating && tileIdx === 0) {
+    const isSelected = selTile === tileIdx;
+
+    // Checkbox HTML (shown when user is typing in prompt)
+    const checkboxHtml = showCheckboxes ? `
+      <label class="tile-select-cb${isSelected ? ' tile-select-cb--checked' : ''}" data-select-tile="${tileIdx}" data-select-panel="${panelIndex}">
+        <span class="tile-select-cb__box">${isSelected ? '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><polyline points="3 8 7 12 13 4" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</span>
+      </label>
+    ` : '';
+
+    if (isGenerating && tileIdx === generatingTile) {
       return `
         <div class="panel-tile" data-tile="${tileIdx}" data-panel="${panelIndex}">
           <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--color-purple);">
@@ -432,7 +447,8 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
       }).join('');
 
       return `
-        <div class="panel-tile panel-tile--filled" data-tile="${tileIdx}" data-panel="${panelIndex}">
+        <div class="panel-tile panel-tile--filled${isSelected && showCheckboxes ? ' panel-tile--selected' : ''}" data-tile="${tileIdx}" data-panel="${panelIndex}">
+          ${checkboxHtml}
           <img src="${tileImage}" alt="Tile ${tileIdx + 1}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;" />
           <button class="panel-tile__add-text" data-addtext-tile="${tileIdx}" data-addtext-panel="${panelIndex}" type="button" title="Add text">T</button>
           <button class="panel-tile__remove" data-remove-tile="${tileIdx}" data-remove-panel="${panelIndex}" type="button" title="Remove image">&times;</button>
@@ -441,7 +457,8 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
       `;
     }
     return `
-      <div class="panel-tile" data-tile="${tileIdx}" data-panel="${panelIndex}">
+      <div class="panel-tile${isSelected && showCheckboxes ? ' panel-tile--selected' : ''}" data-tile="${tileIdx}" data-panel="${panelIndex}">
+        ${checkboxHtml}
         <div class="panel-tile__placeholder">
           ${ICON.upload}
           <span style="font-size:0.7rem; color:var(--color-text-muted);">Tile ${tileIdx + 1}</span>
@@ -566,7 +583,7 @@ function renderScrollCanvas(): string {
 
               <!-- Tile Grid Area -->
               <div class="webtoon-panel-wrap" style="position:relative;">
-                ${renderTileGrid(i, panel.layout || 'single', panel.tiles || [panel.image], isGeneratingThisPanel)}
+                ${renderTileGrid(i, panel.layout || 'single', panel.tiles || [panel.image], isGeneratingThisPanel, selectedGenTile[i] ?? 0)}
                 <input type="file" class="create-upload-block__input" data-file="${i}" accept="image/*" hidden>
                 
                 ${panel.notes && (panel.tiles?.[0] || panel.image) ? `
@@ -2113,12 +2130,57 @@ export function init(): void {
         }, 100);
       });
 
-      // Panel Prompts Input
+      // Panel Prompts Input — track active panel for checkbox visibility
       wizard.querySelectorAll('[data-panel-prompt]').forEach(input => {
         input.addEventListener('input', () => {
           const idx = parseInt(input.getAttribute('data-panel-prompt') || '0');
           scrollPrompts[idx] = (input as HTMLInputElement).value;
+          const hasText = (input as HTMLInputElement).value.trim().length > 0;
+          const tileCount = getTileCount(scrollPanels[idx].layout || 'single');
+
+          // Show/hide checkboxes based on whether prompt has text and panel has multiple tiles
+          const newActive = (hasText && tileCount > 1) ? idx : null;
+          if (newActive !== promptActivePanel) {
+            promptActivePanel = newActive;
+            updateView();
+            // Restore focus to the prompt input after re-render
+            requestAnimationFrame(() => {
+              const restored = document.querySelector(`[data-panel-prompt="${idx}"]`) as HTMLInputElement;
+              if (restored) {
+                restored.focus();
+                restored.setSelectionRange(restored.value.length, restored.value.length);
+              }
+            });
+            return;
+          }
           saveDraft();
+        });
+
+        // Enter key triggers generate
+        input.addEventListener('keydown', (e) => {
+          if ((e as KeyboardEvent).key === 'Enter') {
+            e.preventDefault();
+            const idx = parseInt(input.getAttribute('data-panel-prompt') || '0');
+            const genBtn = wizard.querySelector(`[data-gen-panel-ai="${idx}"]`) as HTMLButtonElement;
+            genBtn?.click();
+          }
+        });
+      });
+
+      // Tile selection checkboxes
+      wizard.querySelectorAll('[data-select-tile]').forEach(cb => {
+        cb.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const tileIdx = parseInt(cb.getAttribute('data-select-tile') || '0');
+          const panelIdx = parseInt(cb.getAttribute('data-select-panel') || '0');
+          // Toggle: if already selected, deselect; otherwise select
+          if (selectedGenTile[panelIdx] === tileIdx) {
+            selectedGenTile[panelIdx] = null;
+          } else {
+            selectedGenTile[panelIdx] = tileIdx;
+          }
+          updateView();
         });
       });
 
@@ -2130,6 +2192,20 @@ export function init(): void {
           fileInput?.click();
         });
       });
+
+      // Inline toast helper
+      const showGenToast = (msg: string) => {
+        let toast = document.getElementById('gen-toast');
+        if (!toast) {
+          toast = document.createElement('div');
+          toast.id = 'gen-toast';
+          toast.style.cssText = 'position:fixed; top:24px; left:50%; transform:translateX(-50%); background:rgba(30,30,50,0.92); color:#fff; padding:10px 24px; border-radius:12px; font-family:var(--font-heading); font-weight:700; font-size:0.85rem; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,0.3); opacity:0; transition:opacity 0.2s ease;';
+          document.body.appendChild(toast);
+        }
+        toast.textContent = msg;
+        toast.style.opacity = '1';
+        setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 2800);
+      };
 
       // Generate Single Panel with AI
       wizard.querySelectorAll('[data-gen-panel-ai]').forEach(btn => {
@@ -2146,6 +2222,29 @@ export function init(): void {
             return;
           }
 
+          // For multi-tile panels, require a tile to be selected
+          const tileCount = getTileCount(scrollPanels[idx].layout || 'single');
+          let targetTile = 0;
+          if (tileCount > 1) {
+            if (selectedGenTile[idx] == null) {
+              // Shake the prompt input and flash it red
+              const promptInput = wizard.querySelector(`[data-panel-prompt="${idx}"]`) as HTMLElement;
+              if (promptInput) {
+                promptInput.classList.add('prompt-shake');
+                promptInput.style.borderColor = '#ef4444';
+                promptInput.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.25)';
+                setTimeout(() => {
+                  promptInput.classList.remove('prompt-shake');
+                  promptInput.style.borderColor = '';
+                  promptInput.style.boxShadow = '';
+                }, 600);
+              }
+              showGenToast('⬆ Select a tile to generate into');
+              return;
+            }
+            targetTile = selectedGenTile[idx]!;
+          }
+
           generatingPanelIdx = idx;
           updateView();
 
@@ -2156,11 +2255,17 @@ export function init(): void {
               ? `${prompt}, webtoon comic panel style, high detail. Characters: ${charContext}`
               : `${prompt}, webtoon comic panel style, high detail`;
             const result = await generateImage(fullPrompt, storySynopsis);
-            scrollPanels[idx].image = result.imageUrl;
+            // Set the generated image into the correct tile
+            if (!scrollPanels[idx].tiles) scrollPanels[idx].tiles = [null];
+            while (scrollPanels[idx].tiles.length <= targetTile) scrollPanels[idx].tiles.push(null);
+            scrollPanels[idx].tiles[targetTile] = result.imageUrl;
+            scrollPanels[idx].image = result.imageUrl; // keep legacy field in sync
           } catch (err: any) {
             showModal({ title: 'Generation Error', content: `<p>${err.message}</p>`, confirmText: 'OK' });
           } finally {
             generatingPanelIdx = null;
+            selectedGenTile[idx] = null;
+            promptActivePanel = null;
             updateView();
           }
         });
@@ -2703,7 +2808,7 @@ document.querySelectorAll('[data-tts-panel]').forEach(btn => {
 
           isGenerating = true;
           generatingTileIndex = i;
-          bookPrompts[i] = '';
+          bookPrompts[i] = prompt; // save for redo
           if (promptInput) promptInput.value = '';
           updateView();
 

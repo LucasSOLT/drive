@@ -8442,6 +8442,58 @@ html.dark-mode ::-webkit-scrollbar-thumb {
   opacity: 0.5;
 }
 
+/* ─── Tile Selection Checkbox ─── */
+.tile-select-cb {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 10;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: tileCheckFadeIn 0.2s ease;
+}
+@keyframes tileCheckFadeIn {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+.tile-select-cb__box {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 2px solid rgba(139, 92, 246, 0.5);
+  background: rgba(30, 30, 50, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  backdrop-filter: blur(4px);
+}
+.tile-select-cb--checked .tile-select-cb__box {
+  background: var(--color-purple);
+  border-color: var(--color-purple);
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+}
+.panel-tile--selected {
+  outline: 2.5px solid var(--color-purple);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15);
+}
+
+/* ─── Prompt Shake Animation ─── */
+@keyframes promptShake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-6px); }
+  30% { transform: translateX(5px); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(3px); }
+  75% { transform: translateX(-2px); }
+}
+.prompt-shake {
+  animation: promptShake 0.45s ease;
+}
+
 /* Panel Gear Button */
 .panel-gear-btn {
   width: 30px;

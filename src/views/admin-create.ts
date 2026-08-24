@@ -65,6 +65,8 @@ let generatingPanelIdx: number | null = null;
 let selectedLayout: string = 'single';
 let layoutPickerOpen = false;
 let panelLayoutOverlay: number | null = null;
+let selectedGenTile: Record<number, number | null> = {};
+let promptActivePanel: number | null = null;
 
 // Illustrated Book state
 interface BookPage {
@@ -443,7 +445,7 @@ const layoutOptions = [
   { id: 'single', label: 'Single', cells: '<rect x="8" y="4" width="32" height="40" rx="3" fill="currentColor" opacity="0.25"/>'},
   { id: '2-stack', label: '2 Stack', cells: '<rect x="8" y="4" width="32" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="8" y="26" width="32" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
   { id: '2-side', label: '2 Side', cells: '<rect x="4" y="6" width="18" height="36" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="6" width="18" height="36" rx="3" fill="currentColor" opacity="0.25"/>'},
-  { id: '2x2', label: '2\\u00d72', cells: '<rect x="4" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
+  { id: '2x2', label: '2\u00d72', cells: '<rect x="4" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
   { id: '2top-1bot', label: '2T+1B', cells: '<rect x="4" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="40" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
   { id: '1top-2bot', label: '1T+2B', cells: '<rect x="4" y="4" width="40" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
 ];
@@ -457,15 +459,26 @@ function getTileCount(layout: string): number {
   }
 }
 
-function renderTileGrid(panelIndex: number, layout: string, tiles: (string | null)[], isGenerating: boolean): string {
+function renderTileGrid(panelIndex: number, layout: string, tiles: (string | null)[], isGenerating: boolean, generatingTile: number = 0): string {
   const count = getTileCount(layout);
   
   // Ensure tiles array has enough entries
   while (tiles.length < count) tiles.push(null);
+
+  const showCheckboxes = promptActivePanel === panelIndex && count > 1;
+  const selTile = selectedGenTile[panelIndex] ?? null;
   
   const renderSingleTile = (tileIdx: number) => {
     const tileImage = tiles[tileIdx];
-    if (isGenerating && tileIdx === 0) {
+    const isSelected = selTile === tileIdx;
+
+    const checkboxHtml = showCheckboxes ? `
+      <label class="tile-select-cb${isSelected ? ' tile-select-cb--checked' : ''}" data-select-tile="${tileIdx}" data-select-panel="${panelIndex}">
+        <span class="tile-select-cb__box">${isSelected ? '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><polyline points="3 8 7 12 13 4" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</span>
+      </label>
+    ` : '';
+
+    if (isGenerating && tileIdx === generatingTile) {
       return `
         <div class="panel-tile" data-tile="${tileIdx}" data-panel="${panelIndex}">
           <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--color-purple);">
@@ -476,7 +489,6 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
       `;
     }
     if (tileImage) {
-      // Get text overlays for this tile
       const overlays = (scrollPanels[panelIndex]?.textOverlays?.[tileIdx]) || [];
       const overlayHtml = overlays.map(ov => {
         if (ov.locked) {
@@ -484,26 +496,27 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
             <div class="text-overlay text-overlay--locked" data-ov-id="${ov.id}" data-ov-panel="${panelIndex}" data-ov-tile="${tileIdx}"
               style="left:${ov.x}%; top:${ov.y}%; font-size:${ov.fontSize}px; color:${ov.color};">
               <span class="text-overlay__content">${ov.text}</span>
-              <button class="text-overlay__edit-hint" data-unlock-ov="${ov.id}" data-unlock-panel="${panelIndex}" data-unlock-tile="${tileIdx}" type="button" title="Edit">âœ</button>
+              <button class="text-overlay__edit-hint" data-unlock-ov="${ov.id}" data-unlock-panel="${panelIndex}" data-unlock-tile="${tileIdx}" type="button" title="Edit">✏</button>
             </div>`;
         }
         return `
           <div class="text-overlay text-overlay--editing" data-ov-id="${ov.id}" data-ov-panel="${panelIndex}" data-ov-tile="${tileIdx}"
             style="left:${ov.x}%; top:${ov.y}%; font-size:${ov.fontSize}px; color:${ov.color};">
-            <div class="text-overlay__handle" data-drag-ov="${ov.id}" data-drag-panel="${panelIndex}" data-drag-tile="${tileIdx}" title="Drag to move">â ¿</div>
+            <div class="text-overlay__handle" data-drag-ov="${ov.id}" data-drag-panel="${panelIndex}" data-drag-tile="${tileIdx}" title="Drag to move">⠿</div>
             <div class="text-overlay__actions">
               <button class="text-overlay__color" data-color-ov="${ov.id}" data-color-panel="${panelIndex}" data-color-tile="${tileIdx}" type="button" title="Change color">
                 <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${ov.color};border:1.5px solid rgba(255,255,255,0.5);"></span>
               </button>
-              <button class="text-overlay__delete" data-del-ov="${ov.id}" data-del-panel="${panelIndex}" data-del-tile="${tileIdx}" type="button" title="Delete">ðŸ—‘</button>
-              <button class="text-overlay__commit" data-commit-ov="${ov.id}" data-commit-panel="${panelIndex}" data-commit-tile="${tileIdx}" type="button" title="Done">âœ“</button>
+              <button class="text-overlay__delete" data-del-ov="${ov.id}" data-del-panel="${panelIndex}" data-del-tile="${tileIdx}" type="button" title="Delete">🗑</button>
+              <button class="text-overlay__commit" data-commit-ov="${ov.id}" data-commit-panel="${panelIndex}" data-commit-tile="${tileIdx}" type="button" title="Done">✓</button>
             </div>
             <div class="text-overlay__content" contenteditable="true" data-edit-ov="${ov.id}" data-edit-panel="${panelIndex}" data-edit-tile="${tileIdx}">${ov.text}</div>
           </div>`;
       }).join('');
 
       return `
-        <div class="panel-tile panel-tile--filled" data-tile="${tileIdx}" data-panel="${panelIndex}">
+        <div class="panel-tile panel-tile--filled${isSelected && showCheckboxes ? ' panel-tile--selected' : ''}" data-tile="${tileIdx}" data-panel="${panelIndex}">
+          ${checkboxHtml}
           <img src="${tileImage}" alt="Tile ${tileIdx + 1}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;" />
           <button class="panel-tile__add-text" data-addtext-tile="${tileIdx}" data-addtext-panel="${panelIndex}" type="button" title="Add text">T</button>
           <button class="panel-tile__remove" data-remove-tile="${tileIdx}" data-remove-panel="${panelIndex}" type="button" title="Remove image">&times;</button>
@@ -512,7 +525,8 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
       `;
     }
     return `
-      <div class="panel-tile" data-tile="${tileIdx}" data-panel="${panelIndex}">
+      <div class="panel-tile${isSelected && showCheckboxes ? ' panel-tile--selected' : ''}" data-tile="${tileIdx}" data-panel="${panelIndex}">
+        ${checkboxHtml}
         <div class="panel-tile__placeholder">
           ${ICON.upload}
           <span style="font-size:0.7rem; color:var(--color-text-muted);">Tile ${tileIdx + 1}</span>
@@ -633,7 +647,7 @@ function renderScrollCanvas(): string {
 
               <!-- Tile Grid Area -->
               <div class="webtoon-panel-wrap" style="position:relative;">
-                ${renderTileGrid(i, panel.layout || 'single', panel.tiles || [panel.image], isGeneratingThisPanel)}
+                ${renderTileGrid(i, panel.layout || 'single', panel.tiles || [panel.image], isGeneratingThisPanel, selectedGenTile[i] ?? 0)}
                 <input type="file" class="create-upload-block__input" data-file="${i}" accept="image/*" hidden>
                 
                 ${panel.notes && (panel.tiles?.[0] || panel.image) ? `
@@ -1662,12 +1676,53 @@ const attachListeners = () => {
         }, 100);
       });
 
-      // Panel Prompts Input
+      // Panel Prompts Input — track active panel for checkbox visibility
       wizard.querySelectorAll('[data-panel-prompt]').forEach(input => {
         input.addEventListener('input', () => {
           const idx = parseInt(input.getAttribute('data-panel-prompt') || '0');
           scrollPrompts[idx] = (input as HTMLInputElement).value;
+          const hasText = (input as HTMLInputElement).value.trim().length > 0;
+          const tileCount = getTileCount(scrollPanels[idx].layout || 'single');
+
+          const newActive = (hasText && tileCount > 1) ? idx : null;
+          if (newActive !== promptActivePanel) {
+            promptActivePanel = newActive;
+            updateView();
+            requestAnimationFrame(() => {
+              const restored = document.querySelector(`[data-panel-prompt="${idx}"]`) as HTMLInputElement;
+              if (restored) {
+                restored.focus();
+                restored.setSelectionRange(restored.value.length, restored.value.length);
+              }
+            });
+            return;
+          }
           saveDraft();
+        });
+
+        input.addEventListener('keydown', (e) => {
+          if ((e as KeyboardEvent).key === 'Enter') {
+            e.preventDefault();
+            const idx = parseInt(input.getAttribute('data-panel-prompt') || '0');
+            const genBtn = wizard.querySelector(`[data-gen-panel-ai="${idx}"]`) as HTMLButtonElement;
+            genBtn?.click();
+          }
+        });
+      });
+
+      // Tile selection checkboxes
+      wizard.querySelectorAll('[data-select-tile]').forEach(cb => {
+        cb.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const tileIdx = parseInt(cb.getAttribute('data-select-tile') || '0');
+          const panelIdx = parseInt(cb.getAttribute('data-select-panel') || '0');
+          if (selectedGenTile[panelIdx] === tileIdx) {
+            selectedGenTile[panelIdx] = null;
+          } else {
+            selectedGenTile[panelIdx] = tileIdx;
+          }
+          updateView();
         });
       });
 
@@ -1679,6 +1734,20 @@ const attachListeners = () => {
           fileInput?.click();
         });
       });
+
+      // Inline toast helper
+      const showGenToast = (msg: string) => {
+        let toast = document.getElementById('gen-toast');
+        if (!toast) {
+          toast = document.createElement('div');
+          toast.id = 'gen-toast';
+          toast.style.cssText = 'position:fixed; top:24px; left:50%; transform:translateX(-50%); background:rgba(30,30,50,0.92); color:#fff; padding:10px 24px; border-radius:12px; font-family:var(--font-heading); font-weight:700; font-size:0.85rem; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,0.3); opacity:0; transition:opacity 0.2s ease;';
+          document.body.appendChild(toast);
+        }
+        toast.textContent = msg;
+        toast.style.opacity = '1';
+        setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 2800);
+      };
 
       // Generate Single Panel with AI
       wizard.querySelectorAll('[data-gen-panel-ai]').forEach(btn => {
@@ -1695,21 +1764,46 @@ const attachListeners = () => {
             return;
           }
 
+          const tileCount = getTileCount(scrollPanels[idx].layout || 'single');
+          let targetTile = 0;
+          if (tileCount > 1) {
+            if (selectedGenTile[idx] == null) {
+              const promptInput = wizard.querySelector(`[data-panel-prompt="${idx}"]`) as HTMLElement;
+              if (promptInput) {
+                promptInput.classList.add('prompt-shake');
+                promptInput.style.borderColor = '#ef4444';
+                promptInput.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.25)';
+                setTimeout(() => {
+                  promptInput.classList.remove('prompt-shake');
+                  promptInput.style.borderColor = '';
+                  promptInput.style.boxShadow = '';
+                }, 600);
+              }
+              showGenToast('⬆ Select a tile to generate into');
+              return;
+            }
+            targetTile = selectedGenTile[idx]!;
+          }
+
           generatingPanelIdx = idx;
           updateView();
 
           try {
-            // Build prompt with character context
             const charContext = characters.filter(c => c.description).map(c => `${c.name}: ${c.description}`).join('; ');
             const fullPrompt = charContext 
               ? `${prompt}, webtoon comic panel style, high detail. Characters: ${charContext}`
               : `${prompt}, webtoon comic panel style, high detail`;
             const result = await generateImage(fullPrompt, storySynopsis);
+            if (!scrollPanels[idx].tiles) scrollPanels[idx].tiles = [null];
+            while (scrollPanels[idx].tiles.length <= targetTile) scrollPanels[idx].tiles.push(null);
+            scrollPanels[idx].tiles[targetTile] = result.imageUrl;
             scrollPanels[idx].image = result.imageUrl;
           } catch (err: any) {
             showModal({ title: 'Generation Error', content: `<p>${err.message}</p>`, confirmText: 'OK' });
           } finally {
             generatingPanelIdx = null;
+            selectedGenTile[idx] = null;
+            promptActivePanel = null;
             updateView();
           }
         });
