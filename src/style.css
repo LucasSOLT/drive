@@ -3396,6 +3396,7 @@ button.profile-avatar {
   align-items: center;
   justify-content: center;
   width: 100%;
+  position: relative;
 }
 .reader__page img {
   max-width: 100%;
@@ -3451,6 +3452,86 @@ button.profile-avatar {
 }
 .reader__dot:hover {
   background: var(--color-purple-light);
+}
+
+/* Reader audio play/pause button (overlay on page image) */
+.reader-audio-btn {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(139, 92, 246, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 5;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.reader-audio-btn:hover {
+  background: rgba(139, 92, 246, 1);
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.reader-audio-btn:active {
+  transform: scale(0.95);
+}
+
+/* Reader text collapse/expand toggle button */
+.reader-text-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 6px auto 2px;
+  width: 36px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: var(--color-purple);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.reader-text-toggle:hover {
+  background: rgba(139, 92, 246, 0.22);
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+/* Script collapsed state */
+.reader__script--collapsed {
+  display: none !important;
+}
+
+/* Book viewer text toggle button */
+.bv-text-toggle {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 5;
+  backdrop-filter: blur(4px);
+}
+.bv-text-toggle:hover {
+  background: rgba(0, 0, 0, 0.75);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.08);
 }
 
 /* Comic (multi-panel grid) */

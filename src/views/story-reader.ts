@@ -4,6 +4,8 @@ import {
   getStoryLikes, hasUserLiked, toggleStoryLike,
   isBookmarked, toggleBookmark
 } from '../state.ts';
+import { stopSpeaking, isSpeaking, playAudioUrl } from '../lib/tts.ts';
+import { getSettings } from '../lib/settings.ts';
 
 
 // ─── SVG Icons ───
@@ -40,8 +42,13 @@ export function render(): string {
     contentHtml = `
       <div class="reader__scroll-content">
         ${story.panels.map((panel: string, i: number) => `
-          <div class="reader__panel">
+          <div class="reader__panel" data-panel-index="${i}">
             <img src="${panel}" alt="Panel ${i + 1}" loading="lazy">
+            ${story.pageAudio?.[i] ? `
+              <button class="reader-audio-btn" data-audio-panel="${i}" type="button" title="Play audio">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              </button>
+            ` : ''}
           </div>
         `).join('')}
       </div>
@@ -49,20 +56,30 @@ export function render(): string {
   } else if (story.format === 'book') {
     const isVideoPage = story.pageVideos && story.pageVideos[0];
     const scriptText = story.pageScripts && story.pageScripts[0] ? story.pageScripts[0] : '';
+    const hasAudio = !!story.pageAudio?.[0];
     const firstPageMedia = isVideoPage
       ? `<video id="book-video" src="${story.pageVideos![0]}" autoplay loop muted playsinline style="width:100%;height:auto;border-radius:8px;"></video>`
       : `<img id="book-img" src="${story.panels[0]}" alt="Page 1">`;
 
     contentHtml = `
       <div class="reader__book-content">
-        <div class="reader__page" id="book-page">
+        <div class="reader__page" id="book-page" style="position:relative;">
           ${firstPageMedia}
+          ${hasAudio ? `
+            <button class="reader-audio-btn" id="reader-audio-toggle" type="button" title="Play audio">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+          ` : ''}
         </div>
         ${scriptText ? `
-          <div class="reader__script" id="book-script" style="padding:1rem 1.25rem;margin:0.5rem auto;max-width:600px;background:rgba(0,0,0,0.6);border-radius:12px;backdrop-filter:blur(6px);">
+          <button class="reader-text-toggle" id="reader-text-toggle" type="button" title="Show story text">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/>
+            </svg>
+          </button>
+          <div class="reader__script reader__script--collapsed" id="book-script" style="padding:1rem 1.25rem;margin:0.5rem auto;max-width:600px;background:rgba(0,0,0,0.6);border-radius:12px;backdrop-filter:blur(6px);display:none;">
             ${scriptText.split('\n').map((line: string) => {
               if (!line.trim()) return '<br>';
-              // Highlight character names before the colon
               const match = line.match(/^(\w+)\s*\(([^)]+)\):\s*"([^"]*)"$/);
               if (match) {
                 return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">
@@ -288,25 +305,60 @@ export function init(): void {
   // ─── Book format page navigation ───
   if (story.format === 'book') {
     let currentPage = 0;
+    let scriptVisible = false;
     const totalPages = story.panels.length;
     const pageContainer = document.getElementById('book-page');
     const dotsContainer = document.getElementById('book-dots');
-    const scriptContainer = document.getElementById('book-script');
+    let scriptContainer = document.getElementById('book-script');
 
     const updatePage = () => {
       if (pageContainer) {
         const isVideo = story.pageVideos && story.pageVideos[currentPage];
+        const hasAudio = !!story.pageAudio?.[currentPage];
         if (isVideo) {
           pageContainer.innerHTML = `<video id="book-video" src="${story.pageVideos![currentPage]}" autoplay loop muted playsinline style="width:100%;height:auto;border-radius:8px;"></video>`;
         } else {
           pageContainer.innerHTML = `<img id="book-img" src="${story.panels[currentPage]}" alt="Page ${currentPage + 1}">`;
         }
+        // Add audio play button if page has audio
+        if (hasAudio) {
+          const audioBtn = document.createElement('button');
+          audioBtn.className = 'reader-audio-btn';
+          audioBtn.id = 'reader-audio-toggle';
+          audioBtn.title = isSpeaking() ? 'Pause audio' : 'Play audio';
+          audioBtn.innerHTML = isSpeaking()
+            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+          pageContainer.appendChild(audioBtn);
+          audioBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isSpeaking()) {
+              stopSpeaking();
+              audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+              audioBtn.title = 'Play audio';
+            } else {
+              playAudioUrl(story.pageAudio![currentPage]);
+              audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+              audioBtn.title = 'Pause audio';
+            }
+          });
+
+          // Autoplay if setting is on
+          if (getSettings().autoPlay) {
+            playAudioUrl(story.pageAudio![currentPage]);
+            audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+            audioBtn.title = 'Pause audio';
+          }
+        }
+
+        // Re-add position:relative for audio button positioning
+        pageContainer.style.position = 'relative';
       }
       // Update script text
+      scriptContainer = document.getElementById('book-script');
       if (scriptContainer) {
         const scriptText = story.pageScripts && story.pageScripts[currentPage] ? story.pageScripts[currentPage] : '';
         if (scriptText) {
-          scriptContainer.style.display = 'block';
           scriptContainer.innerHTML = scriptText.split('\n').map((line: string) => {
             if (!line.trim()) return '<br>';
             const match = line.match(/^(\w+)\s*\(([^)]+)\):\s*"([^"]*)"$/);
@@ -319,9 +371,18 @@ export function init(): void {
             }
             return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">${line}</p>`;
           }).join('');
+          scriptContainer.style.display = scriptVisible ? 'block' : 'none';
         } else {
           scriptContainer.style.display = 'none';
         }
+      }
+      // Update text toggle button icon
+      const toggleBtn = document.getElementById('reader-text-toggle');
+      if (toggleBtn) {
+        toggleBtn.innerHTML = scriptVisible
+          ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+          : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>`;
+        toggleBtn.title = scriptVisible ? 'Hide story text' : 'Show story text';
       }
       if (dotsContainer) {
         dotsContainer.querySelectorAll('.reader__dot').forEach((dot, i) => {
@@ -334,16 +395,23 @@ export function init(): void {
     };
 
     document.getElementById('book-prev')?.addEventListener('click', () => {
-      if (currentPage > 0) { currentPage--; updatePage(); }
+      if (currentPage > 0) { stopSpeaking(); currentPage--; updatePage(); }
     });
     document.getElementById('book-next')?.addEventListener('click', () => {
-      if (currentPage < totalPages - 1) { currentPage++; updatePage(); }
+      if (currentPage < totalPages - 1) { stopSpeaking(); currentPage++; updatePage(); }
+    });
+
+    // Text toggle
+    document.getElementById('reader-text-toggle')?.addEventListener('click', () => {
+      scriptVisible = !scriptVisible;
+      updatePage();
     });
 
     // Dot click navigation
     dotsContainer?.addEventListener('click', (e) => {
       const dot = (e.target as HTMLElement).closest('.reader__dot') as HTMLElement;
       if (dot) {
+        stopSpeaking();
         currentPage = parseInt(dot.dataset.page || '0', 10);
         updatePage();
       }
@@ -352,6 +420,65 @@ export function init(): void {
     updatePage();
   } else if (story.format === 'comic') {
     if (progressBar) progressBar.style.width = '100%';
+  }
+
+  // Waterfall autoplay with IntersectionObserver
+  if (story.format === 'scroll' && story.pageAudio) {
+    const settings = getSettings();
+    let currentPlayingPanel = -1;
+
+    // Wire up manual audio buttons
+    document.querySelectorAll('[data-audio-panel]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-audio-panel') || '0');
+        if (isSpeaking() && currentPlayingPanel === idx) {
+          stopSpeaking();
+          currentPlayingPanel = -1;
+          (btn as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+        } else {
+          stopSpeaking();
+          // Reset all buttons
+          document.querySelectorAll('[data-audio-panel]').forEach(b => {
+            (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+          });
+          const audioUrl = story.pageAudio![idx];
+          if (audioUrl) {
+            playAudioUrl(audioUrl);
+            currentPlayingPanel = idx;
+            (btn as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+          }
+        }
+      });
+    });
+
+    // Autoplay on scroll into view
+    if (settings.autoPlay) {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const idx = parseInt((entry.target as HTMLElement).getAttribute('data-panel-index') || '-1');
+            if (idx >= 0 && idx !== currentPlayingPanel && story.pageAudio![idx]) {
+              stopSpeaking();
+              // Reset all buttons
+              document.querySelectorAll('[data-audio-panel]').forEach(b => {
+                (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+              });
+              playAudioUrl(story.pageAudio![idx]);
+              currentPlayingPanel = idx;
+              const audioBtn = document.querySelector(`[data-audio-panel="${idx}"]`) as HTMLElement;
+              if (audioBtn) {
+                audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+              }
+            }
+          }
+        });
+      }, { threshold: 0.8 }); // 80% visible triggers autoplay
+
+      document.querySelectorAll('[data-panel-index]').forEach(panel => {
+        observer.observe(panel);
+      });
+    }
   }
 
   // ─── Comment button → fullscreen comments ───

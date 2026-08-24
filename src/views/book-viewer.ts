@@ -1,6 +1,7 @@
 import { getRouteParam, navigate } from '../router.ts';
 import { getUserStories } from '../state.ts';
-import { speakText, stopSpeaking, isSpeaking } from '../lib/tts.ts';
+import { speakText, stopSpeaking, isSpeaking, playAudioUrl } from '../lib/tts.ts';
+import { getSettings } from '../lib/settings.ts';
 
 // ─── Types ───
 interface StoryPage {
@@ -12,6 +13,7 @@ interface UserStoryWithPages {
   id: string;
   title: string;
   pages?: StoryPage[];
+  page_audio?: Record<number, string>;
 }
 
 // ─── SVG Icons ───
@@ -42,10 +44,19 @@ function renderPageImage(page: StoryPage, pageIndex: number): string {
   `;
 }
 
-function renderPageContent(page: StoryPage, pageIndex: number, totalPages: number, speaking: boolean): string {
+function renderPageContent(page: StoryPage, pageIndex: number, totalPages: number, speaking: boolean, hasAudio: boolean, textCollapsed: boolean): string {
   return `
     <div class="book-viewer__image-area" id="bv-image-area">
       ${renderPageImage(page, pageIndex)}
+      ${page.text ? `
+        <button class="bv-text-toggle" id="bv-text-toggle" aria-label="${textCollapsed ? 'Show' : 'Hide'} text" title="${textCollapsed ? 'Show' : 'Hide'} story text">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            ${textCollapsed
+              ? '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/>'
+              : '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'}
+          </svg>
+        </button>
+      ` : ''}
     </div>
 
     <nav class="book-viewer__nav" id="bv-nav">
@@ -59,13 +70,23 @@ function renderPageContent(page: StoryPage, pageIndex: number, totalPages: numbe
         >
           ${ICON.prevArrow}
         </button>
-        <button
-          class="book-viewer__circle-btn book-viewer__circle-btn--speaker ${speaking ? 'book-viewer__circle-btn--speaking' : ''}"
-          id="bv-speaker"
-          aria-label="${speaking ? 'Stop reading' : 'Read aloud'}"
-        >
-          ${speaking ? ICON.speakerActive : ICON.speaker}
-        </button>
+        ${hasAudio ? `
+          <button
+            class="book-viewer__circle-btn book-viewer__circle-btn--speaker ${speaking ? 'book-viewer__circle-btn--speaking' : ''}"
+            id="bv-audio-toggle"
+            aria-label="${speaking ? 'Pause audio' : 'Play audio'}"
+          >
+            ${speaking ? ICON.speakerActive : ICON.speaker}
+          </button>
+        ` : `
+          <button
+            class="book-viewer__circle-btn book-viewer__circle-btn--speaker ${speaking ? 'book-viewer__circle-btn--speaking' : ''}"
+            id="bv-speaker"
+            aria-label="${speaking ? 'Stop reading' : 'Read aloud'}"
+          >
+            ${speaking ? ICON.speakerActive : ICON.speaker}
+          </button>
+        `}
         <button
           class="book-viewer__circle-btn book-viewer__circle-btn--next"
           id="bv-next"
@@ -77,10 +98,12 @@ function renderPageContent(page: StoryPage, pageIndex: number, totalPages: numbe
       </div>
     </nav>
 
-    <div class="book-viewer__text-area" id="bv-text">
-      <p class="book-viewer__text">${page.text}</p>
-      <div class="book-viewer__page-indicator">${pageIndex + 1} / ${totalPages}</div>
-    </div>
+    ${textCollapsed ? '' : `
+      <div class="book-viewer__text-area" id="bv-text">
+        <p class="book-viewer__text">${page.text}</p>
+        <div class="book-viewer__page-indicator">${pageIndex + 1} / ${totalPages}</div>
+      </div>
+    `}
   `;
 }
 
@@ -104,7 +127,7 @@ export function render(): string {
       </button>
 
       <div class="book-viewer__body" id="bv-body">
-        ${renderPageContent(pages[0], 0, pages.length, false)}
+        ${renderPageContent(pages[0], 0, pages.length, false, !!(story as any).page_audio?.[0], true)}
       </div>
     </div>
   `;
@@ -122,6 +145,8 @@ export function init(): void {
   const totalPages = pages.length;
   let currentPage = 0;
   let speaking = false;
+  let textCollapsed = true;
+  const pageAudio = story.page_audio || {};
 
   // ─── Back button ───
   document.getElementById('bv-back')?.addEventListener('click', () => {
@@ -134,8 +159,20 @@ export function init(): void {
     const body = document.getElementById('bv-body');
     if (!body) return;
 
-    body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking);
+    const hasAudio = !!pageAudio[currentPage];
+    body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking, hasAudio, textCollapsed);
     wirePageControls();
+
+    // Autoplay if setting is on and page has pre-recorded audio
+    if (getSettings().autoPlay && hasAudio && !speaking) {
+      speaking = true;
+      playAudioUrl(pageAudio[currentPage]);
+      // Update UI to show speaking state
+      const audioBtn = document.getElementById('bv-audio-toggle');
+      if (audioBtn) {
+        audioBtn.classList.add('book-viewer__circle-btn--speaking');
+      }
+    }
   }
 
   // ─── Wire up interactive controls on the current page ───
@@ -160,7 +197,23 @@ export function init(): void {
       }
     });
 
-    // Speaker
+    // Pre-recorded audio toggle
+    document.getElementById('bv-audio-toggle')?.addEventListener('click', () => {
+      if (isSpeaking()) {
+        stopSpeaking();
+        speaking = false;
+        updatePage();
+      } else {
+        const audioUrl = pageAudio[currentPage];
+        if (audioUrl) {
+          speaking = true;
+          playAudioUrl(audioUrl);
+          updatePage();
+        }
+      }
+    });
+
+    // Live TTS fallback (no pre-recorded audio)
     document.getElementById('bv-speaker')?.addEventListener('click', () => {
       if (isSpeaking()) {
         stopSpeaking();
@@ -180,6 +233,12 @@ export function init(): void {
           });
         }
       }
+    });
+
+    // Text collapse toggle
+    document.getElementById('bv-text-toggle')?.addEventListener('click', () => {
+      textCollapsed = !textCollapsed;
+      updatePage();
     });
   }
 
