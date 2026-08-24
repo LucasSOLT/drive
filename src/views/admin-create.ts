@@ -3,7 +3,7 @@ import { genres } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { generateImage } from '../lib/image-gen.ts';
-import { speakText, stopSpeaking, isSpeaking } from '../lib/tts.ts';
+import { speakText, stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl } from '../lib/tts.ts';
 import { cleanUpText } from '../lib/groq.ts';
 import { saveOfficialStory, fetchOfficialStories } from '../lib/db.ts';
 
@@ -36,13 +36,14 @@ interface ScrollPanel {
   layout: string;
   tiles: (string | null)[];
   textOverlays: TextOverlay[][];
+  audioUrl: string | null;
 }
 let scrollPanels: ScrollPanel[] = [
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]] },
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]] },
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]] },
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]] },
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]] },
+  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
+  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
+  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
+  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
+  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
 ];
 let scrollPrompts: string[] = ['', '', '', '', ''];
 // Character Sheet Studio state
@@ -74,8 +75,9 @@ interface BookPage {
   text: string;
   stability: number;
   deeperDiveContent: string;
+  audioUrl: string | null;
 }
-const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '' });
+const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null });
 let bookPages: BookPage[] = [
   defaultBookPage(), defaultBookPage(), defaultBookPage(),
   defaultBookPage(), defaultBookPage(),
@@ -230,6 +232,7 @@ function loadDraft(draft: DraftEntry) {
     layout: p.layout || 'single',
     tiles: p.tiles || [p.image || null],
     textOverlays: p.textOverlays || [[]],
+    audioUrl: p.audioUrl || null,
   }));
   scrollPrompts = draft.scrollPrompts || Array.from({ length: scrollPanels.length }, () => '');
   characters = draft.characters || [
@@ -713,6 +716,18 @@ function renderScrollCanvas(): string {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                   </button>
                 </div>
+                <div class="prerecord-row" style="margin-top:6px;">
+                  <button class="prerecord-btn ${panel.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-scroll="${i}" type="button">
+                    ${panel.audioUrl
+                      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg> <span>Pre-recorded</span>`
+                      : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg> <span>Pre-record</span>`}
+                  </button>
+                  ${panel.audioUrl ? `
+                    <button class="prerecord-play-btn" data-prerecord-play-scroll="${i}" type="button" title="Preview audio">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    </button>
+                  ` : ''}
+                </div>
               </div>
 
             </div>
@@ -856,6 +871,19 @@ function renderBookCanvas(): string {
           </div>
           <input type="range" class="book-tile__voice-slider" data-tile-stability="${i}"
             min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
+        </div>
+
+        <div class="prerecord-row">
+          <button class="prerecord-btn ${page.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-book="${i}" type="button">
+            ${page.audioUrl
+              ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg> <span>Pre-recorded</span>`
+              : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg> <span>Pre-record</span>`}
+          </button>
+          ${page.audioUrl ? `
+            <button class="prerecord-play-btn" data-prerecord-play-book="${i}" type="button" title="Preview audio">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+          ` : ''}
         </div>
 
         <!-- Deeper Dive -->
@@ -1427,12 +1455,12 @@ export function init(): void {
 
         if (selectedFormat === 'book') {
            bookPages = storyToEdit.panels.map((p, i) => ({
-             image: p, text: storyToEdit.pageScripts?.[i] || '', stability: 0.5, deeperDiveContent: ''
+             image: p, text: storyToEdit.pageScripts?.[i] || '', stability: 0.5, deeperDiveContent: '', audioUrl: null
            }));
            bookPrompts = Array.from({length: bookPages.length}, () => '');
         } else {
            scrollPanels = storyToEdit.panels.map((p, i) => ({
-             image: p, notes: storyToEdit.pageScripts?.[i] || '', layout: 'single', tiles: [p], textOverlays: [[]]
+             image: p, notes: storyToEdit.pageScripts?.[i] || '', layout: 'single', tiles: [p], textOverlays: [[]], audioUrl: null
            }));
            scrollPrompts = Array.from({length: scrollPanels.length}, () => '');
         }
@@ -1913,7 +1941,7 @@ const attachListeners = () => {
 
       // Add tile (dotted placeholder)
       document.getElementById('btn-add-tile')?.addEventListener('click', () => {
-        scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]] });
+        scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
         scrollPrompts.push('');
         updateView();
       });
@@ -2192,6 +2220,62 @@ document.querySelectorAll('[data-tts-panel]').forEach(btn => {
   });
 });
 
+// Pre-record button for waterfall dialogue
+document.querySelectorAll('[data-prerecord-scroll]').forEach(btn => {
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const idx = parseInt(btn.getAttribute('data-prerecord-scroll') || '0');
+    const text = scrollPanels[idx]?.notes;
+    if (!text || !text.trim()) {
+      showModal({ title: 'No Dialogue', content: '<p>Write some dialogue text first before pre-recording.</p>', confirmText: 'OK' });
+      return;
+    }
+    if (scrollPanels[idx].audioUrl) {
+      showModal({
+        title: 'Re-record Audio',
+        content: '<p style="line-height:1.6;">Would you like to re-record the dialogue audio? This will replace the existing recording.</p>',
+        confirmText: 'Yes, Re-record',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+          hideModal();
+          await doPrerecordScroll(idx, btn as HTMLButtonElement);
+        }
+      });
+      return;
+    }
+    await doPrerecordScroll(idx, btn as HTMLButtonElement);
+  });
+});
+
+async function doPrerecordScroll(idx: number, btn: HTMLButtonElement) {
+  const text = scrollPanels[idx].notes;
+  const span = btn.querySelector('span');
+  btn.setAttribute('disabled', 'true');
+  if (span) span.textContent = 'Recording...';
+  try {
+    const audioUrl = await preRecordAudio(text, 0.5);
+    scrollPanels[idx].audioUrl = audioUrl;
+    saveDraft();
+  } catch (err: any) {
+    showModal({ title: 'Pre-record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
+  } finally {
+    btn.removeAttribute('disabled');
+    updateView();
+  }
+}
+
+// Play pre-recorded waterfall audio
+document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const idx = parseInt(btn.getAttribute('data-prerecord-play-scroll') || '0');
+    const audioUrl = scrollPanels[idx]?.audioUrl;
+    if (audioUrl) {
+      if (isSpeaking()) { stopSpeaking(); } else { playAudioUrl(audioUrl); }
+    }
+  });
+});
+
       // Tile click to upload (delegate from tile grid)
       document.querySelectorAll('.panel-tile').forEach(tile => {
         tile.addEventListener('click', (e) => {
@@ -2416,6 +2500,57 @@ document.querySelectorAll('[data-tts-panel]').forEach(btn => {
           const pctEl = wizard.querySelector(`[data-tile-stability-pct="${i}"]`);
           if (pctEl) pctEl.textContent = Math.round(val * 100) + '%';
           saveDraft();
+        });
+
+        // Pre-record Audio for book page
+        wizard.querySelector(`[data-prerecord-book="${i}"]`)?.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const text = bookPages[i].text;
+          if (!text || !text.trim()) {
+            showModal({ title: 'No Story Text', content: '<p>Write some story text first before pre-recording.</p>', confirmText: 'OK' });
+            return;
+          }
+          if (bookPages[i].audioUrl) {
+            showModal({
+              title: 'Re-record Audio',
+              content: '<p style="line-height:1.6;">Would you like to re-record the story text? This will replace the existing recording.</p>',
+              confirmText: 'Yes, Re-record',
+              cancelText: 'Cancel',
+              onConfirm: async () => {
+                hideModal();
+                await doPrerecordBookPage(i);
+              }
+            });
+            return;
+          }
+          await doPrerecordBookPage(i);
+        });
+
+        async function doPrerecordBookPage(pageIdx: number) {
+          const text = bookPages[pageIdx].text;
+          const btn = wizard?.querySelector(`[data-prerecord-book="${pageIdx}"]`) as HTMLButtonElement | null;
+          const span = btn?.querySelector('span');
+          if (btn) btn.setAttribute('disabled', 'true');
+          if (span) span.textContent = 'Recording...';
+          try {
+            const audioUrl = await preRecordAudio(text, bookPages[pageIdx].stability ?? 0.5);
+            bookPages[pageIdx].audioUrl = audioUrl;
+            saveDraft();
+          } catch (err: any) {
+            showModal({ title: 'Pre-record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
+          } finally {
+            if (btn) btn.removeAttribute('disabled');
+            updateView();
+          }
+        }
+
+        // Play pre-recorded book audio
+        wizard.querySelector(`[data-prerecord-play-book="${i}"]`)?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const audioUrl = bookPages[i]?.audioUrl;
+          if (audioUrl) {
+            if (isSpeaking()) { stopSpeaking(); } else { playAudioUrl(audioUrl); }
+          }
         });
 
         // Deeper Dive toggle

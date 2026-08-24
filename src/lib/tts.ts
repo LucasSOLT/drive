@@ -81,3 +81,58 @@ export async function speakText(text: string): Promise<void> {
     stopSpeaking();
   }
 }
+
+/**
+ * Pre-record audio for the given text using ElevenLabs.
+ * Returns a base64 data URL (audio/mpeg) that can be stored and played later.
+ * Uses the user's selected voice and the given stability setting.
+ */
+export async function preRecordAudio(text: string, stability = 0.5): Promise<string> {
+  const voiceId = getSelectedVoiceId();
+
+  const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
+    body: {
+      endpoint: `/v1/text-to-speech/${voiceId}`,
+      method: 'POST',
+      body: {
+        text,
+        model_id: 'eleven_monolingual_v1',
+        voice_settings: { stability, similarity_boost: 0.75 },
+      }
+    }
+  });
+
+  if (error || data?.error) {
+    throw new Error(data?.error || error?.message || 'TTS pre-recording failed');
+  }
+
+  const contentType = data.content_type || 'audio/mpeg';
+  return `data:${contentType};base64,${data.audio_base64}`;
+}
+
+/** Play a pre-recorded audio URL (base64 data URL or blob URL). */
+export function playAudioUrl(url: string): void {
+  stopSpeaking();
+  const audio = new Audio(url);
+  currentAudio = audio;
+  // No object URL to revoke for base64 data URLs
+  currentObjectURL = null;
+
+  audio.addEventListener('ended', () => {
+    if (currentAudio === audio) {
+      stopSpeaking();
+    }
+  });
+
+  audio.addEventListener('error', () => {
+    console.warn('[TTS] Pre-recorded audio playback error.');
+    if (currentAudio === audio) {
+      stopSpeaking();
+    }
+  });
+
+  audio.play().catch(err => {
+    console.warn('[TTS] Failed to play pre-recorded audio:', err);
+    stopSpeaking();
+  });
+}
