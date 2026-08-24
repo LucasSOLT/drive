@@ -1,7 +1,7 @@
 import type { StoryFormat, Genre, UserStory } from '../types.ts';
 import { genres } from '../data/stories.ts';
-import { addUserStory, isLibraryUnlocked, canCreateStory, getTokensRemaining, getUserPlan, consumeToken } from '../state.ts';
-import { navigate } from '../router.ts';
+import { addUserStory, getUserStories, isLibraryUnlocked, canCreateStory, getTokensRemaining, getUserPlan, consumeToken } from '../state.ts';
+import { navigate, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { generateImage } from '../lib/image-gen.ts';
 import { speakText, stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl } from '../lib/tts.ts';
@@ -1533,41 +1533,89 @@ function renderPhase(): string {
 }
 
 export function render(): string {
-  // Restore session state if available (page refresh), otherwise reset
-  const savedPhase = sessionStorage.getItem('drive_create_phase') as CreatePhase | null;
-  const savedFormat = sessionStorage.getItem('drive_create_format') as StoryFormat | null;
-  const savedDraftId = sessionStorage.getItem('drive_create_draft_id');
+  const routeParam = getRouteParam();
 
-  if (savedPhase && savedPhase !== 'landing' && savedPhase !== 'format') {
-    // Try to restore full draft data (images, layouts, prompts, etc.)
-    if (savedDraftId && loadDraft(savedDraftId)) {
-      // loadDraft restored everything including phase/format
-      phase = savedPhase;
-      if (savedFormat) selectedFormat = savedFormat;
+  if (routeParam) {
+    if (loadDraft(routeParam)) {
+      phase = 'canvas';
     } else {
-      // No draft to restore — just set phase/format
-      phase = savedPhase;
-      selectedFormat = savedFormat || selectedFormat;
+      const userStory = getUserStories().find(s => s.id === routeParam);
+      if (userStory) {
+        activeDraftId = userStory.id;
+        phase = 'canvas';
+        selectedFormat = userStory.format;
+        storyTitle = userStory.title;
+        storyGenre = userStory.genre;
+        storySynopsis = userStory.synopsis || '';
+        storyAuthorName = userStory.author_name || '';
+        _coverThumbnail = userStory.coverImage || null;
+        storyCoverVideo = userStory.coverVideo || '';
+        storyContentRating = (userStory.contentRating as any) || 'All Ages';
+
+        const pages = userStory.pages || userStory.live_pages || [];
+        if (selectedFormat === 'book') {
+          bookPages = pages.length > 0
+            ? pages.map((p, i) => ({
+                image: p.image,
+                text: p.text || '',
+                stability: (p as any).stability ?? 0.5,
+                deeperDiveContent: (p as any).deeperDiveContent || '',
+                audioUrl: userStory.page_audio?.[i] || null,
+              }))
+            : Array.from({ length: 5 }, () => defaultBookPage());
+          bookPrompts = Array.from({ length: bookPages.length }, () => '');
+        } else {
+          scrollPanels = pages.length > 0
+            ? pages.map((p, i) => ({
+                image: p.image,
+                notes: p.text || '',
+                layout: 'single',
+                tiles: [p.image],
+                textOverlays: [[]],
+                audioUrl: userStory.page_audio?.[i] || null,
+              }))
+            : Array.from({ length: 5 }, () => ({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null }));
+          scrollPrompts = Array.from({ length: scrollPanels.length }, () => '');
+        }
+      }
     }
   } else {
-    phase = 'format';
-    activeDraftId = null;
-    selectedFormat = null;
-    storyTitle = '';
-    storyGenre = 'Fantasy';
-    storySynopsis = '';
-    storyHashtags = '';
-    storyMediaType = 'static';
-    storyAuthorName = '';
-    storyCustomGenre = '';
-    storyContentRating = 'All Ages';
-    scrollPanels = Array.from({ length: 5 }, () => ({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null }));
-    _coverThumbnail = null;
-    storyCoverVideo = '';
-    bookPages = Array.from({ length: 5 }, () => defaultBookPage());
-    bookPrompts = ['', '', '', '', ''];
-    currentPage = 0;
-    isGenerating = false;
+    // Restore session state if available (page refresh), otherwise reset
+    const savedPhase = sessionStorage.getItem('drive_create_phase') as CreatePhase | null;
+    const savedFormat = sessionStorage.getItem('drive_create_format') as StoryFormat | null;
+    const savedDraftId = sessionStorage.getItem('drive_create_draft_id');
+
+    if (savedPhase && savedPhase !== 'landing' && savedPhase !== 'format') {
+      // Try to restore full draft data (images, layouts, prompts, etc.)
+      if (savedDraftId && loadDraft(savedDraftId)) {
+        // loadDraft restored everything including phase/format
+        phase = savedPhase;
+        if (savedFormat) selectedFormat = savedFormat;
+      } else {
+        // No draft to restore — just set phase/format
+        phase = savedPhase;
+        selectedFormat = savedFormat || selectedFormat;
+      }
+    } else {
+      phase = 'format';
+      activeDraftId = null;
+      selectedFormat = null;
+      storyTitle = '';
+      storyGenre = 'Fantasy';
+      storySynopsis = '';
+      storyHashtags = '';
+      storyMediaType = 'static';
+      storyAuthorName = '';
+      storyCustomGenre = '';
+      storyContentRating = 'All Ages';
+      scrollPanels = Array.from({ length: 5 }, () => ({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null }));
+      _coverThumbnail = null;
+      storyCoverVideo = '';
+      bookPages = Array.from({ length: 5 }, () => defaultBookPage());
+      bookPrompts = ['', '', '', '', ''];
+      currentPage = 0;
+      isGenerating = false;
+    }
   }
 
   const isCanvas = phase === 'canvas';
@@ -1579,6 +1627,38 @@ export function render(): string {
       </div>
     </div>
   `;
+}
+
+function getFormData(): void {
+  storyTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value || storyTitle || 'Untitled';
+  storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || '';
+  storyGenre = ((document.getElementById('ss-genre') as HTMLSelectElement)?.value || 'Fantasy') as Genre;
+  storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || '';
+  storyHashtags = (document.getElementById('ss-hashtags') as HTMLInputElement)?.value || '';
+  storyCustomGenre = (document.getElementById('ss-custom-genre') as HTMLInputElement)?.value || '';
+  storyContentRating = ((document.getElementById('ss-rating') as HTMLSelectElement)?.value || 'All Ages') as any;
+  storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || storyCoverVideo || '';
+}
+
+function buildStory(status: 'draft' | 'under-review'): UserStory {
+  getFormData();
+  const pages = selectedFormat === 'book'
+    ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent }))
+    : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
+  return {
+    id: activeDraftId || 'us-' + Date.now(),
+    title: storyTitle,
+    author_name: storyAuthorName,
+    genre: storyGenre === 'Custom' ? storyCustomGenre as any : storyGenre,
+    format: selectedFormat as StoryFormat,
+    synopsis: storySynopsis,
+    status,
+    createdAt: new Date().toISOString(),
+    pages,
+    coverImage: _coverThumbnail || pages[0]?.image || '',
+    coverVideo: storyCoverVideo || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined),
+    contentRating: storyContentRating as any,
+  };
 }
 
 export function init(): void {
@@ -1869,38 +1949,6 @@ export function init(): void {
     });
 
     // Save / Submit handlers
-    const getFormData = () => {
-      storyTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value || storyTitle || 'Untitled';
-      storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || '';
-      storyGenre = ((document.getElementById('ss-genre') as HTMLSelectElement)?.value || 'Fantasy') as Genre;
-      storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || '';
-      storyHashtags = (document.getElementById('ss-hashtags') as HTMLInputElement)?.value || '';
-      storyCustomGenre = (document.getElementById('ss-custom-genre') as HTMLInputElement)?.value || '';
-      storyContentRating = ((document.getElementById('ss-rating') as HTMLSelectElement)?.value || 'All Ages') as any;
-      storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || storyCoverVideo || '';
-    };
-
-    const buildStory = (status: 'draft' | 'under-review'): UserStory => {
-      getFormData();
-      const pages = selectedFormat === 'book'
-        ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent }))
-        : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
-      return {
-        id: 'us-' + Date.now(),
-        title: storyTitle,
-        author_name: storyAuthorName,
-        genre: storyGenre === 'Custom' ? storyCustomGenre as any : storyGenre,
-        format: selectedFormat as StoryFormat,
-        synopsis: storySynopsis,
-        status,
-        createdAt: new Date().toISOString(),
-        pages,
-        coverImage: _coverThumbnail || pages[0]?.image || '',
-        coverVideo: storyCoverVideo || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined),
-        contentRating: storyContentRating as any,
-      };
-    };
-
     document.getElementById('ss-save-draft')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget as HTMLButtonElement;
       btn.disabled = true;
@@ -1943,6 +1991,7 @@ export function init(): void {
   function promptSaveDraftUser(): void {
     if (storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled') {
       saveDraft();
+      addUserStory(buildStory('draft')).catch(e => console.warn('Failed to save draft user story to DB', e));
       hideModal();
       navigate('library');
       return;
@@ -1960,7 +2009,7 @@ export function init(): void {
       `,
       confirmText: 'Save Draft',
       cancelText: 'Cancel',
-      onConfirm: () => {
+      onConfirm: async () => {
         const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
         const enteredTitle = input?.value.trim();
         if (!enteredTitle) {
@@ -1973,6 +2022,11 @@ export function init(): void {
         if (page0Title) page0Title.value = enteredTitle;
 
         saveDraft();
+        try {
+          await addUserStory(buildStory('draft'));
+        } catch (e) {
+          console.warn('Failed to save draft user story to DB', e);
+        }
         hideModal();
         navigate('library');
       },

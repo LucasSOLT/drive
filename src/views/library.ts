@@ -1,7 +1,8 @@
-import type { UserStory } from '../types.ts';
+import type { UserStory, Story } from '../types.ts';
 import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteUserStory, getUserPlan, getUserSubscription, canCreateStory, getTokensRemaining, getCreditsBalance } from '../state.ts';
 import { navigate } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
+import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory } from '../lib/db.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -18,27 +19,30 @@ function renderUserStoryCard(story: UserStory): string {
     'denied': '#EF4444',
   };
   const statusColor = statusColors[story.status] || '#9CA3AF';
+  const isDraft = story.status === 'draft';
   const canView = story.status === 'under-review' || story.status === 'published';
   const isDenied = story.status === 'denied';
-  const coverImage = story.pages?.[0]?.image || story.live_pages?.[0]?.image;
+  const coverImage = story.coverImage || story.pages?.[0]?.image || story.live_pages?.[0]?.image;
 
   return `
     <div class="lib-card slide-up" data-story-id="${story.id}">
       <div class="lib-card__cover">
-        ${coverImage
-          ? `<img class="lib-card__cover-img" src="${coverImage}" alt="${story.title}">`
-          : `<div class="lib-card__cover-empty">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
-                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
-              </svg>
-            </div>`
+        ${story.coverVideo
+          ? `<video class="lib-card__cover-img" src="${story.coverVideo}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          : coverImage
+            ? `<img class="lib-card__cover-img" src="${coverImage}" alt="${story.title}">`
+            : `<div class="lib-card__cover-empty">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+                </svg>
+              </div>`
         }
         <span class="lib-card__format">${story.format}</span>
       </div>
       <div class="lib-card__body">
         <h3 class="lib-card__title">${story.title}</h3>
         <div class="lib-card__meta">
-          <span class="lib-card__status" style="color:${statusColor}; font-weight:700;">\u25CF ${story.status.replace('-', ' ')}</span>
+          <span class="lib-card__status" style="color:${statusColor}; font-weight:700;">● ${story.status.replace('-', ' ')}</span>
           <span class="lib-card__date">${new Date(story.createdAt).toLocaleDateString()}</span>
         </div>
 
@@ -50,10 +54,88 @@ function renderUserStoryCard(story: UserStory): string {
         ` : ''}
 
         <div class="lib-card__actions">
+          ${isDraft ? `<button class="lib-card__btn lib-card__btn--edit" data-edit-user="${story.id}" style="background:#8B5CF6; color:white;" title="Edit Draft">✏️ Edit</button>` : ''}
           ${canView ? `<button class="lib-card__btn lib-card__btn--view" data-view="${story.id}" title="View">${ICON.eye} View</button>` : ''}
           ${isDenied ? `<button class="lib-card__btn" data-resubmit="${story.id}" style="background:#8B5CF6; color:white;" title="Resubmit">🔄 Edit & Resubmit</button>` : ''}
           <button class="lib-card__btn lib-card__btn--share" data-share="${story.id}" title="Share">${ICON.share}</button>
           <button class="lib-card__btn lib-card__btn--delete" data-delete="${story.id}" title="Delete">${ICON.trash}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAdminDraftCard(story: Story): string {
+  const coverImage = story.coverImage || story.panels?.[0];
+  return `
+    <div class="lib-card slide-up" data-admin-story-id="${story.id}">
+      <div class="lib-card__cover">
+        ${story.coverVideo
+          ? `<video class="lib-card__cover-img" src="${story.coverVideo}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          : coverImage
+            ? `<img class="lib-card__cover-img" src="${coverImage}" alt="${story.title}">`
+            : `<div class="lib-card__cover-empty">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+                </svg>
+              </div>`
+        }
+        <span class="lib-card__format">${story.format}</span>
+      </div>
+      <div class="lib-card__body">
+        <h3 class="lib-card__title">${story.title}</h3>
+        <div class="lib-card__meta">
+          <span class="lib-card__status" style="color:#A78BFA; font-weight:700;">● Admin Draft</span>
+          <span class="lib-card__date">${story.genre || 'Draft'}</span>
+        </div>
+
+        <div class="lib-card__actions">
+          <button class="lib-card__btn lib-card__btn--edit" data-edit-admin="${story.id}" data-format="${story.format}" style="background:#8B5CF6; color:white;" title="Edit Admin Draft">✏️ Edit</button>
+          <button class="lib-card__btn lib-card__btn--delete" data-delete-admin="${story.id}" title="Delete">${ICON.trash}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getLocalAdminDraft(): any | null {
+  try {
+    const data = localStorage.getItem('drive_admin_create_draft');
+    if (!data) return null;
+    const parsed = JSON.parse(data);
+    if (parsed && parsed.storyTitle && parsed.storyTitle !== 'Untitled') return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function renderLocalAdminDraftCard(draft: any): string {
+  return `
+    <div class="lib-card slide-up" data-local-admin-draft="true">
+      <div class="lib-card__cover">
+        ${draft.storyCoverVideo
+          ? `<video class="lib-card__cover-img" src="${draft.storyCoverVideo}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          : draft.coverThumbnail || draft.scrollPanels?.[0]?.image || draft.bookPages?.[0]?.image
+            ? `<img class="lib-card__cover-img" src="${draft.coverThumbnail || draft.scrollPanels?.[0]?.image || draft.bookPages?.[0]?.image}" alt="${draft.storyTitle}">`
+            : `<div class="lib-card__cover-empty">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+                </svg>
+              </div>`
+        }
+        <span class="lib-card__format">${draft.selectedFormat || 'scroll'}</span>
+      </div>
+      <div class="lib-card__body">
+        <h3 class="lib-card__title">${draft.storyTitle || 'Unsaved Storyboard'}</h3>
+        <div class="lib-card__meta">
+          <span class="lib-card__status" style="color:#A78BFA; font-weight:700;">● Admin Draft</span>
+          <span class="lib-card__date">${draft.storyGenre || 'Draft'}</span>
+        </div>
+
+        <div class="lib-card__actions">
+          <button class="lib-card__btn lib-card__btn--edit" data-resume-local-admin="true" data-format="${draft.selectedFormat || 'scroll'}" style="background:#8B5CF6; color:white;" title="Resume Draft">✏️ Edit</button>
+          <button class="lib-card__btn lib-card__btn--delete" data-delete-local-admin="true" title="Delete">${ICON.trash}</button>
         </div>
       </div>
     </div>
@@ -147,6 +229,25 @@ export function render(): string {
             `
           }
         </div>
+
+        ${hasAdminPrivileges() ? `
+          <div class="admin-drafts-section slide-up stagger-3" style="margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
+            <div class="section__header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:1.2rem;">🛠️</span>
+                <h2 class="section__title" style="margin: 0; color: #A78BFA;">Admin Storyboards & Drafts</h2>
+              </div>
+              <button class="btn btn--secondary btn--sm" id="admin-create-new-btn" style="border-radius: 20px; padding: 0.5rem 1rem;">+ New Admin Storyboard</button>
+            </div>
+            <div id="admin-drafts-grid" class="lib-grid">
+              ${(() => {
+                const localDraft = getLocalAdminDraft();
+                return localDraft ? renderLocalAdminDraftCard(localDraft) : '';
+              })()}
+              <div id="admin-drafts-loading" style="grid-column: 1 / -1; padding: 1rem; color: var(--color-text-muted); font-size: 0.85rem;">Loading admin drafts...</div>
+            </div>
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
@@ -426,6 +527,118 @@ export function init(): void {
     });
   }
 
+  // Edit user story draft
+  container.querySelectorAll('[data-edit-user]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const storyId = btn.getAttribute('data-edit-user');
+      if (storyId) {
+        navigate(`create/${storyId}`);
+      }
+    });
+  });
+
+  // If admin, load and wire official drafts
+  if (hasAdminPrivileges()) {
+    const adminGrid = document.getElementById('admin-drafts-grid');
+    const loadingEl = document.getElementById('admin-drafts-loading');
+    const adminCreateBtn = document.getElementById('admin-create-new-btn');
+
+    adminCreateBtn?.addEventListener('click', () => {
+      navigate('admin-create');
+    });
+
+    fetchOfficialStories().then(stories => {
+      if (loadingEl) loadingEl.remove();
+      const drafts = stories.filter(s => s.officialStatus === 'draft' || (s as any).status === 'draft');
+      const localDraft = getLocalAdminDraft();
+
+      let html = '';
+      if (localDraft && !drafts.some(d => d.id === localDraft.editStoryId)) {
+        html += renderLocalAdminDraftCard(localDraft);
+      }
+      html += drafts.map(d => renderAdminDraftCard(d)).join('');
+
+      if (adminGrid) {
+        if (html.trim()) {
+          adminGrid.innerHTML = html;
+          wireAdminDraftListeners();
+        } else {
+          adminGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; padding: 1.5rem; background: var(--color-surface); border-radius: var(--radius-lg); border: 1px dashed var(--color-border); text-align: center; color: var(--color-text-muted); font-size: 0.85rem;">
+              No saved admin draft storyboards.
+            </div>
+          `;
+        }
+      }
+    }).catch(err => {
+      console.error('Failed to load official drafts', err);
+      if (loadingEl) loadingEl.textContent = 'Could not load admin drafts.';
+    });
+
+    function wireAdminDraftListeners() {
+      container?.querySelectorAll('[data-edit-admin]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const storyId = btn.getAttribute('data-edit-admin');
+          const format = btn.getAttribute('data-format') || 'book';
+          if (storyId) {
+            navigate(`admin-create/${storyId}?format=${format}`);
+          }
+        });
+      });
+
+      container?.querySelectorAll('[data-resume-local-admin]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const format = btn.getAttribute('data-format') || 'scroll';
+          navigate(`admin-create?format=${format}`);
+        });
+      });
+
+      container?.querySelectorAll('[data-delete-local-admin]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          showModal({
+            title: 'Delete Local Admin Draft',
+            content: '<p style="line-height:1.6;">Are you sure you want to discard this local draft? This cannot be undone.</p>',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            onConfirm: () => {
+              localStorage.removeItem('drive_admin_create_draft');
+              const viewContainer = document.getElementById('view-container');
+              if (viewContainer) {
+                viewContainer.innerHTML = render();
+                init();
+              }
+            }
+          });
+        });
+      });
+
+      container?.querySelectorAll('[data-delete-admin]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const storyId = btn.getAttribute('data-delete-admin');
+          if (!storyId) return;
+          showModal({
+            title: 'Delete Admin Draft',
+            content: '<p style="line-height:1.6;">Are you sure you want to delete this admin draft storyboard? This cannot be undone.</p>',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            onConfirm: async () => {
+              try {
+                await deleteOfficialStory(storyId);
+                const viewContainer = document.getElementById('view-container');
+                if (viewContainer) {
+                  viewContainer.innerHTML = render();
+                  init();
+                }
+              } catch (e) {
+                console.error('Failed to delete official draft', e);
+              }
+            }
+          });
+        });
+      });
+    }
+  }
+
   // View story buttons
   container.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -468,7 +681,7 @@ export function init(): void {
 
       const shareUrl = `${window.location.origin}${window.location.pathname}#shared/${storyId}`;
       const shareData = {
-        title: `${story.title} \u2014 DRiVE`,
+        title: `${story.title} — DRiVE`,
         text: story.synopsis || `Check out "${story.title}" on DRiVE!`,
         url: shareUrl,
       };
@@ -500,7 +713,7 @@ export function init(): void {
 
       showModal({
         title: 'Delete Story',
-        content: `<p style="line-height:1.6;">Are you sure you want to delete <strong>\u201C${story.title}\u201D</strong>? This cannot be undone.</p>`,
+        content: `<p style="line-height:1.6;">Are you sure you want to delete <strong>“${story.title}”</strong>? This cannot be undone.</p>`,
         confirmText: 'Delete',
         cancelText: 'Cancel',
         onConfirm: () => {

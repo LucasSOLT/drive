@@ -25,7 +25,7 @@ export function getCurrentRoute(): string {
 export function getRouteParam(): string | null {
   const route = getCurrentRoute();
   const parts = route.split('/');
-  return parts.length > 1 ? parts[1] : null;
+  return parts.length > 1 ? parts[1].split('?')[0] : null;
 }
 
 // Routes that require authentication
