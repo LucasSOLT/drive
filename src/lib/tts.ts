@@ -40,7 +40,7 @@ export async function speakText(text: string): Promise<void> {
         method: 'POST',
         body: {
           text,
-          model_id: 'eleven_monolingual_v1',
+          model_id: 'eleven_v3',
           voice_settings: { stability: 0.5, similarity_boost: 0.75 },
         }
       }
@@ -98,7 +98,7 @@ export async function preRecordAudio(text: string, stability = 0.5): Promise<str
       method: 'POST',
       body: {
         text,
-        model_id: 'eleven_monolingual_v1',
+        model_id: 'eleven_v3',
         voice_settings: { stability: Number(stability), similarity_boost: 0.75 },
       }
     }
