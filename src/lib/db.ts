@@ -94,6 +94,7 @@ export async function loadUserData(): Promise<void> {
       status: s.status || 'draft',
       createdAt: s.created_at,
       pages: s.pages || [],
+      coverImage: s.cover_image || '',
       live_pages: s.live_pages || undefined,
       rejectionReason: s.rejection_reason || undefined,
       contentRating: s.content_rating || 'All Ages',
@@ -320,6 +321,7 @@ export async function saveUserStory(story: UserStory): Promise<void> {
         synopsis: story.synopsis || '',
         status: story.status || 'draft',
         pages: story.pages || [],
+        cover_image: story.coverImage || '',
       })
       .select('id')
       .single();
@@ -620,6 +622,7 @@ export async function fetchAdminStories(
     status: s.status || 'draft',
     createdAt: s.created_at,
     pages: s.pages || [],
+    coverImage: s.cover_image || '',
     live_pages: s.live_pages || undefined,
     rejectionReason: s.rejection_reason || undefined,
     contentRating: s.content_rating || 'All Ages',
@@ -714,6 +717,7 @@ export async function fetchPublishedExploreStories(): Promise<UserStory[]> {
     status: 'published',
     createdAt: s.created_at,
     pages: s.live_pages || s.pages || [],
+    coverImage: s.cover_image || '',
     page_audio: s.page_audio || {},
     contentRating: s.content_rating || 'All Ages',
     isFeatured: s.is_featured || false,
@@ -721,6 +725,10 @@ export async function fetchPublishedExploreStories(): Promise<UserStory[]> {
     readCount: s.read_count || 0,
     sortOrder: s.sort_order || 0,
   }));
+}
+
+export async function fetchFeaturedStories(): Promise<Story[]> {
+  return fetchUnifiedExploreStories({ featuredOnly: true });
 }
 
 // ═══════════════════════════════════════════════

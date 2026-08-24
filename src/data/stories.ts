@@ -103,12 +103,27 @@ export const stories: Story[] = [
 ];
 
 import { getUserStoryById } from '../state.ts';
+import { fetchLiveOfficialStories } from '../lib/db.ts';
+
+let liveOfficialStories: Story[] = [];
+
+// Pre-fetch live official stories in the background
+fetchLiveOfficialStories()
+  .then(res => {
+    liveOfficialStories = res;
+  })
+  .catch(console.error);
 
 export function getStoryById(id: string): Story | undefined {
+  // 1. Check live official stories from Supabase
+  const liveFound = liveOfficialStories.find(s => s.id === id);
+  if (liveFound) return liveFound;
+
+  // 2. Fallback to static stories
   const staticFound = stories.find(s => s.id === id);
   if (staticFound) return staticFound;
 
-  // Fallback to user stories in state
+  // 3. Fallback to user stories in state
   const userStory = getUserStoryById(id);
   if (userStory) {
     const pages = userStory.live_pages || userStory.pages || [];

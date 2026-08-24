@@ -37,6 +37,7 @@ export interface UserStory {
   status: 'draft' | 'under-review' | 'published' | 'denied';
   createdAt: string;
   pages?: { image: string | null; text: string }[];
+  coverImage?: string;
   live_pages?: { image: string | null; text: string }[];
   page_audio?: Record<number, string>;   // pre-rendered audio URLs
   rejectionReason?: string;

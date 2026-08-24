@@ -86,6 +86,7 @@ let currentPage = 0;
 let isGenerating = false;
 let generatingTileIndex: number | null = null;
 let activeDraftId: string | null = null;
+let _coverThumbnail: string | null = null;
 
 // ─── SVG Icons ───
 const ICON = {
@@ -679,6 +680,17 @@ function renderBookCanvas(): string {
           <span class="book-tile__label" style="font-size:0.8rem;">PAGE 0: STORY SETTINGS</span>
         </div>
         <div style="padding: 20px; display:flex; flex-direction:column; gap:16px;">
+          <div class="page-section" style="margin-bottom: 16px;">
+            <label class="page-section__label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--color-text-muted); font-weight: 700;">Cover Thumbnail</label>
+            <div id="cover-thumb-zone" style="width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: var(--color-surface);">
+              <div id="cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${_coverThumbnail ? 'display: none;' : ''}">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload cover image</p>
+              </div>
+              <img id="cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${_coverThumbnail ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
+            </div>
+            <input type="file" id="cover-thumb-input" accept="image/*" style="display: none;" />
+          </div>
           <div class="page0-form-group">
             <label class="page0-label">STORY TITLE</label>
             <input type="text" class="page0-input" id="page0-title" placeholder="Give your story a name..." value="${storyTitle}">
@@ -1544,6 +1556,21 @@ export function init(): void {
         </div>
 
         <div class="story-settings-fs__body">
+          <!-- Cover Thumbnail Section -->
+          <div class="ss-section">
+            <div class="ss-section__label">Cover Thumbnail</div>
+            <div class="ss-field">
+              <div id="modal-cover-thumb-zone" style="width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: var(--color-surface);">
+                <div id="modal-cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${_coverThumbnail ? 'display: none;' : ''}">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload cover image</p>
+                </div>
+                <img id="modal-cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${_coverThumbnail ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
+              </div>
+              <input type="file" id="modal-cover-thumb-input" accept="image/*" style="display: none;" />
+            </div>
+          </div>
+
           <!-- Story Info Section -->
           <div class="ss-section">
             <div class="ss-section__label">Story Information</div>
@@ -1644,6 +1671,32 @@ export function init(): void {
     `;
 
     // Wire up listeners
+    const modalThumbZone = document.getElementById('modal-cover-thumb-zone');
+    const modalThumbInput = document.getElementById('modal-cover-thumb-input') as HTMLInputElement;
+    const modalThumbPreview = document.getElementById('modal-cover-thumb-preview') as HTMLImageElement;
+    const modalThumbPlaceholder = document.getElementById('modal-cover-thumb-placeholder');
+
+    if (modalThumbZone && modalThumbInput) {
+      modalThumbZone.addEventListener('click', () => modalThumbInput.click());
+      modalThumbInput.addEventListener('change', async () => {
+        const file = modalThumbInput.files?.[0];
+        if (file) {
+          try {
+            const dataUrl = await fileToDataUrl(file);
+            _coverThumbnail = await compressImage(dataUrl);
+            if (modalThumbPreview && modalThumbPlaceholder) {
+              modalThumbPreview.src = _coverThumbnail;
+              modalThumbPreview.style.display = 'block';
+              modalThumbPlaceholder.style.display = 'none';
+            }
+            saveDraft();
+          } catch (e) {
+            console.error('Error compressing cover image', e);
+          }
+        }
+      });
+    }
+
     document.getElementById('ss-back')?.addEventListener('click', () => {
       // Save field values back to state before returning
       const titleEl = document.getElementById('ss-title') as HTMLInputElement;
@@ -1715,6 +1768,7 @@ export function init(): void {
         status,
         createdAt: new Date().toISOString(),
         pages,
+        coverImage: _coverThumbnail || pages[0]?.image || '',
         contentRating: storyContentRating as any,
       };
     };
@@ -2578,6 +2632,32 @@ document.querySelectorAll('[data-tts-panel]').forEach(btn => {
 
       if (i === -1) {
         // Page 0: Settings inputs
+        const thumbZone = document.getElementById('cover-thumb-zone');
+        const thumbInput = document.getElementById('cover-thumb-input') as HTMLInputElement;
+        const thumbPreview = document.getElementById('cover-thumb-preview') as HTMLImageElement;
+        const thumbPlaceholder = document.getElementById('cover-thumb-placeholder');
+
+        if (thumbZone && thumbInput) {
+          thumbZone.addEventListener('click', () => thumbInput.click());
+          thumbInput.addEventListener('change', async () => {
+            const file = thumbInput.files?.[0];
+            if (file) {
+              try {
+                const dataUrl = await fileToDataUrl(file);
+                _coverThumbnail = await compressImage(dataUrl);
+                if (thumbPreview && thumbPlaceholder) {
+                  thumbPreview.src = _coverThumbnail;
+                  thumbPreview.style.display = 'block';
+                  thumbPlaceholder.style.display = 'none';
+                }
+                saveDraft();
+              } catch (e) {
+                console.error('Error compressing cover image', e);
+              }
+            }
+          });
+        }
+
         document.getElementById('page0-title')?.addEventListener('input', (e) => {
           storyTitle = (e.target as HTMLInputElement).value;
           saveDraft();
@@ -2795,6 +2875,7 @@ document.querySelectorAll('[data-tts-panel]').forEach(btn => {
               status: 'under-review',
               createdAt: new Date().toISOString(),
               pages,
+              coverImage: _coverThumbnail || pages[0]?.image || '',
             };
             try {
               await addUserStory(newStory);

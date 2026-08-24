@@ -1,6 +1,36 @@
 import { navigate } from '../router.ts';
 import { renderStoryCard, initVideoCovers } from '../components/story-card.ts';
 import { stories, getFeaturedStories, getEditorPicks } from '../data/stories.ts';
+import { fetchFeaturedStories, fetchUnifiedExploreStories } from '../lib/db.ts';
+import type { Story } from '../types.ts';
+
+function renderFeaturedRows(allCards: Story[]): string {
+  const card1 = allCards[0];
+  const card2 = allCards[1];
+  const card3 = allCards[2] || allCards[0];
+  const card4 = allCards[3] || allCards[1] || allCards[0];
+
+  return `
+  <!-- Row 1: Big left, Small right -->
+  <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md); margin-bottom:var(--space-md);">
+    <div style="flex:3; position:relative;">
+      ${card1 ? renderStoryCard(card1, 'hero') : ''}
+    </div>
+    <div style="flex:2;">
+      ${card2 ? renderStoryCard(card2, 'full') : ''}
+    </div>
+  </div>
+  <!-- Row 2: Small left, Big right (inverted!) -->
+  <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md);">
+    <div style="flex:2;">
+      ${card3 ? renderStoryCard(card3, 'full') : ''}
+    </div>
+    <div style="flex:3; position:relative;">
+      ${card4 ? renderStoryCard(card4, 'hero') : ''}
+    </div>
+  </div>
+  `;
+}
 
 export function render(): string {
   return `
@@ -46,36 +76,14 @@ export function render(): string {
           <h2 class="section__title">Featured</h2>
           <a href="#featured" class="section__see-all" data-link="featured">See all</a>
         </div>
-        ${(() => {
-          const editorPicks = getEditorPicks();
-          const featured = getFeaturedStories();
-          const allCards = [...new Map([...editorPicks, ...featured].map(s => [s.id, s])).values()];
-          const card1 = allCards[0];
-          const card2 = allCards[1];
-          const card3 = allCards[2] || allCards[0];
-          const card4 = allCards[3] || allCards[1] || allCards[0];
-
-          return `
-          <!-- Row 1: Big left, Small right -->
-          <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md); margin-bottom:var(--space-md);">
-            <div style="flex:3; position:relative;">
-              ${card1 ? renderStoryCard(card1, 'hero') : ''}
-            </div>
-            <div style="flex:2;">
-              ${card2 ? renderStoryCard(card2, 'full') : ''}
-            </div>
-          </div>
-          <!-- Row 2: Small left, Big right (inverted!) -->
-          <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md);">
-            <div style="flex:2;">
-              ${card3 ? renderStoryCard(card3, 'full') : ''}
-            </div>
-            <div style="flex:3; position:relative;">
-              ${card4 ? renderStoryCard(card4, 'hero') : ''}
-            </div>
-          </div>
-          `;
-        })()}
+        <div id="home-featured-grid">
+          ${(() => {
+            const editorPicks = getEditorPicks();
+            const featured = getFeaturedStories();
+            const allCards = [...new Map([...editorPicks, ...featured].map(s => [s.id, s])).values()];
+            return renderFeaturedRows(allCards);
+          })()}
+        </div>
       </section>
 
       <!-- ===== BEST-SELLING SECTION ===== -->
@@ -84,7 +92,7 @@ export function render(): string {
           <h2 class="section__title">Best-Selling</h2>
           <a href="#explore" class="section__see-all" data-link="explore">See all</a>
         </div>
-        <div class="scroll-row no-scrollbar" style="padding: 0 1rem;">
+        <div class="scroll-row no-scrollbar" id="home-bestselling-grid" style="padding: 0 1rem;">
           ${[...stories].sort((a, b) => b.readCount - a.readCount).map(story => renderStoryCard(story, 'full')).join('')}
         </div>
       </section>
@@ -164,6 +172,37 @@ export function init(): void {
 
   // Enable hover-to-play on video covers
   initVideoCovers(container);
+
+  // Fetch live stories and update sections
+  (async () => {
+    try {
+      const [featuredLive, allExplore] = await Promise.all([
+        fetchFeaturedStories(),
+        fetchUnifiedExploreStories()
+      ]);
+      
+      const featuredGrid = document.getElementById('home-featured-grid');
+      if (featuredGrid && featuredLive.length > 0) {
+        // Merge with static fallbacks
+        const editorPicks = getEditorPicks();
+        const staticFeatured = getFeaturedStories();
+        const allCards = [...new Map([...featuredLive, ...editorPicks, ...staticFeatured].map(s => [s.id, s])).values()];
+        featuredGrid.innerHTML = renderFeaturedRows(allCards);
+        initVideoCovers(featuredGrid);
+      }
+
+      const bestGrid = document.getElementById('home-bestselling-grid');
+      if (bestGrid && allExplore.length > 0) {
+        const staticStories = [...stories];
+        const allBestselling = [...new Map([...allExplore, ...staticStories].map(s => [s.id, s])).values()]
+          .sort((a, b) => b.readCount - a.readCount);
+        bestGrid.innerHTML = allBestselling.map(story => renderStoryCard(story, 'full')).join('');
+        initVideoCovers(bestGrid);
+      }
+    } catch (err) {
+      console.error('Failed to fetch live home stories:', err);
+    }
+  })();
 
   container.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;

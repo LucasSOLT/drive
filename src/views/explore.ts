@@ -2,7 +2,7 @@ import type { Story, UserStory } from '../types.ts';
 import { stories as staticStories, genres } from '../data/stories.ts';
 import { renderStoryCard, initVideoCovers } from '../components/story-card.ts';
 import { navigate } from '../router.ts';
-import { fetchPublishedExploreStories } from '../lib/db.ts';
+import { fetchUnifiedExploreStories } from '../lib/db.ts';
 
 function mapUserStoryToStory(us: UserStory): Story {
   return {
@@ -12,7 +12,7 @@ function mapUserStoryToStory(us: UserStory): Story {
     genre: us.genre,
     format: us.format,
     synopsis: us.synopsis || '',
-    coverImage: us.pages?.[0]?.image || us.live_pages?.[0]?.image || '',
+    coverImage: us.coverImage || us.pages?.[0]?.image || us.live_pages?.[0]?.image || '',
     readCount: us.readCount || 0,
     isFeatured: us.isFeatured || false,
     isEditorPick: us.isEditorsPick || false,
@@ -72,14 +72,13 @@ export async function init(): Promise<void> {
     viewTitle.style.letterSpacing = '0.5px';
   }
 
-  // Combine static stories with live published user stories from Supabase
+  // Combine static stories with live published stories from Supabase
   let allStories: Story[] = [...staticStories];
   try {
-    const publishedUserStories = await fetchPublishedExploreStories();
-    const mapped = publishedUserStories.map(mapUserStoryToStory);
-    allStories = [...mapped, ...staticStories];
+    const unifiedStories = await fetchUnifiedExploreStories();
+    allStories = [...unifiedStories, ...staticStories];
   } catch (err) {
-    console.error('Failed to fetch published user stories:', err);
+    console.error('Failed to fetch explore stories:', err);
   }
 
   let currentSearch = '';
