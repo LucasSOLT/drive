@@ -555,9 +555,22 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
   return `<div class="${gridClass}">${Array.from({length: count}, (_, i) => renderSingleTile(i)).join('')}</div>`;
 }
 
+function renderStudioOrbs(): string {
+  return `
+    <div class="studio-orbs">
+      <div class="studio-orb studio-orb--1"></div>
+      <div class="studio-orb studio-orb--2"></div>
+      <div class="studio-orb studio-orb--3"></div>
+      <div class="studio-orb studio-orb--4"></div>
+      <div class="studio-orb studio-orb--5"></div>
+      <div class="studio-orb studio-orb--6"></div>
+      <div class="studio-orb studio-orb--7"></div>
+    </div>
+  `;
+}
+
 function renderCanvasToolbar(formatLabel: string): string {
   const isBook = formatLabel === 'Illustrated Book';
-  const isScroll = formatLabel === 'Waterfall Storyboard';
   
   return `
     <div class="canvas-toolbar" id="canvas-toolbar">
@@ -568,16 +581,15 @@ function renderCanvasToolbar(formatLabel: string): string {
       </div>
       <span class="canvas-toolbar__title">${formatLabel}</span>
       <div class="canvas-toolbar__right" style="position:relative;">
-        ${isScroll ? `
-          <button class="canvas-toolbar__btn" id="btn-toolbar-story-settings" title="Story Settings">
-            ${ICON.dots}
+        <button class="canvas-toolbar__btn" id="btn-toolbar-menu" title="Menu">
+          ${ICON.dots}
+        </button>
+        <div class="canvas-toolbar__dropdown" id="toolbar-dropdown" style="display:none;">
+          <button class="canvas-toolbar__dd-item" id="btn-dd-story-settings">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Story Settings
           </button>
-        ` : ''}
-        ${isBook ? `
-          <button class="canvas-toolbar__btn" id="btn-toolbar-menu" title="Menu">
-            ${ICON.dots}
-          </button>
-          <div class="canvas-toolbar__dropdown" id="book-toolbar-dropdown" style="display:none;">
+          ${isBook ? `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Page
@@ -586,8 +598,13 @@ function renderCanvasToolbar(formatLabel: string): string {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
               Storyboard View
             </button>
-          </div>
-        ` : ''}
+          ` : `
+            <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Panel
+            </button>
+          `}
+        </div>
       </div>
     </div>
     <div class="canvas-toolbar__spacer"></div>
@@ -599,6 +616,7 @@ function renderScrollCanvas(): string {
 
   return `
     <div class="create-phase create-phase--canvas fade-in">
+      ${renderStudioOrbs()}
       ${renderCanvasToolbar('Waterfall Storyboard')}
 
       <!-- â”€â”€â”€ CHARACTER SHEET STUDIO â”€â”€â”€ -->
@@ -914,6 +932,7 @@ function renderBookCanvas(): string {
 
   return `
     <div class="create-phase create-phase--canvas fade-in">
+      ${renderStudioOrbs()}
       ${renderCanvasToolbar('Illustrated Book')}
 
       <h2 class="create-phase__title" style="margin-bottom:4px;">${currentPage === -1 ? 'Story Settings' : 'Your Pages'}</h2>
@@ -1946,10 +1965,23 @@ const attachListeners = () => {
         updateView();
       });
 
-      // Story Settings button in toolbar (scroll mode)
-      document.getElementById('btn-toolbar-story-settings')?.addEventListener('click', (e) => {
+      // Toolbar dropdown toggle (scroll mode)
+      const menuBtn = document.getElementById('btn-toolbar-menu');
+      const dropdown = document.getElementById('toolbar-dropdown');
+      menuBtn?.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+      });
+      document.addEventListener('click', () => {
+        if (dropdown) dropdown.style.display = 'none';
+      });
+      document.getElementById('btn-dd-story-settings')?.addEventListener('click', () => {
         openStorySettings();
+      });
+      document.getElementById('btn-dd-add-panel')?.addEventListener('click', () => {
+        scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
+        scrollPrompts.push('');
+        updateView();
       });
 
       // Panel gear icon clicks â†’ open layout overlay
@@ -2324,7 +2356,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
 
       // Toolbar dropdown toggle
       const menuBtn = document.getElementById('btn-toolbar-menu');
-      const dropdown = document.getElementById('book-toolbar-dropdown');
+      const dropdown = document.getElementById('toolbar-dropdown');
       menuBtn?.addEventListener('click', (e) => {
         e.stopPropagation();
         if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
@@ -2335,6 +2367,9 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Dropdown actions
+      document.getElementById('btn-dd-story-settings')?.addEventListener('click', () => {
+        openStorySettings();
+      });
       document.getElementById('btn-dd-add-page')?.addEventListener('click', () => {
         bookPages.push(defaultBookPage());
         bookPrompts.push('');

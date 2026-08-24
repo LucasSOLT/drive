@@ -4307,20 +4307,83 @@ button.profile-avatar {
   position: relative;
 }
 .view-create::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.2;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cg fill='none' stroke='%23DDD5C5' stroke-width='0.6'%3E%3Cpolygon points='60,10 110,40 110,80 60,110 10,80 10,40'/%3E%3Cpolygon points='60,25 95,45 95,75 60,95 25,75 25,45'/%3E%3Cpolygon points='60,40 80,52 80,68 60,80 40,68 40,52'/%3E%3Cline x1='60' y1='10' x2='60' y2='40'/%3E%3Cline x1='110' y1='40' x2='80' y2='52'/%3E%3Cline x1='110' y1='80' x2='80' y2='68'/%3E%3Cline x1='60' y1='110' x2='60' y2='80'/%3E%3Cline x1='10' y1='80' x2='40' y2='68'/%3E%3Cline x1='10' y1='40' x2='40' y2='52'/%3E%3C/g%3E%3C/svg%3E");
-  background-repeat: repeat;
-  background-size: 120px 120px;
-  background-position: center top;
+  display: none;
 }
 .view-create > * {
   position: relative;
   z-index: 1;
+}
+
+/* Floating Orbs for Story Studios */
+.studio-orbs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.studio-orb {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.18;
+  filter: blur(3px);
+  animation: studioFloat 8s ease-in-out infinite;
+}
+.studio-orb--1 {
+  width: 100px; height: 100px;
+  background: radial-gradient(circle, #a78bfa, transparent 70%);
+  top: 5%; left: -8%;
+  animation-duration: 10s;
+}
+.studio-orb--2 {
+  width: 70px; height: 70px;
+  background: radial-gradient(circle, #f472b6, transparent 70%);
+  top: 55%; right: -3%;
+  animation-duration: 7s;
+  animation-delay: -2s;
+}
+.studio-orb--3 {
+  width: 130px; height: 130px;
+  background: radial-gradient(circle, #60a5fa, transparent 70%);
+  bottom: -10%; left: 25%;
+  animation-duration: 12s;
+  animation-delay: -4s;
+}
+.studio-orb--4 {
+  width: 50px; height: 50px;
+  background: radial-gradient(circle, #f87171, transparent 70%);
+  top: 18%; right: 15%;
+  animation-duration: 6s;
+  animation-delay: -1s;
+}
+.studio-orb--5 {
+  width: 80px; height: 80px;
+  background: radial-gradient(circle, #8b5cf6, transparent 70%);
+  top: 45%; left: 10%;
+  animation-duration: 9s;
+  animation-delay: -3s;
+  opacity: 0.12;
+}
+.studio-orb--6 {
+  width: 40px; height: 40px;
+  background: radial-gradient(circle, #ec4899, transparent 70%);
+  top: 28%; left: 55%;
+  animation-duration: 5s;
+  animation-delay: -5s;
+}
+.studio-orb--7 {
+  width: 65px; height: 65px;
+  background: radial-gradient(circle, #3b82f6, transparent 70%);
+  bottom: 15%; right: 8%;
+  animation-duration: 8s;
+  animation-delay: -6s;
+  opacity: 0.15;
+}
+@keyframes studioFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(12px, -18px) scale(1.08); }
+  50% { transform: translate(-8px, 8px) scale(0.95); }
+  75% { transform: translate(16px, 12px) scale(1.04); }
 }
 
 /* ─── Landing Phase ─── */
