@@ -5283,7 +5283,7 @@ button.profile-avatar {
 }
 .book-tile__image {
   aspect-ratio: 4 / 3;
-  background: linear-gradient(145deg, #f0eee8, #e8e5de);
+  background: var(--color-eggshell);
   position: relative;
   cursor: pointer;
   overflow: hidden;
@@ -5513,118 +5513,30 @@ button.profile-avatar {
   font-size: 0.68rem;
   font-weight: 700;
   color: var(--color-text-muted);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
 }
 .book-tile__dd-panel {
-  padding: 0 var(--space-md) var(--space-md);
-  margin: 0 var(--space-md) var(--space-sm);
-  background: var(--color-eggshell);
-  border-left: 3px solid var(--color-purple);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-}
-.book-tile__dd-field-label {
-  display: block;
-  font-family: var(--font-heading);
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  padding-top: 10px;
-  margin-bottom: 4px;
-}
-.book-tile__dd-title-input {
-  width: 100%;
-  padding: 6px 10px;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-family: var(--font-body);
-  font-size: 0.78rem;
-  color: var(--color-text-primary);
-  background: var(--color-surface);
-  outline: none;
-  box-sizing: border-box;
-}
-.book-tile__dd-title-input:focus {
-  border-color: var(--color-purple);
-}
-/* =============================================
-   PAGE 0 STORY SETTINGS
-   ============================================= */
-.page0-form-group {
+  padding: 0 var(--space-md) 16px;
+  margin: 0;
+  background: transparent;
+  border: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
-.page0-label {
-  font-family: var(--font-heading);
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.5px;
-}
-.page0-input,
-.page0-textarea,
-.page0-select {
+.book-tile__dd-textarea {
   width: 100%;
   padding: 12px 14px;
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-md);
   font-family: var(--font-body);
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   color: var(--color-text-primary);
   background: var(--color-surface);
   outline: none;
-  transition: border-color 0.15s ease;
-  box-sizing: border-box;
-}
-.page0-input:focus,
-.page0-textarea:focus,
-.page0-select:focus {
-  border-color: var(--color-purple);
-}
-.page0-select-wrap {
-  position: relative;
-  width: 100%;
-}
-.page0-select {
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
-  padding-right: 40px;
-}
-.page0-textarea {
   resize: vertical;
-  min-height: 100px;
-  line-height: 1.5;
-}
-
-/* Deeper Dive — Integrated Container */
-.book-tile__dd-integrated {
-  display: flex;
-  flex-direction: column;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  overflow: hidden;
-  margin-top: 4px;
-}
-.book-tile__dd-integrated:focus-within {
-  border-color: var(--color-purple);
-}
-
-.book-tile__dd-textarea {
-  width: 100%;
-  padding: 10px;
-  border: none;
-  font-family: var(--font-body);
-  font-size: 0.78rem;
-  color: var(--color-text-primary);
-  background: transparent;
-  outline: none;
-  resize: none;
-  min-height: 80px;
+  min-height: 90px;
   line-height: 1.5;
   box-sizing: border-box;
 }
@@ -5632,9 +5544,10 @@ button.profile-avatar {
 /* Deeper Dive — Voice Note + Clean Up buttons */
 .book-tile__dd-actions {
   display: flex;
-  gap: 8px;
-  padding: 8px 10px 10px;
-  background: transparent;
+  gap: 10px;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 .book-tile__dd-voice-btn,
 .book-tile__dd-cleanup-btn {
@@ -5642,39 +5555,58 @@ button.profile-avatar {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 10px 14px;
   border-radius: 40px;
-  border: none;
   font-family: var(--font-heading);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
+  box-sizing: border-box;
 }
 .book-tile__dd-voice-btn {
-  background: var(--color-text-primary);
-  color: white;
+  background: rgba(139, 92, 246, 0.14);
+  border: 1.5px solid rgba(139, 92, 246, 0.35);
+  color: var(--color-text-primary);
+}
+.book-tile__dd-voice-btn svg {
+  color: var(--color-purple);
+  flex-shrink: 0;
 }
 .book-tile__dd-voice-btn:hover {
-  background: #1a1a2e;
-  transform: scale(1.02);
+  background: rgba(139, 92, 246, 0.24);
+  border-color: var(--color-purple);
+  transform: translateY(-1px);
+}
+.book-tile__dd-voice-btn:active {
+  transform: scale(0.98);
 }
 .book-tile__dd-voice-btn--active {
   background: #ef4444 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
   animation: pulse-recording 1.5s infinite;
 }
-@keyframes pulse-recording {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+.book-tile__dd-voice-btn--active svg {
+  color: #ffffff !important;
 }
 .book-tile__dd-cleanup-btn {
   background: linear-gradient(135deg, var(--color-purple), #7c3aed);
-  color: white;
+  border: 1.5px solid transparent;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.25);
+}
+.book-tile__dd-cleanup-btn svg {
+  color: #ffffff;
+  flex-shrink: 0;
 }
 .book-tile__dd-cleanup-btn:hover {
   filter: brightness(1.1);
-  transform: scale(1.02);
+  transform: translateY(-1px);
+}
+.book-tile__dd-cleanup-btn:active {
+  transform: scale(0.98);
 }
 .book-tile__dd-cleanup-btn:disabled {
   opacity: 0.6;
