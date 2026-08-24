@@ -620,7 +620,38 @@ function renderUploadBox(id: string, currentImage: string, label: string, height
   `;
 }
 
-// ─── Auto-save helpers ───
+function renderVideoUploadBox(id: string, currentVideo: string, label: string): string {
+  if (currentVideo) {
+    return `
+      <div style="position: relative;">
+        <video src="${currentVideo}" style="width: 100%; height: 140px; object-fit: cover; border-radius: 10px; border: 1px solid var(--color-border); background: #000;" muted></video>
+        <button data-clear-upload="${id}" style="position: absolute; top: 6px; right: 6px; background: rgba(239,68,68,0.9); color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; justify-content: center;">✕</button>
+        <button data-change-upload="${id}" style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 0.7rem;">Change</button>
+        <div style="position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 700;">🎬 VIDEO</div>
+        <input type="file" accept="video/*" data-file-input="${id}" style="display: none;" />
+      </div>
+    `;
+  }
+  return `
+    <div data-upload-area="${id}" style="width: 100%; height: 100px; border: 2px dashed var(--color-border); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: var(--color-bg); transition: border-color 0.2s, background 0.2s;" onmouseover="this.style.borderColor='var(--color-purple)';this.style.background='rgba(139,92,246,0.05)'" onmouseout="this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)'">
+      <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(139,92,246,0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 6px;">
+        ${ICON.plus}
+      </div>
+      <span style="font-size: 0.75rem; color: var(--color-text-muted);">${label}</span>
+    </div>
+    <input type="file" accept="video/*" data-file-input="${id}" style="display: none;" />
+  `;
+}
+
+function editorFileToVideoDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 
 function saveEditorDraft(id: string, pages: EditorPage[]): void {
   const title = (document.getElementById('ed-title') as HTMLInputElement)?.value || '';
@@ -630,7 +661,7 @@ function saveEditorDraft(id: string, pages: EditorPage[]): void {
   const synopsis = (document.getElementById('ed-synopsis') as HTMLTextAreaElement)?.value || '';
   const contentRating = (document.getElementById('ed-rating') as HTMLSelectElement)?.value || '';
   const coverImage = (document.querySelector('[data-editor-cover-image]') as HTMLElement)?.dataset.editorCoverImage || '';
-  const coverVideo = (document.getElementById('ed-cover-video') as HTMLInputElement)?.value || '';
+  const coverVideo = (document.querySelector('[data-editor-cover-video]') as HTMLElement)?.dataset.editorCoverVideo || '';
 
   const draft: EditorDraft = { id, title, author, genre, format, synopsis, contentRating, coverImage, coverVideo, pages, savedAt: new Date().toISOString() };
   try { localStorage.setItem(EDITOR_DRAFT_KEY, JSON.stringify(draft)); } catch {}
@@ -756,8 +787,10 @@ function openStoryEditor(existing?: Story): void {
           </div>
 
           <div>
-            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Cover Video URL (optional, for hover-play tile)</label>
-            <input id="ed-cover-video" type="text" value="${escapeAttr(draftCoverVideo)}" placeholder="https://..." style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); font-size: 0.85rem; box-sizing: border-box;" />
+            <label style="display: block; font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 4px;">Cover Video (optional, for hover-play tile)</label>
+            <div id="cover-video-upload" data-editor-cover-video="${escapeAttr(draftCoverVideo)}">
+              ${renderVideoUploadBox('cover-video', draftCoverVideo, 'Click to upload cover video')}
+            </div>
           </div>
         </div>
 
@@ -868,6 +901,45 @@ function attachUploadListeners(pages: EditorPage[], storyId: string, coverImageD
     });
   }
 
+  // Cover video upload
+  const vidArea = document.querySelector('[data-upload-area="cover-video"]');
+  const vidFileInput = document.querySelector('[data-file-input="cover-video"]') as HTMLInputElement;
+  const vidChangeBtn = document.querySelector('[data-change-upload="cover-video"]');
+  const vidClearBtn = document.querySelector('[data-clear-upload="cover-video"]');
+
+  if (vidArea && vidFileInput) {
+    vidArea.addEventListener('click', () => vidFileInput.click());
+  }
+  if (vidChangeBtn && vidFileInput) {
+    vidChangeBtn.addEventListener('click', (e) => { e.stopPropagation(); vidFileInput.click(); });
+  }
+  if (vidClearBtn) {
+    vidClearBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const container = document.getElementById('cover-video-upload');
+      if (container) {
+        container.dataset.editorCoverVideo = '';
+        container.innerHTML = renderVideoUploadBox('cover-video', '', 'Click to upload cover video');
+        attachUploadListeners(pages, storyId, coverImageData, rerender);
+        scheduleAutoSave(storyId, pages);
+      }
+    });
+  }
+  if (vidFileInput) {
+    vidFileInput.addEventListener('change', async () => {
+      const file = vidFileInput.files?.[0];
+      if (!file) return;
+      const dataUrl = await editorFileToVideoDataUrl(file);
+      const container = document.getElementById('cover-video-upload');
+      if (container) {
+        container.dataset.editorCoverVideo = dataUrl;
+        container.innerHTML = renderVideoUploadBox('cover-video', dataUrl, 'Click to upload cover video');
+        attachUploadListeners(pages, storyId, coverImageData, rerender);
+        scheduleAutoSave(storyId, pages);
+      }
+    });
+  }
+
   // Page image uploads
   pages.forEach((page, i) => {
     const uploadId = 'page-' + i;
@@ -927,7 +999,7 @@ function attachEditorListeners(
     syncPagesFromDOMGlobal(pages);
     scheduleAutoSave(storyId, pages);
   };
-  document.querySelectorAll('#ed-title, #ed-author, #ed-synopsis, #ed-cover-video').forEach(el => {
+  document.querySelectorAll('#ed-title, #ed-author, #ed-synopsis').forEach(el => {
     el.addEventListener('input', autoSaveHandler);
   });
   document.querySelectorAll('#ed-genre, #ed-format, #ed-rating').forEach(el => {
@@ -1006,7 +1078,7 @@ function attachEditorListeners(
     const synopsis = (document.getElementById('ed-synopsis') as HTMLTextAreaElement)?.value.trim();
     const contentRating = (document.getElementById('ed-rating') as HTMLSelectElement)?.value as ContentRating;
     const finalCoverImage = (document.querySelector('[data-editor-cover-image]') as HTMLElement)?.dataset.editorCoverImage || '';
-    const coverVideo = (document.getElementById('ed-cover-video') as HTMLInputElement)?.value.trim();
+    const coverVideo = (document.querySelector('[data-editor-cover-video]') as HTMLElement)?.dataset.editorCoverVideo || '';
 
     if (!title) {
       showModal({ title: 'Missing Title', content: '<p>Please enter a story title.</p>', confirmText: 'OK', cancelText: '', onConfirm: () => {} });
