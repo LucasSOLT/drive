@@ -64,9 +64,18 @@ export async function loadUserData(): Promise<void> {
       // Support new 'role' column; fallback: if old is_admin boolean exists, map it
       role: (profileRes.data.role as UserRole) || (profileRes.data.is_admin === true ? 'admin' : 'user'),
     } : null;
+
+    // HARDCODED ADMIN EMAIL FALLBACK — guarantees admin access regardless of DB column state
+    const ADMIN_EMAILS = ['lucas@soltheory.com', 'steve@soltheory.com', 'gerard@soltheory.com'];
+    const currentUser = getUser();
+    const userEmail = currentUser?.email || '';
+    if (_profile && ADMIN_EMAILS.includes(userEmail) && _profile.role !== 'admin' && _profile.role !== 'game_master') {
+      console.log('[DB] Admin email whitelist override! Email:', userEmail, '| Was:', _profile.role, '→ Now: admin');
+      _profile.role = 'admin';
+    }
     
     // Debug: log what Supabase returned for role and admin status
-    console.log('[DB] Profile loaded. is_admin:', profileRes.data?.is_admin, '| role column:', profileRes.data?.role, '| Mapped role:', _profile?.role, '| Full profile data:', JSON.stringify(profileRes.data));
+    console.log('[DB] Profile loaded. is_admin:', profileRes.data?.is_admin, '| role column:', profileRes.data?.role, '| Mapped role:', _profile?.role, '| email:', userEmail);
     _subscription = subRes.data ? {
       plan: (subRes.data.plan || 'free') as UserPlan,
       tokensRemaining: subRes.data.tokens_remaining || 0,
