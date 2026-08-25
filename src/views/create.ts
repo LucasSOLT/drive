@@ -1594,13 +1594,15 @@ export function render(): string {
 }
 
 function getFormData(): void {
-  storyTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value || storyTitle || 'Untitled';
-  storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || '';
-  storyGenre = ((document.getElementById('ss-genre') as HTMLSelectElement)?.value || 'Fantasy') as Genre;
-  storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || '';
-  storyHashtags = (document.getElementById('ss-hashtags') as HTMLInputElement)?.value || '';
-  storyCustomGenre = (document.getElementById('ss-custom-genre') as HTMLInputElement)?.value || '';
-  storyContentRating = ((document.getElementById('ss-rating') as HTMLSelectElement)?.value || 'All Ages') as any;
+  const ssTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value;
+  const page0Title = (document.getElementById('page0-title') as HTMLInputElement)?.value;
+  storyTitle = ssTitle || page0Title || storyTitle || '';
+  storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || storyAuthorName || '';
+  storyGenre = (((document.getElementById('ss-genre') as HTMLSelectElement)?.value || storyGenre || 'Fantasy')) as Genre;
+  storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || storySynopsis || '';
+  storyHashtags = (document.getElementById('ss-hashtags') as HTMLInputElement)?.value || storyHashtags || '';
+  storyCustomGenre = (document.getElementById('ss-custom-genre') as HTMLInputElement)?.value || storyCustomGenre || '';
+  storyContentRating = (((document.getElementById('ss-rating') as HTMLSelectElement)?.value || storyContentRating || 'All Ages')) as any;
   storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || storyCoverVideo || '';
 }
 
@@ -1953,7 +1955,9 @@ export function init(): void {
   }
 
   function promptSaveDraftUser(): void {
-    if (storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled') {
+    getFormData();
+    const hasValidTitle = storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled';
+    if (hasValidTitle) {
       saveDraft();
       addUserStory(buildStory('draft')).catch(e => console.warn('Failed to save draft user story to DB', e));
       hideModal();
@@ -1968,10 +1972,10 @@ export function init(): void {
           Please enter a title for your story to save it as a draft:
         </p>
         <div style="margin-bottom:8px;">
-          <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="${storyTitle && storyTitle !== 'Untitled' ? storyTitle : ''}" maxlength="80" style="width:100%; box-sizing:border-box;" />
+          <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="" maxlength="80" style="width:100%; box-sizing:border-box;" />
         </div>
       `,
-      confirmText: 'Save Draft',
+      confirmText: 'Save as Draft',
       cancelText: 'Cancel',
       onConfirm: async () => {
         const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
@@ -1982,6 +1986,8 @@ export function init(): void {
         storyTitle = enteredTitle;
         const titleInput = document.getElementById('ss-title') as HTMLInputElement | null;
         if (titleInput) titleInput.value = enteredTitle;
+        const page0Title = document.getElementById('page0-title') as HTMLInputElement | null;
+        if (page0Title) page0Title.value = enteredTitle;
 
         saveDraft();
         try {
@@ -2014,7 +2020,7 @@ export function init(): void {
         showModal({
           title: 'Discard Changes?',
           content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          extraText: 'Save as Draft?',
+          extraText: 'Save as Draft',
           cancelText: 'Keep Editing',
           confirmText: 'Discard',
           onConfirm: () => { clearDraft(); navigate('library'); },

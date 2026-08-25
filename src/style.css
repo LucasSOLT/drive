@@ -1614,6 +1614,24 @@ p {
   display: flex;
   gap: var(--space-sm);
   justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#modal-extra-btn {
+  margin-right: auto;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  font-weight: 600;
+  border-radius: var(--radius-full, 9999px);
+  padding: 0.5rem 1.1rem;
+  transition: all 0.2s ease;
+}
+#modal-extra-btn:hover {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: rgba(139, 92, 246, 0.6);
+  color: #c4b5fd;
+  transform: translateY(-1px);
 }
 
 /* Finish Story Form */

@@ -251,11 +251,13 @@ function isVideoMedia(url?: string | null, vidUrl?: string | null): boolean {
 }
 
 function getFormData(): void {
-  storyTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value || storyTitle || 'Untitled';
-  storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || 'DRiVE Studios';
-  storyGenre = ((document.getElementById('ss-genre') as HTMLSelectElement)?.value || 'Fantasy') as Genre;
-  storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || '';
-  storyContentRating = ((document.getElementById('ss-rating') as HTMLSelectElement)?.value || 'All Ages') as any;
+  const ssTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value;
+  const page0Title = (document.getElementById('page0-title') as HTMLInputElement)?.value;
+  storyTitle = ssTitle || page0Title || storyTitle || '';
+  storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || storyAuthorName || 'DRiVE Studios';
+  storyGenre = (((document.getElementById('ss-genre') as HTMLSelectElement)?.value || storyGenre || 'Fantasy')) as Genre;
+  storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || storySynopsis || '';
+  storyContentRating = (((document.getElementById('ss-rating') as HTMLSelectElement)?.value || storyContentRating || 'All Ages')) as any;
   storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || storyCoverVideo || '';
 }
 
@@ -1525,11 +1527,13 @@ export function init(): void {
   loadData();
 
   function promptSaveDraftAdmin(): void {
-    if (storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled') {
+    getFormData();
+    const hasValidTitle = storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled';
+    if (hasValidTitle) {
       saveDraft();
       saveOfficialStory(buildStory('draft')).catch(e => console.warn('Draft save error', e));
       hideModal();
-      navigate('library');
+      navigate('admin');
       return;
     }
 
@@ -1540,10 +1544,10 @@ export function init(): void {
           Please enter a title for your story to save it as a draft:
         </p>
         <div style="margin-bottom:8px;">
-          <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="${storyTitle && storyTitle !== 'Untitled' ? storyTitle : ''}" maxlength="80" style="width:100%; box-sizing:border-box;" />
+          <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="" maxlength="80" style="width:100%; box-sizing:border-box;" />
         </div>
       `,
-      confirmText: 'Save Draft',
+      confirmText: 'Save as Draft',
       cancelText: 'Cancel',
       onConfirm: async () => {
         const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
@@ -1554,6 +1558,8 @@ export function init(): void {
         storyTitle = enteredTitle;
         const titleInput = document.getElementById('ss-title') as HTMLInputElement | null;
         if (titleInput) titleInput.value = enteredTitle;
+        const page0Title = document.getElementById('page0-title') as HTMLInputElement | null;
+        if (page0Title) page0Title.value = enteredTitle;
 
         saveDraft();
         try {
@@ -1562,7 +1568,7 @@ export function init(): void {
           console.warn('Draft save error', e);
         }
         hideModal();
-        navigate('library');
+        navigate('admin');
       },
     });
 
@@ -1586,10 +1592,10 @@ export function init(): void {
         showModal({
           title: 'Discard Changes?',
           content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          extraText: 'Save as Draft?',
+          extraText: 'Save as Draft',
           cancelText: 'Keep Editing',
           confirmText: 'Discard',
-          onConfirm: () => { clearDraft(); navigate('library'); },
+          onConfirm: () => { clearDraft(); navigate('admin'); },
           onExtra: () => {
             promptSaveDraftAdmin();
           },
@@ -2464,19 +2470,6 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         tile.addEventListener('touchend', cancelPress);
         tile.addEventListener('touchcancel', cancelPress);
       }
-    }
-
-    
-    if (phase === 'canvas') {
-      document.getElementById('btn-toolbar-quit')?.addEventListener('click', () => {
-        showModal({
-          title: 'Discard Changes?',
-          content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          confirmText: 'Discard',
-          cancelText: 'Keep Editing',
-          onConfirm: () => { clearDraft(); navigate('admin'); },
-        });
-      });
     }
   };
 
