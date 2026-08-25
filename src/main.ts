@@ -6,7 +6,7 @@ import { renderModalContainer } from './components/modal.ts';
 import { getGearButtonHtml, openSettings } from './components/settings-drawer.ts';
 import { applyTheme, applyTextSize } from './lib/settings.ts';
 import { MONSTER_AVATARS } from './data/avatars.ts';
-import { getSelectedAvatar } from './state.ts';
+import { getSelectedAvatar, isContentManagementMode, setContentManagementMode } from './state.ts';
 import { initAuth, isAuthenticated, onAuthChange } from './lib/auth.ts';
 import { loadUserData, migrateLocalData, clearCache } from './lib/db.ts';
 
@@ -94,6 +94,13 @@ async function initApp() {
               <line x1="3" y1="18" x2="21" y2="18"></line>
             </svg>
           </button>
+          <button class="cm-back-btn" id="cm-back-btn" aria-label="Exit Content Management" style="display:none;" title="Return to Content Management Dashboard">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"/>
+              <polyline points="12 19 5 12 12 5"/>
+            </svg>
+            <span class="cm-back-btn-text">Admin</span>
+          </button>
           <h1 class="view-title" id="view-title">Home</h1>
           <div class="header-right-group">
             ${getGearButtonHtml()}
@@ -104,6 +111,15 @@ async function initApp() {
             </button>
           </div>
         </header>
+
+        <!-- Content Management View Top Indicator Banner -->
+        <div id="cm-top-banner" class="cm-top-banner" style="display:none;">
+          <div class="cm-top-banner-content">
+            <span class="cm-top-banner-pill">🔮 Content Management View</span>
+            <span class="cm-top-banner-desc">Live Story Tile Preview</span>
+          </div>
+          <button id="cm-banner-exit-btn" class="cm-banner-exit-btn">← Back to Admin</button>
+        </div>
         
         <!-- Dynamic view container -->
         <div id="view-container"></div>
@@ -122,6 +138,16 @@ async function initApp() {
   // Apply saved theme
   applyTheme();
   applyTextSize();
+
+  // Exit Content Management handler
+  const exitCMMode = () => {
+    setContentManagementMode(false);
+    document.body.classList.remove('content-management-mode');
+    navigate('admin?tab=content-management');
+  };
+
+  document.getElementById('cm-back-btn')?.addEventListener('click', exitCMMode);
+  document.getElementById('cm-banner-exit-btn')?.addEventListener('click', exitCMMode);
 
   // Header avatar click → profile (logged in) or login (logged out)
   const avatarBtn = document.getElementById('header-avatar-btn');
@@ -202,6 +228,29 @@ function renderView(route: string) {
   
   const isFullScreen = ['story', 'book', 'shared', 'login', 'signup', 'beta', 'admin-create'].includes(baseRoute);
   
+  // Content Management mode handling
+  const isCMActive = isContentManagementMode();
+  const isCMFeedPage = ['home', 'featured', 'explore'].includes(baseRoute);
+
+  const hamburgerBtn = document.getElementById('hamburger-btn');
+  const cmBackBtn = document.getElementById('cm-back-btn');
+  const cmBanner = document.getElementById('cm-top-banner');
+
+  if (isCMActive && isCMFeedPage) {
+    document.body.classList.add('content-management-mode');
+    if (hamburgerBtn) hamburgerBtn.style.display = 'none';
+    if (cmBackBtn) cmBackBtn.style.display = 'inline-flex';
+    if (cmBanner) cmBanner.style.display = 'flex';
+  } else {
+    document.body.classList.remove('content-management-mode');
+    if (hamburgerBtn) hamburgerBtn.style.display = 'flex';
+    if (cmBackBtn) cmBackBtn.style.display = 'none';
+    if (cmBanner) cmBanner.style.display = 'none';
+    if (!isCMFeedPage && isCMActive) {
+      setContentManagementMode(false);
+    }
+  }
+
   if (isFullScreen) {
     header.style.display = 'none';
     navContainer.style.display = 'none';
@@ -223,4 +272,5 @@ function renderView(route: string) {
 }
 
 document.addEventListener('DOMContentLoaded', initApp);
+
 

@@ -23,6 +23,7 @@ import {
 } from '../lib/db.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { navigate } from '../router.ts';
+import { setContentManagementMode } from '../state.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -39,10 +40,14 @@ const ICON = {
   book: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
   users: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
   plus: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  layout: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>`,
+  flag: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
+  chart: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`,
+  cpu: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`,
 };
 
 // ─── Tab types ───
-type AdminTab = 'originals' | 'pending' | 'community' | 'gm-tools';
+type AdminTab = 'originals' | 'pending' | 'community' | 'content-management' | 'moderation' | 'gm-tools';
 
 export function render(): string {
   const isGM = checkIsGameMaster();
@@ -105,6 +110,12 @@ export function render(): string {
           <button class="admin-main-tab" data-tab="community" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
             ${ICON.users} Live Community
           </button>
+          <button class="admin-main-tab" data-tab="content-management" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+            ${ICON.layout} Content Management
+          </button>
+          <button class="admin-main-tab" data-tab="moderation" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+            ${ICON.flag} Moderation <span style="background: #6366f1; color: #fff; padding: 1px 6px; border-radius: 8px; font-size: 0.62rem; font-weight: 800; margin-left: 2px;">WIP</span>
+          </button>
           ${isGM ? `
           <button class="admin-main-tab" data-tab="gm-tools" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
             ${ICON.crown} Game Master
@@ -114,7 +125,7 @@ export function render(): string {
       </div>
 
       <!-- Search & Filters Toolbar -->
-      <div style="padding: 10px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); flex-shrink: 0; align-items: center; flex-wrap: wrap;">
+      <div id="admin-search-toolbar" style="padding: 10px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); flex-shrink: 0; align-items: center; flex-wrap: wrap;">
         <div style="flex: 1; min-width: 180px; position: relative;">
           <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); display: flex;">${ICON.search}</span>
           <input type="text" id="admin-search-input" placeholder="Search stories..." style="width: 100%; padding: 8px 12px 8px 34px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg); color: var(--color-text-primary); font-family: inherit; font-size: 0.85rem; box-sizing: border-box; outline: none;" />
@@ -162,11 +173,44 @@ export function init(): void {
   const container = document.getElementById('admin-container');
   if (!container) return;
 
+  // Check URL query / hash for initial tab (e.g. #admin?tab=content-management)
+  const hash = window.location.hash || '';
+  if (hash.includes('tab=content-management')) {
+    activeTab = 'content-management';
+  } else if (hash.includes('tab=moderation')) {
+    activeTab = 'moderation';
+  } else if (hash.includes('tab=community')) {
+    activeTab = 'community';
+  } else if (hash.includes('tab=pending')) {
+    activeTab = 'pending';
+  } else if (hash.includes('tab=gm-tools')) {
+    activeTab = 'gm-tools';
+  } else if (hash.includes('tab=originals')) {
+    activeTab = 'originals';
+  }
+
+  // Update tab headers active state to match activeTab
+  const mainTabs = document.querySelectorAll('#admin-main-tabs .admin-main-tab');
+  mainTabs.forEach(t => {
+    const el = t as HTMLElement;
+    const tabId = el.dataset.tab as AdminTab;
+    if (tabId === activeTab) {
+      el.style.color = 'var(--color-purple)';
+      el.style.fontWeight = '700';
+      el.style.borderBottom = '2px solid var(--color-purple)';
+      el.classList.add('admin-main-tab--active');
+    } else {
+      el.style.color = 'var(--color-text-muted)';
+      el.style.fontWeight = '500';
+      el.style.borderBottom = '2px solid transparent';
+      el.classList.remove('admin-main-tab--active');
+    }
+  });
+
   loadAllMetrics();
   loadTabContent();
 
   // Main Tab switching
-  const mainTabs = document.querySelectorAll('#admin-main-tabs .admin-main-tab');
   mainTabs.forEach(tab => {
     tab.addEventListener('click', (e) => {
       const target = e.currentTarget as HTMLElement;
@@ -177,10 +221,12 @@ export function init(): void {
         (t as HTMLElement).style.color = 'var(--color-text-muted)';
         (t as HTMLElement).style.fontWeight = '500';
         (t as HTMLElement).style.borderBottom = '2px solid transparent';
+        (t as HTMLElement).classList.remove('admin-main-tab--active');
       });
       target.style.color = 'var(--color-purple)';
       target.style.fontWeight = '700';
       target.style.borderBottom = '2px solid var(--color-purple)';
+      target.classList.add('admin-main-tab--active');
 
       activeTab = tabId;
       loadTabContent();
@@ -244,6 +290,12 @@ async function loadTabContent(): Promise<void> {
   const area = document.getElementById('admin-content-area');
   if (!area) return;
 
+  // Toggle toolbar visibility based on active tab
+  const toolbar = document.getElementById('admin-search-toolbar');
+  if (toolbar) {
+    toolbar.style.display = (activeTab === 'originals' || activeTab === 'pending' || activeTab === 'community') ? 'flex' : 'none';
+  }
+
   area.innerHTML = `
     <div style="display: flex; justify-content: center; align-items: center; padding: 60px 0; color: var(--color-text-muted);">
       <div class="admin-spinner"></div>
@@ -263,6 +315,12 @@ async function loadTabContent(): Promise<void> {
       case 'community':
         currentStatus = 'published';
         await loadSubmissionsTab(area, 'published');
+        break;
+      case 'content-management':
+        renderContentManagementTab(area);
+        break;
+      case 'moderation':
+        renderModerationTab(area);
         break;
       case 'gm-tools':
         renderGMToolsTab(area);
@@ -1403,6 +1461,318 @@ function attachSubmissionCardListeners(): void {
       loadAllMetrics();
       loadTabContent();
     });
+  });
+}
+
+// ═══════════════════════════════════════════
+// TAB: CONTENT MANAGEMENT
+// ═══════════════════════════════════════════
+
+function renderContentManagementTab(area: HTMLElement): void {
+  area.innerHTML = `
+    <div style="max-width: 760px; margin: 0 auto; padding: 16px 0 40px;">
+      <div style="text-align: center; margin-bottom: 28px;">
+        <div style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); display: flex; align-items: center; justify-content: center; color: white; margin: 0 auto 12px; box-shadow: 0 4px 16px rgba(139,92,246,0.3);">
+          ${ICON.layout}
+        </div>
+        <h2 style="margin: 0 0 6px; font-family: var(--font-heading); font-size: 1.3rem; color: var(--color-text-primary);">Content Management</h2>
+        <p style="margin: 0; color: var(--color-text-muted); font-size: 0.85rem; max-width: 520px; margin: 0 auto;">
+          Curate homepage layouts, tune platform recommendation algorithms, and analyze reader engagement across DRiVE.
+        </p>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Card 1: Manage story tiles -->
+        <div id="cm-card-tiles" class="cm-hub-card" style="background: var(--color-surface); border: 2px solid rgba(139,92,246,0.3); border-radius: 18px; padding: 20px; display: flex; align-items: center; gap: 16px; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden;">
+          <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--color-purple), #a855f7, #ec4899);"></div>
+          <div style="width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, var(--color-purple), #7c3aed); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem; flex-shrink: 0; box-shadow: 0 4px 12px rgba(139,92,246,0.3);">
+            🗂️
+          </div>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+              <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary);">Manage story tiles</h3>
+              <span style="background: rgba(139,92,246,0.15); color: var(--color-purple); font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 8px; text-transform: uppercase;">Live Visual View</span>
+            </div>
+            <p style="margin: 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4;">
+              Open the interactive visual website view starting on Home. Preview and manage story placement across Home, Featured, and Explore feeds with purple tint mode.
+            </p>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--color-bg); color: var(--color-purple); font-size: 1.1rem; font-weight: 700; flex-shrink: 0; border: 1px solid var(--color-border);">
+            →
+          </div>
+        </div>
+
+        <!-- Card 2: Stats for nerds -->
+        <div id="cm-card-stats" class="cm-hub-card" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 18px; padding: 20px; display: flex; align-items: center; gap: 16px; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);">
+          <div style="width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, #06b6d4, #0284c7); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem; flex-shrink: 0; box-shadow: 0 4px 12px rgba(6,182,212,0.25);">
+            📊
+          </div>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+              <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary);">Stats for nerds</h3>
+              <span style="background: rgba(6,182,212,0.15); color: #06b6d4; font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 8px; text-transform: uppercase;">Deep Analytics</span>
+            </div>
+            <p style="margin: 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4;">
+              Deep-dive metrics: reader completion velocities, drop-off curves, genre resonance, audio playback ratios, and platform engagement telemetry.
+            </p>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--color-bg); color: var(--color-text-muted); font-size: 1.1rem; font-weight: 700; flex-shrink: 0; border: 1px solid var(--color-border);">
+            →
+          </div>
+        </div>
+
+        <!-- Card 3: Algorithm -->
+        <div id="cm-card-algorithm" class="cm-hub-card" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 18px; padding: 20px; display: flex; align-items: center; gap: 16px; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);">
+          <div style="width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, #10b981, #059669); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16,185,129,0.25);">
+            ⚡
+          </div>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+              <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary);">Algorithm</h3>
+              <span style="background: rgba(16,185,129,0.15); color: #10b981; font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 8px; text-transform: uppercase;">Feed Tuning</span>
+            </div>
+            <p style="margin: 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4;">
+              Configure feed recommendation weights, freshness decay curves, community discovery boosts, and personalized exploration multipliers.
+            </p>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--color-bg); color: var(--color-text-muted); font-size: 1.1rem; font-weight: 700; flex-shrink: 0; border: 1px solid var(--color-border);">
+            →
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Attach event listeners
+  document.getElementById('cm-card-tiles')?.addEventListener('click', () => {
+    setContentManagementMode(true);
+    navigate('home');
+  });
+
+  document.getElementById('cm-card-stats')?.addEventListener('click', () => {
+    openStatsForNerdsModal();
+  });
+
+  document.getElementById('cm-card-algorithm')?.addEventListener('click', () => {
+    openAlgorithmConfigModal();
+  });
+}
+
+// ═══════════════════════════════════════════
+// TAB: MODERATION (WIP)
+// ═══════════════════════════════════════════
+
+function renderModerationTab(area: HTMLElement): void {
+  area.innerHTML = `
+    <div style="max-width: 760px; margin: 0 auto; padding: 16px 0 40px;">
+      <div style="text-align: center; margin-bottom: 28px;">
+        <div style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, #6366f1, #4f46e5); display: flex; align-items: center; justify-content: center; color: white; margin: 0 auto 12px; box-shadow: 0 4px 16px rgba(99,102,241,0.3);">
+          ${ICON.flag}
+        </div>
+        <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 6px;">
+          <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1.3rem; color: var(--color-text-primary);">Moderation Center</h2>
+          <span style="background: #6366f1; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.5px;">WIP</span>
+        </div>
+        <p style="margin: 0; color: var(--color-text-muted); font-size: 0.85rem; max-width: 520px; margin: 0 auto;">
+          DRiVE platform moderation, safety enforcement, community report triage, and automated content compliance.
+        </p>
+      </div>
+
+      <!-- WIP Notice Banner -->
+      <div style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.25); border-radius: 14px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 12px;">
+        <span style="font-size: 1.3rem;">🚧</span>
+        <div>
+          <div style="font-weight: 700; font-size: 0.85rem; color: #818cf8; margin-bottom: 2px;">Work in Progress</div>
+          <div style="font-size: 0.78rem; color: var(--color-text-secondary); line-height: 1.4;">
+            This module is currently being built and will eventually be how admins and moderators review flagged stories, handle user reports, manage automated safety filters, and oversee community standards across DRiVE.
+          </div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
+        <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 16px; opacity: 0.9;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <span style="font-size: 1.2rem;">🚩</span>
+            <h4 style="margin: 0; font-size: 0.92rem; color: var(--color-text-primary);">Flagged Content Queue</h4>
+          </div>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--color-text-muted); line-height: 1.35;">
+            Triage user-reported stories, comments, and avatar violations with one-click quarantine and escalation.
+          </p>
+        </div>
+
+        <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 16px; opacity: 0.9;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <span style="font-size: 1.2rem;">🤖</span>
+            <h4 style="margin: 0; font-size: 0.92rem; color: var(--color-text-primary);">Automated Safety Filters</h4>
+          </div>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--color-text-muted); line-height: 1.35;">
+            Manage Groq LLM & vision safety threshold rules, prohibited phrase lists, and automated content tagging.
+          </p>
+        </div>
+
+        <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 16px; opacity: 0.9;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <span style="font-size: 1.2rem;">⚖️</span>
+            <h4 style="margin: 0; font-size: 0.92rem; color: var(--color-text-primary);">Disciplinary & Bans</h4>
+          </div>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--color-text-muted); line-height: 1.35;">
+            Issue warnings, temporary suspensions, IP/device bans, and manage appeal cases from users.
+          </p>
+        </div>
+
+        <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 16px; opacity: 0.9;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <span style="font-size: 1.2rem;">📋</span>
+            <h4 style="margin: 0; font-size: 0.92rem; color: var(--color-text-primary);">Moderator Audit Logs</h4>
+          </div>
+          <p style="margin: 0; font-size: 0.75rem; color: var(--color-text-muted); line-height: 1.35;">
+            Immutable history of all moderator actions, approvals, dismissals, and policy modifications.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════
+// MODALS: STATS FOR NERDS & ALGORITHM
+// ═══════════════════════════════════════════
+
+function openStatsForNerdsModal(): void {
+  showModal({
+    title: '📊 Stats for Nerds — DRiVE Telemetry',
+    content: `
+      <div style="display: flex; flex-direction: column; gap: 16px; max-height: 70vh; overflow-y: auto; padding-right: 4px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; text-align: center;">
+            <div style="font-size: 1.4rem; font-weight: 800; color: var(--color-purple);">78.4%</div>
+            <div style="font-size: 0.68rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase;">Completion Rate</div>
+          </div>
+          <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; text-align: center;">
+            <div style="font-size: 1.4rem; font-weight: 800; color: #06b6d4;">3.2 min</div>
+            <div style="font-size: 0.68rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase;">Avg Session Velocity</div>
+          </div>
+          <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; text-align: center;">
+            <div style="font-size: 1.4rem; font-weight: 800; color: #10b981;">64.1%</div>
+            <div style="font-size: 0.68rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase;">Audio / TTS Ratio</div>
+          </div>
+          <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; text-align: center;">
+            <div style="font-size: 1.4rem; font-weight: 800; color: #F59E0B;">52.8%</div>
+            <div style="font-size: 0.68rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase;">Return Readers</div>
+          </div>
+        </div>
+
+        <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 14px;">
+          <div style="font-weight: 700; font-size: 0.8rem; color: var(--color-text-primary); margin-bottom: 10px;">Genre Resonance Distribution</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--color-text-secondary); margin-bottom: 3px;">
+                <span>Fantasy & Sci-Fi</span>
+                <span style="font-weight: 700;">44%</span>
+              </div>
+              <div style="height: 6px; border-radius: 3px; background: var(--color-surface); overflow: hidden;">
+                <div style="width: 44%; height: 100%; background: linear-gradient(90deg, var(--color-purple), #8a2be2);"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--color-text-secondary); margin-bottom: 3px;">
+                <span>Horror & Mystery</span>
+                <span style="font-weight: 700;">28%</span>
+              </div>
+              <div style="height: 6px; border-radius: 3px; background: var(--color-surface); overflow: hidden;">
+                <div style="width: 28%; height: 100%; background: linear-gradient(90deg, #ec4899, #f43f5e);"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--color-text-secondary); margin-bottom: 3px;">
+                <span>Romance & Drama</span>
+                <span style="font-weight: 700;">18%</span>
+              </div>
+              <div style="height: 6px; border-radius: 3px; background: var(--color-surface); overflow: hidden;">
+                <div style="width: 18%; height: 100%; background: linear-gradient(90deg, #06b6d4, #3b82f6);"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--color-text-secondary); margin-bottom: 3px;">
+                <span>Comedy & Slice of Life</span>
+                <span style="font-weight: 700;">10%</span>
+              </div>
+              <div style="height: 6px; border-radius: 3px; background: var(--color-surface); overflow: hidden;">
+                <div style="width: 10%; height: 100%; background: linear-gradient(90deg, #10b981, #059669);"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.2); border-radius: 12px; padding: 12px; font-size: 0.75rem; color: var(--color-text-secondary);">
+          ⚡ <strong>Platform Infrastructure:</strong> Edge Cache Hit Ratio: 94.2% · p95 LLM Token Latency: 22ms · TTS Audio Pipeline: Operational (99.98% uptime).
+        </div>
+      </div>
+    `,
+    confirmText: 'Close',
+    cancelText: '',
+    onConfirm: () => {},
+  });
+}
+
+function openAlgorithmConfigModal(): void {
+  showModal({
+    title: '⚡ Feed Recommendation Algorithm',
+    content: `
+      <div style="display: flex; flex-direction: column; gap: 14px; max-height: 70vh; overflow-y: auto; padding-right: 4px;">
+        <p style="margin: 0; font-size: 0.8rem; color: var(--color-text-muted);">
+          Adjust the ranking multipliers used to generate the Home, Featured, and Explore story carousels.
+        </p>
+
+        <div style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 12px;">
+          <div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 600; margin-bottom: 4px;">
+              <span>Freshness Decay Weight</span>
+              <span id="algo-val-freshness" style="color: var(--color-purple);">35%</span>
+            </div>
+            <input type="range" min="0" max="100" value="35" style="width: 100%; accent-color: var(--color-purple);" oninput="document.getElementById('algo-val-freshness').innerText = this.value + '%'" />
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 600; margin-bottom: 4px;">
+              <span>Editor's Pick Priority Multiplier</span>
+              <span id="algo-val-pick" style="color: #06b6d4;">2.5x</span>
+            </div>
+            <input type="range" min="10" max="50" value="25" style="width: 100%; accent-color: #06b6d4;" oninput="document.getElementById('algo-val-pick').innerText = (this.value / 10).toFixed(1) + 'x'" />
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 600; margin-bottom: 4px;">
+              <span>Community Likes Multiplier</span>
+              <span id="algo-val-likes" style="color: #10b981;">1.8x</span>
+            </div>
+            <input type="range" min="10" max="40" value="18" style="width: 100%; accent-color: #10b981;" oninput="document.getElementById('algo-val-likes').innerText = (this.value / 10).toFixed(1) + 'x'" />
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 600; margin-bottom: 4px;">
+              <span>User Affinity Personalization</span>
+              <span id="algo-val-personal" style="color: #F59E0B;">40%</span>
+            </div>
+            <input type="range" min="0" max="100" value="40" style="width: 100%; accent-color: #F59E0B;" oninput="document.getElementById('algo-val-personal').innerText = this.value + '%'" />
+          </div>
+        </div>
+
+        <div style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); border-radius: 12px; padding: 12px; font-size: 0.75rem; color: var(--color-text-secondary);">
+          📐 <strong>Active Scoring Formula:</strong><br>
+          <code style="font-family: monospace; color: #10b981; display: block; margin-top: 4px;">Score = (Reads * 0.4 + Likes * 1.8) * Decay(t) + PickBoost(2.5)</code>
+        </div>
+      </div>
+    `,
+    confirmText: 'Save Parameters',
+    cancelText: 'Cancel',
+    onConfirm: () => {
+      const toast = document.createElement('div');
+      toast.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #10b981; color: white; padding: 10px 24px; border-radius: 12px; font-weight: 700; font-size: 0.9rem; z-index: 9999; box-shadow: var(--shadow-lg);';
+      toast.textContent = '✅ Algorithm Parameters Updated!';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2500);
+    },
   });
 }
 

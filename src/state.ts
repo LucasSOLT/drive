@@ -334,3 +334,24 @@ export function toggleBookmark(storyId: string): boolean {
   localStorage.setItem(BOOKMARKS_KEY, JSON.stringify([...set]));
   return set.has(storyId);
 }
+
+// ─── Content Management View Mode ───
+const CONTENT_MGMT_MODE_KEY = 'drive_content_mgmt_mode';
+
+export function isContentManagementMode(): boolean {
+  try {
+    return sessionStorage.getItem(CONTENT_MGMT_MODE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setContentManagementMode(active: boolean): void {
+  try {
+    if (active) {
+      sessionStorage.setItem(CONTENT_MGMT_MODE_KEY, 'true');
+    } else {
+      sessionStorage.removeItem(CONTENT_MGMT_MODE_KEY);
+    }
+  } catch {}
+}

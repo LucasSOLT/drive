@@ -617,7 +617,7 @@ function renderScrollCanvas(): string {
                 <div>
                   <textarea class="create-annotation__inline" data-notes="${i}"
                     placeholder="Add dialogue..."
-                    rows="2" style="width:100%; box-sizing:border-box;">${panel.notes}</textarea>
+                    rows="2" maxlength="1000" style="width:100%; box-sizing:border-box;">${panel.notes}</textarea>
                 </div>
                 <div class="prerecord-row" style="margin-top:6px;">
                   <button class="prerecord-btn ${panel.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-scroll="${i}" type="button">
@@ -689,7 +689,7 @@ function renderBookCanvas(): string {
       <div class="book-tile__image" data-tile-upload="${i}">
         ${page.image
             ? `${isVideoMedia(page.image)
-                 ? `<video class="book-tile__img" src="${page.image}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+                 ? `<video class="book-tile__img" src="${page.image}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover; border-radius:8px;"></video>`
                  : `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}">`}
                <button class="book-tile__remove-img" data-tile-remove-img="${i}">${ICON.close}</button>`
             : `<div class="book-tile__empty-img">
@@ -707,7 +707,7 @@ function renderBookCanvas(): string {
       </div>
       <textarea class="book-tile__textarea" data-tile-text="${i}"
         placeholder="Write the story for this page..."
-        rows="4">${page.text}</textarea>
+        rows="4" maxlength="1000">${page.text}</textarea>
 
       <!-- Dialogue -->
       <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
@@ -715,7 +715,7 @@ function renderBookCanvas(): string {
       </div>
       <textarea class="book-tile__textarea" data-tile-dialog="${i}"
         placeholder="Write dialogue for this page..."
-        rows="3">${page.dialogText || ''}</textarea>
+        rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
 
       <!-- Voice Tuning -->
       <div class="book-tile__voice-tuning">
@@ -837,7 +837,7 @@ function openPageFullscreen(pageIndex: number): void {
       </div>
       <textarea class="book-fullscreen__textarea" id="fs-textarea"
         placeholder="Write the story for this page..."
-        rows="6">${page.text}</textarea>
+        rows="6" maxlength="1000">${page.text}</textarea>
 
       <!-- Dialogue (fullscreen) -->
       <div class="book-fullscreen__text-label" style="margin-top: var(--space-md);">
@@ -845,7 +845,7 @@ function openPageFullscreen(pageIndex: number): void {
       </div>
       <textarea class="book-fullscreen__textarea" id="fs-dialog-textarea"
         placeholder="Write dialogue for this page..."
-        rows="4">${page.dialogText || ''}</textarea>
+        rows="4" maxlength="1000">${page.dialogText || ''}</textarea>
 
       <!-- Voice Tuning (fullscreen) -->
       <div class="book-tile__voice-tuning" style="margin-top: var(--space-md);">
@@ -928,16 +928,22 @@ function openPageFullscreen(pageIndex: number): void {
   });
 
   // Text changes
-  document.getElementById('fs-textarea')?.addEventListener('input', () => {
-    bookPages[pageIndex].text = (document.getElementById('fs-textarea') as HTMLTextAreaElement).value;
+  const fsText = document.getElementById('fs-textarea') as HTMLTextAreaElement | null;
+  const updateFsText = () => {
+    if (fsText) bookPages[pageIndex].text = fsText.value;
     saveDraft();
-  });
+  };
+  fsText?.addEventListener('input', updateFsText);
+  fsText?.addEventListener('paste', () => setTimeout(updateFsText, 0));
 
   // Dialogue changes
-  document.getElementById('fs-dialog-textarea')?.addEventListener('input', () => {
-    bookPages[pageIndex].dialogText = (document.getElementById('fs-dialog-textarea') as HTMLTextAreaElement).value;
+  const fsDialog = document.getElementById('fs-dialog-textarea') as HTMLTextAreaElement | null;
+  const updateFsDialog = () => {
+    if (fsDialog) bookPages[pageIndex].dialogText = fsDialog.value;
     saveDraft();
-  });
+  };
+  fsDialog?.addEventListener('input', updateFsDialog);
+  fsDialog?.addEventListener('paste', () => setTimeout(updateFsDialog, 0));
 
   // Fullscreen Voice Tuning slider
   const fsStabilitySlider = document.getElementById('fs-stability-slider') as HTMLInputElement;
@@ -961,9 +967,13 @@ function openPageFullscreen(pageIndex: number): void {
   });
 
   // Fullscreen Deeper Dive content
-  document.getElementById('fs-dd-content')?.addEventListener('input', () => {
-    bookPages[pageIndex].deeperDiveContent = (document.getElementById('fs-dd-content') as HTMLTextAreaElement).value;
-  });
+  const fsDd = document.getElementById('fs-dd-content') as HTMLTextAreaElement | null;
+  const updateFsDd = () => {
+    if (fsDd) bookPages[pageIndex].deeperDiveContent = fsDd.value;
+    saveDraft();
+  };
+  fsDd?.addEventListener('input', updateFsDd);
+  fsDd?.addEventListener('paste', () => setTimeout(updateFsDd, 0));
 
   // Fullscreen Voice Note
   document.getElementById('fs-dd-voice')?.addEventListener('click', () => {
@@ -1017,12 +1027,12 @@ function openStoryboard(): void {
 
       <div class="sb-card__section">
         <div class="sb-card__section-label">STORY TEXT</div>
-        <textarea class="sb-card__textarea" data-sb-text="${i}" rows="6" placeholder="Write the story for this page...">${page.text}</textarea>
+        <textarea class="sb-card__textarea" data-sb-text="${i}" rows="6" placeholder="Write the story for this page..." maxlength="1000">${page.text}</textarea>
       </div>
 
       <div class="sb-card__section">
         <div class="sb-card__section-label">DIALOG</div>
-        <textarea class="sb-card__dialog-textarea" data-sb-dialog="${i}" rows="3" placeholder="Write dialog for this page...">${page.dialogText || ''}</textarea>
+        <textarea class="sb-card__dialog-textarea" data-sb-dialog="${i}" rows="3" placeholder="Write dialog for this page..." maxlength="1000">${page.dialogText || ''}</textarea>
         <div class="sb-card__prerecord-row">
           <button class="sb-card__record-btn" data-sb-record="${i}" type="button">🎙️ Record</button>
           <button class="sb-card__play-btn" data-sb-play="${i}" type="button" ${page.dialogAudioUrl ? '' : 'disabled'}>▶ Play</button>
@@ -1089,10 +1099,13 @@ function openStoryboard(): void {
 
   // Text editing
   overlay.querySelectorAll('[data-sb-text]').forEach(ta => {
-    ta.addEventListener('input', () => {
+    const handleInput = () => {
       const idx = parseInt(ta.getAttribute('data-sb-text') || '0');
       bookPages[idx].text = (ta as HTMLTextAreaElement).value;
-    });
+      saveDraft();
+    };
+    ta.addEventListener('input', handleInput);
+    ta.addEventListener('paste', () => setTimeout(handleInput, 0));
   });
 
   // Stability sliders
@@ -1103,15 +1116,19 @@ function openStoryboard(): void {
       bookPages[idx].stability = val;
       const pct = overlay.querySelector(`[data-sb-pct="${idx}"]`);
       if (pct) pct.textContent = Math.round(val * 100) + '%';
+      saveDraft();
     });
   });
 
   // Deeper dive content
   overlay.querySelectorAll('[data-sb-dd]').forEach(ta => {
-    ta.addEventListener('input', () => {
+    const handleInput = () => {
       const idx = parseInt(ta.getAttribute('data-sb-dd') || '0');
       bookPages[idx].deeperDiveContent = (ta as HTMLTextAreaElement).value;
-    });
+      saveDraft();
+    };
+    ta.addEventListener('input', handleInput);
+    ta.addEventListener('paste', () => setTimeout(handleInput, 0));
   });
 
   // Delete page
@@ -1122,6 +1139,7 @@ function openStoryboard(): void {
       if (!confirm(`Delete Page ${idx + 1}?`)) return;
       bookPages.splice(idx, 1);
       if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
+      saveDraft();
       overlay.remove();
       openStoryboard();
     });
@@ -1129,10 +1147,13 @@ function openStoryboard(): void {
 
   // Dialog text editing
   overlay.querySelectorAll('[data-sb-dialog]').forEach(ta => {
-    ta.addEventListener('input', () => {
+    const handleInput = () => {
       const idx = parseInt(ta.getAttribute('data-sb-dialog') || '0');
       bookPages[idx].dialogText = (ta as HTMLTextAreaElement).value;
-    });
+      saveDraft();
+    };
+    ta.addEventListener('input', handleInput);
+    ta.addEventListener('paste', () => setTimeout(handleInput, 0));
   });
 
   // --- Drag and Drop reordering ---
@@ -2345,11 +2366,13 @@ export function init(): void {
 
       // Notes
       wizard.querySelectorAll('[data-notes]').forEach(ta => {
-        ta.addEventListener('input', () => {
+        const handleNotes = () => {
           const idx = parseInt(ta.getAttribute('data-notes') || '0');
           scrollPanels[idx].notes = (ta as HTMLTextAreaElement).value;
           saveDraft();
-        });
+        };
+        ta.addEventListener('input', handleNotes);
+        ta.addEventListener('paste', () => setTimeout(handleNotes, 0));
       });
 
       // Long-press to delete tile
@@ -2358,6 +2381,7 @@ export function init(): void {
         const idx = parseInt(row.getAttribute('data-longpress') || '0');
 
         const startPress = (e: Event) => {
+          if ((e.target as HTMLElement).closest('input, textarea, button, select, [contenteditable="true"]')) return;
           pressTimer = setTimeout(() => {
             pressTimer = null;
             if (scrollPanels.length <= 1) {
@@ -2842,16 +2866,22 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Save story text
-      wizard.querySelector(`[data-tile-text="${i}"]`)?.addEventListener('input', () => {
-        bookPages[i].text = (wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement).value;
+      const tileText = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
+      const handleTileText = () => {
+        if (tileText) bookPages[i].text = tileText.value;
         saveDraft();
-      });
+      };
+      tileText?.addEventListener('input', handleTileText);
+      tileText?.addEventListener('paste', () => setTimeout(handleTileText, 0));
 
       // Save dialogue text
-      wizard.querySelector(`[data-tile-dialog="${i}"]`)?.addEventListener('input', () => {
-        bookPages[i].dialogText = (wizard.querySelector(`[data-tile-dialog="${i}"]`) as HTMLTextAreaElement).value;
+      const tileDialog = wizard.querySelector(`[data-tile-dialog="${i}"]`) as HTMLTextAreaElement | null;
+      const handleTileDialog = () => {
+        if (tileDialog) bookPages[i].dialogText = tileDialog.value;
         saveDraft();
-      });
+      };
+      tileDialog?.addEventListener('input', handleTileDialog);
+      tileDialog?.addEventListener('paste', () => setTimeout(handleTileDialog, 0));
 
       // Voice Tuning slider
       const stabilitySlider = wizard.querySelector(`[data-tile-stability="${i}"]`) as HTMLInputElement;
@@ -2928,10 +2958,13 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Deeper Dive content
-      wizard.querySelector(`[data-tile-dd-content="${i}"]`)?.addEventListener('input', () => {
-        bookPages[i].deeperDiveContent = (wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement).value;
+      const tileDd = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
+      const handleTileDd = () => {
+        if (tileDd) bookPages[i].deeperDiveContent = tileDd.value;
         saveDraft();
-      });
+      };
+      tileDd?.addEventListener('input', handleTileDd);
+      tileDd?.addEventListener('paste', () => setTimeout(handleTileDd, 0));
 
       // Voice Note
       wizard.querySelector(`[data-tile-dd-voice="${i}"]`)?.addEventListener('click', () => {
@@ -2954,7 +2987,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       if (tile) {
         let pressTimer: ReturnType<typeof setTimeout> | null = null;
         const startPress = (e: Event) => {
-          if ((e.target as HTMLElement).closest('input, textarea, button')) return;
+          if ((e.target as HTMLElement).closest('input, textarea, button, select, [contenteditable="true"]')) return;
           pressTimer = setTimeout(() => {
             pressTimer = null;
             if (bookPages.length <= 1) {
