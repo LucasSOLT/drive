@@ -794,7 +794,9 @@ function renderBookCanvas(): string {
       <!-- Image area -->
       <div class="book-tile__image" data-tile-upload="${i}">
         ${page.image
-            ? `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}">
+            ? `${isVideoMedia(page.image)
+                 ? `<video class="book-tile__img" src="${page.image}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+                 : `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}">`}
                <button class="book-tile__remove-img" data-tile-remove-img="${i}">${ICON.close}</button>`
             : `<div class="book-tile__empty-img">
                 <div class="book-tile__upload-btn">${ICON.upload}</div>
@@ -924,7 +926,9 @@ function openPageFullscreen(pageIndex: number): void {
     <div class="book-fullscreen__body">
       <div class="book-fullscreen__image-area" id="fs-image-area">
         ${page.image
-            ? `<img src="${page.image}" alt="Page ${pageIndex + 1}">
+            ? `${isVideoMedia(page.image)
+                 ? `<video src="${page.image}" autoplay loop muted playsinline style="width:100%;max-height:60vh;object-fit:contain;border-radius:12px;"></video>`
+                 : `<img src="${page.image}" alt="Page ${pageIndex + 1}">`}
                <button class="book-fullscreen__remove-img" id="fs-remove-img">${ICON.close}</button>`
             : `<div class="book-fullscreen__empty-img">
                  <div class="book-tile__upload-btn">${ICON.upload}</div>
