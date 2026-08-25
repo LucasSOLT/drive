@@ -115,10 +115,14 @@ async function initApp() {
         <!-- Content Management View Top Indicator Banner -->
         <div id="cm-top-banner" class="cm-top-banner" style="display:none;">
           <div class="cm-top-banner-content">
-            <span class="cm-top-banner-pill">🔮 Content Management View</span>
-            <span class="cm-top-banner-desc">Live Story Tile Preview</span>
+            <span class="cm-pulse-dot"></span>
+            <span class="cm-top-banner-pill">🔮 CONTENT MANAGEMENT VIEW</span>
+            <span class="cm-top-banner-desc">Live Story Tile Preview (Home · Featured · Explore)</span>
           </div>
-          <button id="cm-banner-exit-btn" class="cm-banner-exit-btn">← Back to Admin</button>
+          <button id="cm-banner-exit-btn" class="cm-banner-exit-btn" title="Exit to Admin Creation Dashboard">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            <span>Exit to Admin</span>
+          </button>
         </div>
         
         <!-- Dynamic view container -->
@@ -189,6 +193,13 @@ function renderView(route: string) {
   if (requireAuth(route)) return;
 
   const baseRoute = route.split('/')[0].split('?')[0];
+
+  // In Content Management mode, block navigating to Library and redirect to Home
+  if (isContentManagementMode() && baseRoute === 'library') {
+    navigate('home');
+    return;
+  }
+
   let viewModule: any;
   let title = 'Home';
   

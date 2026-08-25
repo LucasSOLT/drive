@@ -98,7 +98,7 @@ const ICON = {
   trash: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
   close: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
   redo: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`,
-  collapse: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="4" x2="21" y2="11"/><line x1="3" y1="20" x2="10" y2="14"/></svg>`,
+  collapse: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`,
   speaker: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`,
   // Canvas toolbar icons
   backArrow: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>`,
@@ -917,14 +917,11 @@ function openPageFullscreen(pageIndex: number): void {
   overlay.className = 'book-fullscreen-overlay';
   overlay.id = 'book-fullscreen';
   overlay.innerHTML = `
-    <div class="book-fullscreen__topbar">
-      <span class="book-fullscreen__topbar-title">Page ${pageIndex + 1}</span>
-      <button class="book-fullscreen__collapse" id="btn-fullscreen-collapse" title="Collapse">
-        ${ICON.collapse}
-      </button>
-    </div>
     <div class="book-fullscreen__body">
       <div class="book-fullscreen__image-area" id="fs-image-area">
+        <button class="book-fullscreen__collapse" id="btn-fullscreen-collapse" title="Collapse" type="button">
+          ${ICON.collapse}
+        </button>
         ${page.image
             ? `${isVideoMedia(page.image)
                  ? `<video src="${page.image}" autoplay loop muted playsinline style="width:100%;max-height:60vh;object-fit:contain;border-radius:12px;"></video>`
@@ -993,15 +990,16 @@ function openPageFullscreen(pageIndex: number): void {
   // --- Wire up events ---
 
   // Collapse button
-  document.getElementById('btn-fullscreen-collapse')?.addEventListener('click', () => {
+  document.getElementById('btn-fullscreen-collapse')?.addEventListener('click', (e) => {
+    e.stopPropagation();
     closePageFullscreen(overlay);
   });
 
-  // Image area click â†’ file upload
+  // Image area click → file upload
   const imageArea = document.getElementById('fs-image-area');
   const fileInput = document.getElementById('fs-file-input') as HTMLInputElement;
   imageArea?.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).closest('#fs-remove-img') || (e.target as HTMLElement).closest('#fs-redo-img')) return;
+    if ((e.target as HTMLElement).closest('#fs-remove-img') || (e.target as HTMLElement).closest('#btn-fullscreen-collapse')) return;
     fileInput?.click();
   });
 
