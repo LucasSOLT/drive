@@ -9,6 +9,19 @@ import { supabase } from './supabase.ts';
 let currentAudio: HTMLAudioElement | null = null;
 let currentObjectURL: string | null = null;
 
+function speakWithBrowserTTS(text: string): void {
+  if (!('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  } catch (e) {
+    console.warn('[TTS] Web Speech API failed:', e);
+  }
+}
+
 /** Stop any currently playing TTS audio and clean up resources. */
 export function stopSpeaking(): void {
   if (currentAudio) {
@@ -20,16 +33,24 @@ export function stopSpeaking(): void {
     URL.revokeObjectURL(currentObjectURL);
     currentObjectURL = null;
   }
+  if ('speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+  }
 }
 
 /** Returns whether TTS audio is currently playing. */
 export function isSpeaking(): boolean {
-  return currentAudio !== null && !currentAudio.paused;
+  const isAudioSpeaking = currentAudio !== null && !currentAudio.paused;
+  const isSynthSpeaking = 'speechSynthesis' in window && window.speechSynthesis.speaking;
+  return isAudioSpeaking || isSynthSpeaking;
 }
 
 /** Speak the given text via ElevenLabs API using the user's selected voice. */
 export async function speakText(text: string): Promise<void> {
   stopSpeaking();
+  if (!text || !text.trim()) return;
 
   const voiceId = getSelectedVoiceId();
 
@@ -40,14 +61,17 @@ export async function speakText(text: string): Promise<void> {
         method: 'POST',
         body: {
           text,
-          model_id: 'eleven_v3',
+          model_id: 'eleven_multilingual_v2',
           voice_settings: { stability: 0.5, similarity_boost: 0.75 },
         }
       }
     });
 
-    if (error || data?.error) {
-      throw new Error(data?.error || error?.message || 'TTS failed');
+    if (error || data?.error || !data?.audio_base64) {
+      const errMsg = data?.error || data?.detail?.message || error?.message || 'TTS failed';
+      console.warn('[TTS] ElevenLabs failed (' + errMsg + '), falling back to browser Web Speech API...');
+      speakWithBrowserTTS(text);
+      return;
     }
 
     // The proxy returns { audio_base64, content_type }
@@ -69,16 +93,17 @@ export async function speakText(text: string): Promise<void> {
     });
 
     audio.addEventListener('error', () => {
-      console.warn('[TTS] Audio playback error.');
+      console.warn('[TTS] Audio playback error, falling back to browser TTS');
       if (currentAudio === audio) {
         stopSpeaking();
       }
+      speakWithBrowserTTS(text);
     });
 
     await audio.play();
   } catch (err) {
-    console.warn('[TTS] Failed to speak text:', err);
-    stopSpeaking();
+    console.warn('[TTS] Failed to speak text via ElevenLabs, falling back to browser TTS:', err);
+    speakWithBrowserTTS(text);
   }
 }
 
@@ -88,6 +113,10 @@ export async function speakText(text: string): Promise<void> {
  * Uses the user's selected voice and the given stability setting.
  */
 export async function preRecordAudio(text: string, stability = 0.5): Promise<string> {
+  if (!text || !text.trim()) {
+    throw new Error('No text provided to record.');
+  }
+
   const voiceId = getSelectedVoiceId();
 
   console.log('[TTS Pre-record] Calling ElevenLabs proxy with voice:', voiceId, 'stability:', stability, 'text length:', text.length);
@@ -98,7 +127,7 @@ export async function preRecordAudio(text: string, stability = 0.5): Promise<str
       method: 'POST',
       body: {
         text,
-        model_id: 'eleven_v3',
+        model_id: 'eleven_multilingual_v2',
         voice_settings: { stability: Number(stability), similarity_boost: 0.75 },
       }
     }
@@ -106,14 +135,26 @@ export async function preRecordAudio(text: string, stability = 0.5): Promise<str
 
   if (error) {
     console.error('[TTS Pre-record] Edge function error:', error);
-    // Try to extract a meaningful message
-    const msg = typeof error === 'object' && error.message ? error.message : String(error);
+    let msg = error.message;
+    try {
+      if ('context' in error && (error as any).context) {
+        const body = await (error as any).context.json();
+        msg = body?.error || body?.detail?.message || body?.detail || JSON.stringify(body);
+      }
+    } catch {}
     throw new Error(msg || 'TTS pre-recording failed');
   }
 
   if (data?.error) {
-    console.error('[TTS Pre-record] API error:', data.error);
-    throw new Error(data.error);
+    const msg = typeof data.error === 'string' ? data.error : (data.error.message || data.error.detail?.message || JSON.stringify(data.error));
+    console.error('[TTS Pre-record] API error:', msg);
+    throw new Error(msg);
+  }
+
+  if (data?.detail) {
+    const msg = typeof data.detail === 'string' ? data.detail : (data.detail.message || JSON.stringify(data.detail));
+    console.error('[TTS Pre-record] Detail error:', msg);
+    throw new Error(msg);
   }
 
   if (!data?.audio_base64) {

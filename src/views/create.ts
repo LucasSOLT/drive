@@ -3,7 +3,6 @@ import { genres } from '../data/stories.ts';
 import { addUserStory, getUserStories, isLibraryUnlocked, canCreateStory, getTokensRemaining, getUserPlan, consumeToken } from '../state.ts';
 import { navigate, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { generateImage } from '../lib/image-gen.ts';
 import { speakText, stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl } from '../lib/tts.ts';
 import { cleanUpText } from '../lib/groq.ts';
 
@@ -48,7 +47,6 @@ let scrollPanels: ScrollPanel[] = [
   { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
   { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
 ];
-let scrollPrompts: string[] = ['', '', '', '', ''];
 // Character Sheet Studio state
 interface StudioCharacter {
   name: string;
@@ -65,12 +63,9 @@ let isGeneratingScript = false;
 let scriptText = '';
 let scriptPdfName = '';
 let activeCharPopup: number | null = null;
-let generatingPanelIdx: number | null = null;
 let selectedLayout: string = 'single';
 let layoutPickerOpen = false;
 let panelLayoutOverlay: number | null = null; // which panel has layout overlay open
-let selectedGenTile: Record<number, number | null> = {}; // per-panel selected tile for generation
-let promptActivePanel: number | null = null; // which panel's prompt input is active (has text)
 
 // Illustrated Book state
 interface BookPage {
@@ -87,10 +82,7 @@ let bookPages: BookPage[] = [
   defaultBookPage(), defaultBookPage(), defaultBookPage(),
   defaultBookPage(), defaultBookPage(),
 ];
-let bookPrompts: string[] = ['', '', '', '', '']; // Track last prompt per page
 let currentPage = 0;
-let isGenerating = false;
-let generatingTileIndex: number | null = null;
 let activeDraftId: string | null = null;
 let _coverThumbnail: string | null = null;
 let storyCoverVideo: string = '';
@@ -179,14 +171,12 @@ interface DraftEntry {
   coverThumbnail?: string | null;
   storyCoverVideo?: string;
   scrollPanels: { image: string | null; notes: string }[];
-  scrollPrompts?: string[];
   characterRefUrls?: any;
   characterNotes?: any;
   characters?: StudioCharacter[];
   scriptText?: string;
   studioOpen?: boolean;
   bookPages: BookPage[];
-  bookPrompts: string[];
   currentPage: number;
   updatedAt: string;
 }
@@ -231,14 +221,12 @@ function saveDraft() {
     coverThumbnail: _coverThumbnail,
     storyCoverVideo,
     scrollPanels,
-    scrollPrompts,
     characterRefUrls: undefined as any,
     characterNotes: undefined as any,
     characters,
     scriptText,
     studioOpen,
     bookPages,
-    bookPrompts,
     currentPage,
     updatedAt: new Date().toISOString(),
   };
@@ -278,7 +266,6 @@ function loadDraft(draftId: string): boolean {
       textOverlays: p.textOverlays || [[]],
       audioUrl: p.audioUrl || null,
     }));
-    scrollPrompts = draft.scrollPrompts || Array.from({ length: scrollPanels.length }, () => '');
     characters = draft.characters || [
       { name: 'A', image: null, description: '' },
       { name: 'B', image: null, description: '' },
@@ -287,7 +274,6 @@ function loadDraft(draftId: string): boolean {
     scriptText = draft.scriptText || '';
     studioOpen = draft.studioOpen || false;
     bookPages = draft.bookPages || Array.from({ length: 5 }, () => defaultBookPage());
-    bookPrompts = draft.bookPrompts || ['', '', '', '', ''];
     currentPage = draft.currentPage || 0;
     return true;
   } catch (e) {
@@ -407,37 +393,15 @@ function getTileCount(layout: string): number {
   }
 }
 
-function renderTileGrid(panelIndex: number, layout: string, tiles: (string | null)[], isGenerating: boolean, generatingTile: number = 0): string {
+function renderTileGrid(panelIndex: number, layout: string, tiles: (string | null)[]): string {
   const count = getTileCount(layout);
   
   // Ensure tiles array has enough entries
   while (tiles.length < count) tiles.push(null);
-
-  // Show checkboxes when prompt is active for this panel
-  const showCheckboxes = promptActivePanel === panelIndex && count > 1;
-  const selTile = selectedGenTile[panelIndex] ?? null;
   
   const renderSingleTile = (tileIdx: number) => {
     const tileImage = tiles[tileIdx];
-    const isSelected = selTile === tileIdx;
 
-    // Checkbox HTML (shown when user is typing in prompt)
-    const checkboxHtml = showCheckboxes ? `
-      <label class="tile-select-cb${isSelected ? ' tile-select-cb--checked' : ''}" data-select-tile="${tileIdx}" data-select-panel="${panelIndex}">
-        <span class="tile-select-cb__box">${isSelected ? '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><polyline points="3 8 7 12 13 4" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</span>
-      </label>
-    ` : '';
-
-    if (isGenerating && tileIdx === generatingTile) {
-      return `
-        <div class="panel-tile" data-tile="${tileIdx}" data-panel="${panelIndex}">
-          <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--color-purple);">
-            <div class="beta-spinner" style="margin-bottom:8px;"></div>
-            <span style="font-family:var(--font-heading); font-size:0.78rem; font-weight:700;">Generating...</span>
-          </div>
-        </div>
-      `;
-    }
     if (tileImage) {
       // Get text overlays for this tile
       const overlays = (scrollPanels[panelIndex]?.textOverlays?.[tileIdx]) || [];
@@ -466,8 +430,7 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
       }).join('');
 
       return `
-        <div class="panel-tile panel-tile--filled${isSelected && showCheckboxes ? ' panel-tile--selected' : ''}" data-tile="${tileIdx}" data-panel="${panelIndex}">
-          ${checkboxHtml}
+        <div class="panel-tile panel-tile--filled" data-tile="${tileIdx}" data-panel="${panelIndex}">
           <img src="${tileImage}" alt="Tile ${tileIdx + 1}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;" />
           <button class="panel-tile__add-text" data-addtext-tile="${tileIdx}" data-addtext-panel="${panelIndex}" type="button" title="Add text">T</button>
           <button class="panel-tile__remove" data-remove-tile="${tileIdx}" data-remove-panel="${panelIndex}" type="button" title="Remove image">&times;</button>
@@ -476,8 +439,7 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
       `;
     }
     return `
-      <div class="panel-tile${isSelected && showCheckboxes ? ' panel-tile--selected' : ''}" data-tile="${tileIdx}" data-panel="${panelIndex}">
-        ${checkboxHtml}
+      <div class="panel-tile" data-tile="${tileIdx}" data-panel="${panelIndex}">
         <div class="panel-tile__placeholder">
           ${ICON.upload}
           <span style="font-size:0.7rem; color:var(--color-text-muted);">Tile ${tileIdx + 1}</span>
@@ -605,9 +567,6 @@ function renderScrollCanvas(): string {
       <!-- ─── PANELS LIST ─── -->
       <div class="create-canvas">
         ${scrollPanels.map((panel, i) => {
-          const promptVal = scrollPrompts[i] || '';
-          const isGeneratingThisPanel = generatingPanelIdx === i;
-
           return `
             <div class="create-panel-row" data-panel="${i}" data-longpress="${i}" style="flex-direction:column; gap:12px; background:var(--color-surface); padding:16px; border-radius:16px; border:1px solid var(--color-border); margin-bottom:16px; position:relative;">
               
@@ -620,7 +579,7 @@ function renderScrollCanvas(): string {
 
               <!-- Tile Grid Area -->
               <div class="webtoon-panel-wrap" style="position:relative;">
-                ${renderTileGrid(i, panel.layout || 'single', panel.tiles || [panel.image], isGeneratingThisPanel, selectedGenTile[i] ?? 0)}
+                ${renderTileGrid(i, panel.layout || 'single', panel.tiles || [panel.image])}
                 <input type="file" class="create-upload-block__input" data-file="${i}" accept="image/*" hidden>
                 
                 ${panel.notes && (panel.tiles?.[0] || panel.image) ? `
@@ -648,25 +607,6 @@ function renderScrollCanvas(): string {
                     </div>
                   </div>
                 ` : ''}
-              </div>
-
-              <!-- AI Visual Prompt & Controls -->
-              <div class="panel-ai-controls">
-                <label style="font-family:var(--font-heading); font-size:0.78rem; font-weight:600; color:var(--color-text-muted);">
-                  Visual prompt
-                </label>
-                <input type="text" class="panel-prompt-input" data-panel-prompt="${i}" 
-                  placeholder="Describe what happens in Panel ${i + 1}..." 
-                  value="${promptVal}" />
-                
-                <div style="display:flex; gap:8px;">
-                  <button type="button" class="panel-ai-btn" data-gen-panel-ai="${i}" style="flex:1;" ${isGeneratingThisPanel ? 'disabled' : ''}>
-                    ${isGeneratingThisPanel ? 'Generating...' : 'Generate'}
-                  </button>
-                  <button type="button" class="create-btn create-btn--secondary" data-trigger-file="${i}" style="padding:6px 12px; font-size:0.8rem;">
-                    Upload
-                  </button>
-                </div>
               </div>
 
               <!-- Dialogue / Speech Bubble Notes -->
@@ -725,169 +665,112 @@ function renderScrollCanvas(): string {
 
 function renderBookCanvas(): string {
   // Clamp currentPage
-  if (currentPage < -1) currentPage = -1;
+  if (currentPage < 0) currentPage = 0;
   if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
 
-  // Generate dots (-1 is the cover/settings page)
+  // Generate dots (1 dot per page)
   let dotsHtml = '';
-  for (let i = -1; i < bookPages.length; i++) {
+  for (let i = 0; i < bookPages.length; i++) {
     dotsHtml += `<div class="book-dot${i === currentPage ? ' book-dot--active' : ''}" data-dot="${i}"></div>`;
   }
 
-  let cardHtml = '';
-  if (currentPage === -1) {
-    // ─── PAGE 0: STORY SETTINGS ───
-    cardHtml = `
-      <div class="book-tile book-tile--single">
-        <div class="book-tile__header" style="justify-content: center; padding: 16px;">
-          <span class="book-tile__label" style="font-size:0.8rem;">PAGE 0: STORY SETTINGS</span>
-        </div>
-        <div style="padding: 20px; display:flex; flex-direction:column; gap:16px;">
-          <div class="page-section" style="margin-bottom: 16px;">
-            <label class="page-section__label" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--color-text-muted); font-weight: 700;">Thumbnail Image/Video</label>
-            <div id="cover-thumb-zone" style="width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: var(--color-surface);">
-              <div id="cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${(_coverThumbnail || storyCoverVideo) ? 'display: none;' : ''}">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload thumbnail image or video</p>
-              </div>
-              <img id="cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${(_coverThumbnail && !isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
-              <video id="cover-video-preview" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover; ${(storyCoverVideo || isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${(storyCoverVideo || _coverThumbnail) ? `src="${storyCoverVideo || _coverThumbnail}"` : ''}></video>
-            </div>
-            <input type="file" id="cover-thumb-input" accept="image/*,video/*" style="display: none;" />
-          </div>
-          <div class="page0-form-group">
-            <label class="page0-label">STORY TITLE</label>
-            <input type="text" class="page0-input" id="page0-title" placeholder="Give your story a name..." value="${storyTitle}">
-          </div>
-          <div class="page0-form-group">
-            <label class="page0-label">GENRE</label>
-            <div class="page0-select-wrap">
-              <select class="page0-select" id="page0-genre">
-                <option value="Fantasy" ${storyGenre === 'Fantasy' ? 'selected' : ''}>Fantasy</option>
-                <option value="Sci-Fi" ${storyGenre === 'Sci-Fi' ? 'selected' : ''}>Sci-Fi</option>
-                <option value="Mystery" ${storyGenre === 'Mystery' ? 'selected' : ''}>Mystery</option>
-                <option value="Adventure" ${storyGenre === 'Adventure' ? 'selected' : ''}>Adventure</option>
-                <option value="Romance" ${storyGenre === 'Romance' ? 'selected' : ''}>Romance</option>
-                <option value="Horror" ${storyGenre === 'Horror' ? 'selected' : ''}>Horror</option>
-              </select>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); pointer-events:none; color:var(--color-text-muted);"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </div>
-          </div>
-          <div class="page0-form-group">
-            <label class="page0-label">SYNOPSIS</label>
-            <textarea class="page0-textarea" id="page0-synopsis" rows="6" placeholder="Briefly describe what this story is about...">${storySynopsis}</textarea>
-          </div>
-        </div>
+  const i = currentPage;
+  const page = bookPages[i];
+  const cardHtml = `
+    <div class="book-tile book-tile--single" data-book-longpress="${i}">
+      <div class="book-tile__header" style="position:relative;">
+        <span class="book-tile__label">PAGE ${i + 1}</span>
+        <button class="book-tile__maximize" data-tile-maximize="${i}" title="Expand page">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+        </button>
       </div>
-    `;
-  } else {
-    // ─── NORMAL PAGE ───
-    const i = currentPage;
-    const page = bookPages[i];
-    cardHtml = `
-      <div class="book-tile book-tile--single" data-book-longpress="${i}">
-        <div class="book-tile__header" style="position:relative;">
-          <span class="book-tile__label">PAGE ${i + 1}</span>
-          <button class="book-tile__maximize" data-tile-maximize="${i}" title="Expand page">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+
+      <!-- Image area -->
+      <div class="book-tile__image" data-tile-upload="${i}">
+        ${page.image
+            ? `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}">
+               <button class="book-tile__remove-img" data-tile-remove-img="${i}">${ICON.close}</button>`
+            : `<div class="book-tile__empty-img">
+                <div class="book-tile__upload-btn">${ICON.upload}</div>
+                <span>Click to Upload</span>
+              </div>`
+        }
+        <input type="file" class="book-tile__file" data-tile-file="${i}" accept="image/*,video/*" hidden>
+      </div>
+
+      <!-- Story text -->
+      <div class="book-tile__text-header">
+        <span>STORY TEXT</span>
+        <button class="book-tile__tts" data-tile-tts="${i}" title="Read aloud">${ICON.speaker}</button>
+      </div>
+      <textarea class="book-tile__textarea" data-tile-text="${i}"
+        placeholder="Write the story for this page..."
+        rows="4">${page.text}</textarea>
+
+      <!-- Dialogue -->
+      <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
+        <span>DIALOGUE</span>
+      </div>
+      <textarea class="book-tile__textarea" data-tile-dialog="${i}"
+        placeholder="Write dialogue for this page..."
+        rows="3">${page.dialogText || ''}</textarea>
+
+      <!-- Voice Tuning -->
+      <div class="book-tile__voice-tuning">
+        <div class="book-tile__voice-label">
+          <span>VOICE TUNING</span>
+          <span class="book-tile__voice-pct" data-tile-stability-pct="${i}">${Math.round((page.stability ?? 0.5) * 100)}%</span>
+        </div>
+        <input type="range" class="book-tile__voice-slider" data-tile-stability="${i}"
+          min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
+      </div>
+
+      <!-- Pre-record Audio -->
+      <div class="prerecord-row">
+        <button class="prerecord-btn ${page.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-book="${i}" type="button">
+          ${page.audioUrl
+            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg> <span>Pre-recorded</span>`
+            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg> <span>Pre-record</span>`}
+        </button>
+        ${page.audioUrl ? `
+          <button class="prerecord-play-btn" data-prerecord-play-book="${i}" type="button" title="Preview audio">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           </button>
-        </div>
+        ` : ''}
+      </div>
 
-        <!-- Image area -->
-        <div class="book-tile__image" data-tile-upload="${i}">
-          ${generatingTileIndex === i
-            ? `<div class="book-tile__rendering-img" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; width:100%; min-height:180px; background:linear-gradient(135deg, rgba(139,92,246,0.12), rgba(59,130,246,0.12)); border-radius:var(--radius-md); gap:10px; color:var(--color-purple); font-family:var(--font-heading); font-weight:600;">
-                 <svg class="spin-animation" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                 <span style="font-size:0.92rem;">Creating...</span>
-               </div>`
-            : page.image
-              ? `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}">
-                 <button class="book-tile__remove-img" data-tile-remove-img="${i}">${ICON.close}</button>
-                 ${bookPrompts[i] ? `<button class="book-tile__redo-img" data-tile-redo="${i}" title="Regenerate">${ICON.redo}</button>` : ''}`
-              : `<div class="book-tile__empty-img">
-                  <div class="book-tile__upload-btn">${ICON.upload}</div>
-                  <span>Upload or Generate</span>
-                </div>`
-          }
-          <input type="file" class="book-tile__file" data-tile-file="${i}" accept="image/*" hidden>
-        </div>
-
-        <!-- Generate row -->
-        <div class="book-tile__gen">
-          <input type="text" class="book-tile__prompt" data-tile-prompt="${i}"
-            placeholder="Describe illustration..." maxlength="500"
-            value="${bookPrompts[i] || ''}">
-          <button class="book-tile__gen-btn" data-tile-gen="${i}" ${isGenerating ? 'disabled' : ''}>
-            ${ICON.send}
-          </button>
-        </div>
-
-        <!-- Story text -->
-        <div class="book-tile__text-header">
-          <span>STORY TEXT</span>
-          <button class="book-tile__tts" data-tile-tts="${i}" title="Read aloud">${ICON.speaker}</button>
-        </div>
-        <textarea class="book-tile__textarea" data-tile-text="${i}"
-          placeholder="Write the story for this page..."
-          rows="5">${page.text}</textarea>
-
-        <!-- Voice Tuning -->
-        <div class="book-tile__voice-tuning">
-          <div class="book-tile__voice-label">
-            <span>VOICE TUNING</span>
-            <span class="book-tile__voice-pct" data-tile-stability-pct="${i}">${Math.round((page.stability ?? 0.5) * 100)}%</span>
-          </div>
-          <input type="range" class="book-tile__voice-slider" data-tile-stability="${i}"
-            min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
-        </div>
-
-        <!-- Pre-record Audio -->
-        <div class="prerecord-row">
-          <button class="prerecord-btn ${page.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-book="${i}" type="button">
-            ${page.audioUrl
-              ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg> <span>Pre-recorded</span>`
-              : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg> <span>Pre-record</span>`}
-          </button>
-          ${page.audioUrl ? `
-            <button class="prerecord-play-btn" data-prerecord-play-book="${i}" type="button" title="Preview audio">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <!-- Deeper Dive -->
+      <div class="book-tile__deeper-dive">
+        <button class="book-tile__dd-toggle" data-tile-dd-toggle="${i}" type="button">
+          <svg class="book-tile__dd-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 6 15 12 9 18"/></svg>
+          <span>DEEPER DIVE (MORE SECTION)</span>
+        </button>
+        <div class="book-tile__dd-panel" data-tile-dd-panel="${i}" style="display:none;">
+          <textarea class="book-tile__dd-textarea" data-tile-dd-content="${i}"
+            placeholder="Capture your deeper dive content here..."
+            rows="5">${page.deeperDiveContent || ''}</textarea>
+          <div class="book-tile__dd-actions">
+            <button class="book-tile__dd-voice-btn" data-tile-dd-voice="${i}" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              <span>Voice Note</span>
             </button>
-          ` : ''}
-        </div>
-
-        <!-- Deeper Dive -->
-        <div class="book-tile__deeper-dive">
-          <button class="book-tile__dd-toggle" data-tile-dd-toggle="${i}" type="button">
-            <svg class="book-tile__dd-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 6 15 12 9 18"/></svg>
-            <span>DEEPER DIVE (MORE SECTION)</span>
-          </button>
-          <div class="book-tile__dd-panel" data-tile-dd-panel="${i}" style="display:none;">
-            <textarea class="book-tile__dd-textarea" data-tile-dd-content="${i}"
-              placeholder="Capture your deeper dive content here..."
-              rows="5">${page.deeperDiveContent || ''}</textarea>
-            <div class="book-tile__dd-actions">
-              <button class="book-tile__dd-voice-btn" data-tile-dd-voice="${i}" type="button">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                <span>Voice Note</span>
-              </button>
-              <button class="book-tile__dd-cleanup-btn" data-tile-dd-cleanup="${i}" type="button">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
-                <span>Clean Up</span>
-              </button>
-            </div>
+            <button class="book-tile__dd-cleanup-btn" data-tile-dd-cleanup="${i}" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
+              <span>Clean Up</span>
+            </button>
           </div>
         </div>
       </div>
-    `;
-  }
+    </div>
+  `;
 
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
       ${renderCanvasToolbar('Illustrated Book')}
 
-      <h2 class="create-phase__title" style="margin-bottom:4px;">${currentPage === -1 ? 'Story Settings' : 'Your Pages'}</h2>
-      <p class="create-phase__desc">${currentPage === -1 ? 'Define your story details.' : `Page ${currentPage + 1} of ${bookPages.length}. Long-press to delete.`}</p>
+      <h2 class="create-phase__title" style="margin-bottom:4px;">Your Pages</h2>
+      <p class="create-phase__desc">Page ${currentPage + 1} of ${bookPages.length}. Long-press to delete.</p>
 
       <!-- Page progress dots -->
       <div class="book-dots" id="book-dots">${dotsHtml}</div>
@@ -895,7 +778,7 @@ function renderBookCanvas(): string {
       <!-- Single page view with arrow navigation -->
       <div class="book-single-view">
         <!-- Left arrow -->
-        <button class="book-nav-arrow book-nav-arrow--left" id="btn-book-prev" ${currentPage <= -1 ? 'style="visibility:hidden"' : ''}>
+        <button class="book-nav-arrow book-nav-arrow--left" id="btn-book-prev" ${currentPage <= 0 ? 'style="visibility:hidden"' : ''}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
 
@@ -934,29 +817,15 @@ function openPageFullscreen(pageIndex: number): void {
     </div>
     <div class="book-fullscreen__body">
       <div class="book-fullscreen__image-area" id="fs-image-area">
-        ${generatingTileIndex === pageIndex
-          ? `<div class="book-tile__rendering-img" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; width:100%; min-height:220px; background:linear-gradient(135deg, rgba(139,92,246,0.12), rgba(59,130,246,0.12)); border-radius:var(--radius-md); gap:12px; color:var(--color-purple); font-family:var(--font-heading); font-weight:600;">
-               <svg class="spin-animation" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-               <span style="font-size:1.05rem;">Creating...</span>
-             </div>`
-          : page.image
+        ${page.image
             ? `<img src="${page.image}" alt="Page ${pageIndex + 1}">
-               <button class="book-fullscreen__remove-img" id="fs-remove-img">${ICON.close}</button>
-               ${bookPrompts[pageIndex] ? `<button class="book-fullscreen__redo-img" id="fs-redo-img" title="Regenerate">${ICON.redo}</button>` : ''}`
+               <button class="book-fullscreen__remove-img" id="fs-remove-img">${ICON.close}</button>`
             : `<div class="book-fullscreen__empty-img">
                  <div class="book-tile__upload-btn">${ICON.upload}</div>
-                 <span>Upload or Generate</span>
+                 <span>Click to Upload</span>
                </div>`
         }
-        <input type="file" id="fs-file-input" accept="image/*" hidden>
-      </div>
-      <div class="book-fullscreen__gen-row">
-        <input type="text" class="book-fullscreen__prompt" id="fs-prompt"
-          placeholder="Describe illustration..." maxlength="500"
-          value="${bookPrompts[pageIndex] || ''}">
-        <button class="book-fullscreen__gen-btn" id="fs-gen-btn" ${isGenerating ? 'disabled' : ''}>
-          ${ICON.send}
-        </button>
+        <input type="file" id="fs-file-input" accept="image/*,video/*" hidden>
       </div>
       <div class="book-fullscreen__text-label">
         <span>Story Text</span>
@@ -964,7 +833,15 @@ function openPageFullscreen(pageIndex: number): void {
       </div>
       <textarea class="book-fullscreen__textarea" id="fs-textarea"
         placeholder="Write the story for this page..."
-        rows="8">${page.text}</textarea>
+        rows="6">${page.text}</textarea>
+
+      <!-- Dialogue (fullscreen) -->
+      <div class="book-fullscreen__text-label" style="margin-top: var(--space-md);">
+        <span>Dialogue</span>
+      </div>
+      <textarea class="book-fullscreen__textarea" id="fs-dialog-textarea"
+        placeholder="Write dialogue for this page..."
+        rows="4">${page.dialogText || ''}</textarea>
 
       <!-- Voice Tuning (fullscreen) -->
       <div class="book-tile__voice-tuning" style="margin-top: var(--space-md);">
@@ -1039,55 +916,6 @@ function openPageFullscreen(pageIndex: number): void {
     openPageFullscreen(pageIndex);
   });
 
-  // AI Generate
-  document.getElementById('fs-gen-btn')?.addEventListener('click', async () => {
-    const promptInput = document.getElementById('fs-prompt') as HTMLInputElement;
-    const prompt = promptInput?.value?.trim();
-    if (!prompt || isGenerating) return;
-    isGenerating = true;
-    generatingTileIndex = pageIndex;
-    bookPrompts[pageIndex] = '';
-    if (promptInput) promptInput.value = '';
-    closePageFullscreen(overlay);
-    const wizard = document.getElementById('create-wizard');
-    if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }
-    openPageFullscreen(pageIndex);
-
-    try {
-      const result = await generateImage(prompt, bookPages[pageIndex].text);
-      bookPages[pageIndex].image = result.imageUrl;
-    } catch (err: any) {
-      console.error('Fullscreen gen failed:', err);
-    } finally {
-      generatingTileIndex = null;
-      isGenerating = false;
-      closePageFullscreen(overlay);
-      const wizard = document.getElementById('create-wizard');
-      if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }
-      openPageFullscreen(pageIndex);
-    }
-  });
-
-  // Redo
-  document.getElementById('fs-redo-img')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const prompt = bookPrompts[pageIndex];
-    if (!prompt || isGenerating) return;
-    isGenerating = true;
-    bookPages[pageIndex].image = null;
-    try {
-      const result = await generateImage(prompt, bookPages[pageIndex].text);
-      bookPages[pageIndex].image = result.imageUrl;
-    } catch (err: any) {
-      console.error('Redo failed:', err);
-    }
-    isGenerating = false;
-    closePageFullscreen(overlay);
-    const wizard = document.getElementById('create-wizard');
-    if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }
-    openPageFullscreen(pageIndex);
-  });
-
   // TTS
   document.getElementById('fs-tts-btn')?.addEventListener('click', () => {
     const text = bookPages[pageIndex].text;
@@ -1098,11 +926,13 @@ function openPageFullscreen(pageIndex: number): void {
   // Text changes
   document.getElementById('fs-textarea')?.addEventListener('input', () => {
     bookPages[pageIndex].text = (document.getElementById('fs-textarea') as HTMLTextAreaElement).value;
+    saveDraft();
   });
 
-  // Prompt changes
-  document.getElementById('fs-prompt')?.addEventListener('input', () => {
-    bookPrompts[pageIndex] = (document.getElementById('fs-prompt') as HTMLInputElement).value;
+  // Dialogue changes
+  document.getElementById('fs-dialog-textarea')?.addEventListener('input', () => {
+    bookPages[pageIndex].dialogText = (document.getElementById('fs-dialog-textarea') as HTMLTextAreaElement).value;
+    saveDraft();
   });
 
   // Fullscreen Voice Tuning slider
@@ -1249,7 +1079,6 @@ function openStoryboard(): void {
 
   document.getElementById('sb-add-page')?.addEventListener('click', () => {
     bookPages.push(defaultBookPage());
-    bookPrompts.push('');
     overlay.remove();
     openStoryboard();
   });
@@ -1288,7 +1117,6 @@ function openStoryboard(): void {
       if (bookPages.length <= 1) { alert('At least one page must remain.'); return; }
       if (!confirm(`Delete Page ${idx + 1}?`)) return;
       bookPages.splice(idx, 1);
-      bookPrompts.splice(idx, 1);
       if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
       overlay.remove();
       openStoryboard();
@@ -1335,8 +1163,6 @@ function openStoryboard(): void {
         // Reorder bookPages
         const [movedPage] = bookPages.splice(dragSrcIdx, 1);
         bookPages.splice(dropIdx, 0, movedPage);
-        const [movedPrompt] = bookPrompts.splice(dragSrcIdx, 1);
-        bookPrompts.splice(dropIdx, 0, movedPrompt);
         // Re-render storyboard
         overlay.remove();
         openStoryboard();
@@ -1705,7 +1531,6 @@ export function render(): string {
                 dialogAudioUrl: null,
               }))
             : Array.from({ length: 5 }, () => defaultBookPage());
-          bookPrompts = Array.from({ length: bookPages.length }, () => '');
         } else {
           scrollPanels = pages.length > 0
             ? pages.map((p, i) => ({
@@ -1717,7 +1542,6 @@ export function render(): string {
                 audioUrl: userStory.page_audio?.[i] || null,
               }))
             : Array.from({ length: 5 }, () => ({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null }));
-          scrollPrompts = Array.from({ length: scrollPanels.length }, () => '');
         }
       }
     }
@@ -1754,9 +1578,7 @@ export function render(): string {
       _coverThumbnail = null;
       storyCoverVideo = '';
       bookPages = Array.from({ length: 5 }, () => defaultBookPage());
-      bookPrompts = ['', '', '', '', ''];
       currentPage = 0;
-      isGenerating = false;
     }
   }
 
@@ -2160,8 +1982,6 @@ export function init(): void {
         storyTitle = enteredTitle;
         const titleInput = document.getElementById('ss-title') as HTMLInputElement | null;
         if (titleInput) titleInput.value = enteredTitle;
-        const page0Title = document.getElementById('page0-title') as HTMLInputElement | null;
-        if (page0Title) page0Title.value = enteredTitle;
 
         saveDraft();
         try {
@@ -2233,7 +2053,6 @@ export function init(): void {
         storySynopsis = '';
         scrollPanels = Array.from({ length: 5 }, () => ({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]] as TextOverlay[][], audioUrl: null }));
         bookPages = Array.from({ length: 5 }, () => defaultBookPage());
-        bookPrompts = ['', '', '', '', ''];
         currentPage = 0;
         phase = 'format';
         updateView();
@@ -2298,11 +2117,7 @@ export function init(): void {
       });
       document.getElementById('btn-guide-next')?.addEventListener('click', () => {
         phase = 'canvas';
-        if (selectedFormat === 'book') {
-          currentPage = -1;
-        } else {
-          currentPage = 0;
-        }
+        currentPage = 0;
         updateView();
       });
     }
@@ -2357,10 +2172,7 @@ export function init(): void {
               <input type="text" class="char-popup__input" id="char-popup-name" placeholder="Character name" value="${char.name}" />
               <textarea class="char-popup__input" id="char-popup-desc" rows="2" placeholder="Describe this character for AI..." style="resize:vertical;">${char.description}</textarea>
               <div class="char-popup__actions">
-                <button class="char-popup__btn char-popup__btn--generate" id="char-popup-generate" ${isGenerating ? 'disabled' : ''}>
-                  ${isGenerating ? '⏳ Generating...' : '⚡ Generate'}
-                </button>
-                <button class="char-popup__btn char-popup__btn--save" id="char-popup-save">Save</button>
+                <button class="char-popup__btn char-popup__btn--save" id="char-popup-save" style="width:100%;">Save</button>
               </div>
               ${characters.length > 1 ? `<button class="char-popup__btn char-popup__btn--delete" id="char-popup-delete" style="margin-top:6px;width:100%;">Remove</button>` : ''}
             </div>
@@ -2412,26 +2224,7 @@ export function init(): void {
           characters[popupIdx].description = descInput.value;
         });
 
-        // Generate button
-        document.getElementById('char-popup-generate')?.addEventListener('click', async () => {
-          const desc = characters[popupIdx].description;
-          if (!desc.trim()) {
-            showModal({ title: 'Description Needed', content: '<p>Please describe the character first.</p>', confirmText: 'OK' });
-            return;
-          }
-          isGenerating = true;
-          document.getElementById('char-popup-overlay')?.remove();
-          updateView();
-          try {
-            const result = await generateImage(`Full character reference sheet of ${desc}, anime webtoon style, clean white background, front and side view, character turnaround`, '');
-            characters[popupIdx].image = result.imageUrl;
-          } catch (err: any) {
-            showModal({ title: 'Generation Error', content: `<p>${err.message}</p>`, confirmText: 'OK' });
-          } finally {
-            isGenerating = false;
-            updateView();
-          }
-        });
+
 
         // Save button
         document.getElementById('char-popup-save')?.addEventListener('click', () => {
@@ -2493,148 +2286,6 @@ export function init(): void {
         }, 100);
       });
 
-      // Panel Prompts Input — track active panel for checkbox visibility
-      wizard.querySelectorAll('[data-panel-prompt]').forEach(input => {
-        input.addEventListener('input', () => {
-          const idx = parseInt(input.getAttribute('data-panel-prompt') || '0');
-          scrollPrompts[idx] = (input as HTMLInputElement).value;
-          const hasText = (input as HTMLInputElement).value.trim().length > 0;
-          const tileCount = getTileCount(scrollPanels[idx].layout || 'single');
-
-          // Show/hide checkboxes based on whether prompt has text and panel has multiple tiles
-          const newActive = (hasText && tileCount > 1) ? idx : null;
-          if (newActive !== promptActivePanel) {
-            promptActivePanel = newActive;
-            updateView();
-            // Restore focus to the prompt input after re-render
-            requestAnimationFrame(() => {
-              const restored = document.querySelector(`[data-panel-prompt="${idx}"]`) as HTMLInputElement;
-              if (restored) {
-                restored.focus();
-                restored.setSelectionRange(restored.value.length, restored.value.length);
-              }
-            });
-            return;
-          }
-          saveDraft();
-        });
-
-        // Enter key triggers generate
-        input.addEventListener('keydown', (e) => {
-          if ((e as KeyboardEvent).key === 'Enter') {
-            e.preventDefault();
-            const idx = parseInt(input.getAttribute('data-panel-prompt') || '0');
-            const genBtn = wizard.querySelector(`[data-gen-panel-ai="${idx}"]`) as HTMLButtonElement;
-            genBtn?.click();
-          }
-        });
-      });
-
-      // Tile selection checkboxes
-      wizard.querySelectorAll('[data-select-tile]').forEach(cb => {
-        cb.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const tileIdx = parseInt(cb.getAttribute('data-select-tile') || '0');
-          const panelIdx = parseInt(cb.getAttribute('data-select-panel') || '0');
-          // Toggle: if already selected, deselect; otherwise select
-          if (selectedGenTile[panelIdx] === tileIdx) {
-            selectedGenTile[panelIdx] = null;
-          } else {
-            selectedGenTile[panelIdx] = tileIdx;
-          }
-          updateView();
-        });
-      });
-
-      // Trigger Custom Upload button
-      wizard.querySelectorAll('[data-trigger-file]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt(btn.getAttribute('data-trigger-file') || '0');
-          const fileInput = wizard.querySelector(`[data-file="${idx}"]`) as HTMLInputElement;
-          fileInput?.click();
-        });
-      });
-
-      // Inline toast helper
-      const showGenToast = (msg: string) => {
-        let toast = document.getElementById('gen-toast');
-        if (!toast) {
-          toast = document.createElement('div');
-          toast.id = 'gen-toast';
-          toast.style.cssText = 'position:fixed; top:24px; left:50%; transform:translateX(-50%); background:rgba(30,30,50,0.92); color:#fff; padding:10px 24px; border-radius:12px; font-family:var(--font-heading); font-weight:700; font-size:0.85rem; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,0.3); opacity:0; transition:opacity 0.2s ease;';
-          document.body.appendChild(toast);
-        }
-        toast.textContent = msg;
-        toast.style.opacity = '1';
-        setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 2800);
-      };
-
-      // Generate Single Panel with AI
-      wizard.querySelectorAll('[data-gen-panel-ai]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const idx = parseInt(btn.getAttribute('data-gen-panel-ai') || '0');
-          const prompt = scrollPrompts[idx] || scrollPanels[idx].notes || storySynopsis;
-
-          if (!prompt.trim()) {
-            showModal({
-              title: 'Visual Prompt Required',
-              content: '<p>Please enter a visual prompt for this panel.</p>',
-              confirmText: 'OK',
-            });
-            return;
-          }
-
-          // For multi-tile panels, require a tile to be selected
-          const tileCount = getTileCount(scrollPanels[idx].layout || 'single');
-          let targetTile = 0;
-          if (tileCount > 1) {
-            if (selectedGenTile[idx] == null) {
-              // Shake the prompt input and flash it red
-              const promptInput = wizard.querySelector(`[data-panel-prompt="${idx}"]`) as HTMLElement;
-              if (promptInput) {
-                promptInput.classList.add('prompt-shake');
-                promptInput.style.borderColor = '#ef4444';
-                promptInput.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.25)';
-                setTimeout(() => {
-                  promptInput.classList.remove('prompt-shake');
-                  promptInput.style.borderColor = '';
-                  promptInput.style.boxShadow = '';
-                }, 600);
-              }
-              showGenToast('⬆ Select a tile to generate into');
-              return;
-            }
-            targetTile = selectedGenTile[idx]!;
-          }
-
-          generatingPanelIdx = idx;
-          updateView();
-
-          try {
-            // Build prompt with character context
-            const charContext = characters.filter(c => c.description).map(c => `${c.name}: ${c.description}`).join('; ');
-            const fullPrompt = charContext 
-              ? `${prompt}, webtoon comic panel style, high detail. Characters: ${charContext}`
-              : `${prompt}, webtoon comic panel style, high detail`;
-            const result = await generateImage(fullPrompt, storySynopsis);
-            const compressed = await compressImage(result.imageUrl);
-            // Set the generated image into the correct tile
-            if (!scrollPanels[idx].tiles) scrollPanels[idx].tiles = [null];
-            while (scrollPanels[idx].tiles.length <= targetTile) scrollPanels[idx].tiles.push(null);
-            scrollPanels[idx].tiles[targetTile] = compressed;
-            scrollPanels[idx].image = compressed; // keep legacy field in sync
-            saveDraft();
-          } catch (err: any) {
-            showModal({ title: 'Generation Error', content: `<p>${err.message}</p>`, confirmText: 'OK' });
-          } finally {
-            generatingPanelIdx = null;
-            selectedGenTile[idx] = null;
-            promptActivePanel = null;
-            updateView();
-          }
-        });
-      });
 
       // Upload click
       wizard.querySelectorAll('[data-upload]').forEach(block => {
@@ -2714,7 +2365,6 @@ export function init(): void {
               cancelText: 'Cancel',
               onConfirm: () => {
                 scrollPanels.splice(idx, 1);
-                scrollPrompts.splice(idx, 1);
                 updateView();
               },
             });
@@ -2735,7 +2385,6 @@ export function init(): void {
       // Add tile (dotted placeholder)
       document.getElementById('btn-add-tile')?.addEventListener('click', () => {
         scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
-        scrollPrompts.push('');
         updateView();
       });
 
@@ -2754,7 +2403,6 @@ export function init(): void {
       });
       document.getElementById('btn-dd-add-panel')?.addEventListener('click', () => {
         scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
-        scrollPrompts.push('');
         updateView();
       });
 
@@ -3128,7 +2776,6 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
       document.getElementById('btn-dd-add-page')?.addEventListener('click', () => {
         bookPages.push(defaultBookPage());
-        bookPrompts.push('');
         currentPage = bookPages.length - 1;
         updateView();
       });
@@ -3138,7 +2785,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
 
       // Arrow navigation
       document.getElementById('btn-book-prev')?.addEventListener('click', () => {
-        if (currentPage > -1) { currentPage--; updateView(); }
+        if (currentPage > 0) { currentPage--; updateView(); }
       });
       document.getElementById('btn-book-next')?.addEventListener('click', () => {
         if (currentPage < bookPages.length - 1) { currentPage++; updateView(); }
@@ -3152,277 +2799,173 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         });
       });
 
-      if (i === -1) {
-        // Page 0: Settings inputs
-        const thumbZone = document.getElementById('cover-thumb-zone');
-        const thumbInput = document.getElementById('cover-thumb-input') as HTMLInputElement;
-        const thumbPreview = document.getElementById('cover-thumb-preview') as HTMLImageElement;
-        const thumbVideoPreview = document.getElementById('cover-video-preview') as HTMLVideoElement;
-        const thumbPlaceholder = document.getElementById('cover-thumb-placeholder');
+      // Upload click
+      const uploadArea = wizard.querySelector(`[data-tile-upload="${i}"]`);
+      uploadArea?.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('[data-tile-remove-img]') || (e.target as HTMLElement).closest('[data-tile-redo]')) return;
+        const input = wizard.querySelector(`[data-tile-file="${i}"]`) as HTMLInputElement;
+        input?.click();
+      });
 
-        if (thumbZone && thumbInput) {
-          thumbZone.addEventListener('click', () => thumbInput.click());
-          thumbInput.addEventListener('change', async () => {
-            const file = thumbInput.files?.[0];
-            if (file) {
-              try {
-                const isVid = file.type.startsWith('video/');
-                if (isVid) {
-                  const dataUrl = await fileToDataUrl(file);
-                  storyCoverVideo = dataUrl;
-                  _coverThumbnail = dataUrl;
-                  if (thumbVideoPreview && thumbPreview && thumbPlaceholder) {
-                    thumbVideoPreview.src = dataUrl;
-                    thumbVideoPreview.style.display = 'block';
-                    thumbPreview.style.display = 'none';
-                    thumbPlaceholder.style.display = 'none';
-                  }
-                } else {
-                  const dataUrl = await fileToDataUrl(file);
-                  _coverThumbnail = await compressImage(dataUrl);
-                  storyCoverVideo = '';
-                  if (thumbPreview && thumbVideoPreview && thumbPlaceholder) {
-                    thumbPreview.src = _coverThumbnail;
-                    thumbPreview.style.display = 'block';
-                    thumbVideoPreview.style.display = 'none';
-                    thumbPlaceholder.style.display = 'none';
-                  }
-                }
-                saveDraft();
-              } catch (e) {
-                console.error('Error uploading thumbnail media', e);
-              }
+      // File change
+      const fileInput = wizard.querySelector(`[data-tile-file="${i}"]`) as HTMLInputElement;
+      fileInput?.addEventListener('change', async () => {
+        const file = fileInput.files?.[0];
+        if (file) {
+          bookPages[i].image = await fileToDataUrl(file);
+          updateView();
+        }
+      });
+
+      // Remove image
+      wizard.querySelector(`[data-tile-remove-img="${i}"]`)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bookPages[i].image = null;
+        updateView();
+      });
+
+      // TTS
+      wizard.querySelector(`[data-tile-tts="${i}"]`)?.addEventListener('click', () => {
+        const text = (bookPages[i].dialogText || bookPages[i].text || '').trim();
+        if (!text) return;
+        if (isSpeaking()) { stopSpeaking(); } else { speakText(text); }
+      });
+
+      // Save story text
+      wizard.querySelector(`[data-tile-text="${i}"]`)?.addEventListener('input', () => {
+        bookPages[i].text = (wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement).value;
+        saveDraft();
+      });
+
+      // Save dialogue text
+      wizard.querySelector(`[data-tile-dialog="${i}"]`)?.addEventListener('input', () => {
+        bookPages[i].dialogText = (wizard.querySelector(`[data-tile-dialog="${i}"]`) as HTMLTextAreaElement).value;
+        saveDraft();
+      });
+
+      // Voice Tuning slider
+      const stabilitySlider = wizard.querySelector(`[data-tile-stability="${i}"]`) as HTMLInputElement;
+      stabilitySlider?.addEventListener('input', () => {
+        const val = parseFloat(stabilitySlider.value);
+        bookPages[i].stability = val;
+        const pctEl = wizard.querySelector(`[data-tile-stability-pct="${i}"]`);
+        if (pctEl) pctEl.textContent = Math.round(val * 100) + '%';
+        saveDraft();
+      });
+
+      // Pre-record Audio for book page
+      const doPrerecordBook = async (pageIdx: number) => {
+        const text = (bookPages[pageIdx].dialogText || bookPages[pageIdx].text || '').trim();
+        const btn = wizard?.querySelector(`[data-prerecord-book="${pageIdx}"]`) as HTMLButtonElement;
+        const span = btn?.querySelector('span');
+        if (btn) btn.setAttribute('disabled', 'true');
+        if (span) span.textContent = 'Recording...';
+        try {
+          const audioUrl = await preRecordAudio(text, bookPages[pageIdx].stability ?? 0.5);
+          bookPages[pageIdx].audioUrl = audioUrl;
+          saveDraft();
+        } catch (err: any) {
+          console.error('[Pre-record] Failed:', err);
+          showModal({ title: 'Pre-record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
+        } finally {
+          if (btn) btn.removeAttribute('disabled');
+          updateView();
+        }
+      };
+
+      wizard.querySelector(`[data-prerecord-book="${i}"]`)?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const text = (bookPages[i].dialogText || bookPages[i].text || '').trim();
+        if (!text) {
+          showModal({ title: 'No Dialogue or Story Text', content: '<p>Write some dialogue or story text first before pre-recording.</p>', confirmText: 'OK' });
+          return;
+        }
+        if (bookPages[i].audioUrl) {
+          showModal({
+            title: 'Re-record Audio',
+            content: '<p style="line-height:1.6;">Would you like to re-record the audio? This will replace the existing recording.</p>',
+            confirmText: 'Yes, Re-record',
+            cancelText: 'Cancel',
+            onConfirm: async () => {
+              hideModal();
+              await doPrerecordBook(i);
             }
           });
+          return;
         }
+        await doPrerecordBook(i);
+      });
 
-        document.getElementById('page0-title')?.addEventListener('input', (e) => {
-          storyTitle = (e.target as HTMLInputElement).value;
-          saveDraft();
-        });
-        document.getElementById('page0-genre')?.addEventListener('change', (e) => {
-          storyGenre = (e.target as HTMLSelectElement).value as Genre;
-          saveDraft();
-        });
-        document.getElementById('page0-synopsis')?.addEventListener('input', (e) => {
-          storySynopsis = (e.target as HTMLTextAreaElement).value;
-          saveDraft();
-        });
-      } else {
-        // Normal Page Tile inputs
-        // Upload click
-        const uploadArea = wizard.querySelector(`[data-tile-upload="${i}"]`);
-        uploadArea?.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).closest('[data-tile-remove-img]') || (e.target as HTMLElement).closest('[data-tile-redo]')) return;
-          const input = wizard.querySelector(`[data-tile-file="${i}"]`) as HTMLInputElement;
-          input?.click();
-        });
+      // Play pre-recorded book audio
+      wizard.querySelector(`[data-prerecord-play-book="${i}"]`)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const audioUrl = bookPages[i]?.audioUrl;
+        if (audioUrl) {
+          if (isSpeaking()) { stopSpeaking(); } else { playAudioUrl(audioUrl); }
+        }
+      });
 
-        // File change
-        const fileInput = wizard.querySelector(`[data-tile-file="${i}"]`) as HTMLInputElement;
-        fileInput?.addEventListener('change', async () => {
-          const file = fileInput.files?.[0];
-          if (file) {
-            bookPages[i].image = await fileToDataUrl(file);
-            updateView();
-          }
-        });
+      // Deeper Dive toggle
+      wizard.querySelector(`[data-tile-dd-toggle="${i}"]`)?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const panel = wizard.querySelector(`[data-tile-dd-panel="${i}"]`) as HTMLElement;
+        const chevron = (e.currentTarget as HTMLElement).querySelector('.book-tile__dd-chevron') as HTMLElement;
+        if (panel) {
+          const isOpen = panel.style.display !== 'none';
+          panel.style.display = isOpen ? 'none' : 'block';
+          if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+        }
+      });
 
-        // Remove image
-        wizard.querySelector(`[data-tile-remove-img="${i}"]`)?.addEventListener('click', (e) => {
-          e.stopPropagation();
-          bookPages[i].image = null;
-          updateView();
-        });
+      // Deeper Dive content
+      wizard.querySelector(`[data-tile-dd-content="${i}"]`)?.addEventListener('input', () => {
+        bookPages[i].deeperDiveContent = (wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement).value;
+        saveDraft();
+      });
 
-        // AI Generate
-        wizard.querySelector(`[data-tile-gen="${i}"]`)?.addEventListener('click', async () => {
-          const promptInput = wizard.querySelector(`[data-tile-prompt="${i}"]`) as HTMLInputElement;
-          const prompt = promptInput?.value?.trim();
-          if (!prompt || isGenerating) return;
+      // Voice Note
+      wizard.querySelector(`[data-tile-dd-voice="${i}"]`)?.addEventListener('click', () => {
+        handleVoiceNote(i, wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement, wizard.querySelector(`[data-tile-dd-voice="${i}"]`)!);
+      });
 
-          isGenerating = true;
-          generatingTileIndex = i;
-          bookPrompts[i] = prompt; // save for redo
-          if (promptInput) promptInput.value = '';
-          updateView();
+      // Clean Up
+      wizard.querySelector(`[data-tile-dd-cleanup="${i}"]`)?.addEventListener('click', () => {
+        handleCleanUp(i, wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement, wizard.querySelector(`[data-tile-dd-cleanup="${i}"]`)!);
+      });
 
-          try {
-            const result = await generateImage(prompt, bookPages[i].text);
-            bookPages[i].image = await compressImage(result.imageUrl);
-          } catch (err: any) {
-            console.error('Image generation failed:', err);
+      // Maximize
+      wizard.querySelector(`[data-tile-maximize="${i}"]`)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPageFullscreen(i);
+      });
+
+      // Long-press to delete
+      const tile = wizard.querySelector(`[data-book-longpress="${i}"]`);
+      if (tile) {
+        let pressTimer: ReturnType<typeof setTimeout> | null = null;
+        const startPress = (e: Event) => {
+          if ((e.target as HTMLElement).closest('input, textarea, button')) return;
+          pressTimer = setTimeout(() => {
+            pressTimer = null;
+            if (bookPages.length <= 1) {
+              showModal({ title: 'Cannot Delete', content: '<p style="line-height:1.6;">At least one page must remain.</p>', confirmText: 'OK' });
+              return;
+            }
             showModal({
-              title: 'Generation Failed',
-              content: `<p style="line-height:1.6;">${err?.message || 'Something went wrong.'}</p>`,
-              confirmText: 'OK',
+              title: 'Delete Page',
+              content: `<p style="line-height:1.6;">Remove <strong>Page ${i + 1}</strong>? This cannot be undone.</p>`,
+              confirmText: 'Delete', cancelText: 'Cancel',
+              onConfirm: () => { bookPages.splice(i, 1); if (currentPage >= bookPages.length) currentPage = bookPages.length - 1; updateView(); },
             });
-          } finally {
-            generatingTileIndex = null;
-            isGenerating = false;
-            updateView();
-          }
-        });
-
-        // Redo
-        wizard.querySelector(`[data-tile-redo="${i}"]`)?.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const prompt = bookPrompts[i];
-          if (!prompt || isGenerating) return;
-          isGenerating = true;
-          bookPages[i].image = null;
-          updateView();
-          try {
-            const result = await generateImage(prompt, bookPages[i].text);
-            bookPages[i].image = await compressImage(result.imageUrl);
-          } catch (err: any) { console.error('Redo failed:', err); }
-          isGenerating = false;
-          updateView();
-        });
-
-        // TTS
-        wizard.querySelector(`[data-tile-tts="${i}"]`)?.addEventListener('click', () => {
-          const text = bookPages[i].text;
-          if (!text.trim()) return;
-          if (isSpeaking()) { stopSpeaking(); } else { speakText(text); }
-        });
-
-        // Save text
-        wizard.querySelector(`[data-tile-text="${i}"]`)?.addEventListener('input', () => {
-          bookPages[i].text = (wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement).value;
-          saveDraft();
-        });
-
-        // Save prompt
-        wizard.querySelector(`[data-tile-prompt="${i}"]`)?.addEventListener('input', () => {
-          bookPrompts[i] = (wizard.querySelector(`[data-tile-prompt="${i}"]`) as HTMLInputElement).value;
-          saveDraft();
-        });
-
-        // Voice Tuning slider
-        const stabilitySlider = wizard.querySelector(`[data-tile-stability="${i}"]`) as HTMLInputElement;
-        stabilitySlider?.addEventListener('input', () => {
-          const val = parseFloat(stabilitySlider.value);
-          bookPages[i].stability = val;
-          const pctEl = wizard.querySelector(`[data-tile-stability-pct="${i}"]`);
-          if (pctEl) pctEl.textContent = Math.round(val * 100) + '%';
-          saveDraft();
-        });
-
-        // Pre-record Audio for book page
-        const doPrerecordBook = async (pageIdx: number) => {
-          const text = bookPages[pageIdx].text;
-          const btn = wizard?.querySelector(`[data-prerecord-book="${pageIdx}"]`) as HTMLButtonElement;
-          const span = btn?.querySelector('span');
-          if (btn) btn.setAttribute('disabled', 'true');
-          if (span) span.textContent = 'Recording...';
-          try {
-            const audioUrl = await preRecordAudio(text, bookPages[pageIdx].stability ?? 0.5);
-            bookPages[pageIdx].audioUrl = audioUrl;
-            saveDraft();
-          } catch (err: any) {
-            console.error('[Pre-record] Failed:', err);
-            showModal({ title: 'Pre-record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
-          } finally {
-            if (btn) btn.removeAttribute('disabled');
-            updateView();
-          }
+          }, 600);
         };
-
-        wizard.querySelector(`[data-prerecord-book="${i}"]`)?.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const text = bookPages[i].text;
-          if (!text || !text.trim()) {
-            showModal({ title: 'No Story Text', content: '<p>Write some story text first before pre-recording.</p>', confirmText: 'OK' });
-            return;
-          }
-          if (bookPages[i].audioUrl) {
-            showModal({
-              title: 'Re-record Audio',
-              content: '<p style="line-height:1.6;">Would you like to re-record the story text? This will replace the existing recording.</p>',
-              confirmText: 'Yes, Re-record',
-              cancelText: 'Cancel',
-              onConfirm: async () => {
-                hideModal();
-                await doPrerecordBook(i);
-              }
-            });
-            return;
-          }
-          await doPrerecordBook(i);
-        });
-
-        // Play pre-recorded book audio
-        wizard.querySelector(`[data-prerecord-play-book="${i}"]`)?.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const audioUrl = bookPages[i]?.audioUrl;
-          if (audioUrl) {
-            if (isSpeaking()) { stopSpeaking(); } else { playAudioUrl(audioUrl); }
-          }
-        });
-
-        // Deeper Dive toggle
-        wizard.querySelector(`[data-tile-dd-toggle="${i}"]`)?.addEventListener('click', (e) => {
-          e.preventDefault();
-          const panel = wizard.querySelector(`[data-tile-dd-panel="${i}"]`) as HTMLElement;
-          const chevron = (e.currentTarget as HTMLElement).querySelector('.book-tile__dd-chevron') as HTMLElement;
-          if (panel) {
-            const isOpen = panel.style.display !== 'none';
-            panel.style.display = isOpen ? 'none' : 'block';
-            if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
-          }
-        });
-
-        // Deeper Dive content
-        wizard.querySelector(`[data-tile-dd-content="${i}"]`)?.addEventListener('input', () => {
-          bookPages[i].deeperDiveContent = (wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement).value;
-          saveDraft();
-        });
-
-        // Voice Note
-        wizard.querySelector(`[data-tile-dd-voice="${i}"]`)?.addEventListener('click', () => {
-          handleVoiceNote(i, wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement, wizard.querySelector(`[data-tile-dd-voice="${i}"]`)!);
-        });
-
-        // Clean Up
-        wizard.querySelector(`[data-tile-dd-cleanup="${i}"]`)?.addEventListener('click', () => {
-          handleCleanUp(i, wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement, wizard.querySelector(`[data-tile-dd-cleanup="${i}"]`)!);
-        });
-
-        // Maximize
-        wizard.querySelector(`[data-tile-maximize="${i}"]`)?.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openPageFullscreen(i);
-        });
-
-        // Long-press to delete
-        const tile = wizard.querySelector(`[data-book-longpress="${i}"]`);
-        if (tile) {
-          let pressTimer: ReturnType<typeof setTimeout> | null = null;
-          const startPress = (e: Event) => {
-            if ((e.target as HTMLElement).closest('input, textarea, button')) return;
-            pressTimer = setTimeout(() => {
-              pressTimer = null;
-              if (bookPages.length <= 1) {
-                showModal({ title: 'Cannot Delete', content: '<p style="line-height:1.6;">At least one page must remain.</p>', confirmText: 'OK' });
-                return;
-              }
-              showModal({
-                title: 'Delete Page',
-                content: `<p style="line-height:1.6;">Remove <strong>Page ${i + 1}</strong>? This cannot be undone.</p>`,
-                confirmText: 'Delete', cancelText: 'Cancel',
-                onConfirm: () => { bookPages.splice(i, 1); bookPrompts.splice(i, 1); if (currentPage >= bookPages.length) currentPage = bookPages.length - 1; updateView(); },
-              });
-            }, 600);
-          };
-          const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
-          tile.addEventListener('mousedown', startPress);
-          tile.addEventListener('mouseup', cancelPress);
-          tile.addEventListener('mouseleave', cancelPress);
-          tile.addEventListener('touchstart', startPress, { passive: true });
-          tile.addEventListener('touchend', cancelPress);
-          tile.addEventListener('touchcancel', cancelPress);
-        }
+        const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+        tile.addEventListener('mousedown', startPress);
+        tile.addEventListener('mouseup', cancelPress);
+        tile.addEventListener('mouseleave', cancelPress);
+        tile.addEventListener('touchstart', startPress, { passive: true });
+        tile.addEventListener('touchend', cancelPress);
+        tile.addEventListener('touchcancel', cancelPress);
       }
     }
 

@@ -87,13 +87,13 @@ async function playViaEdgeFunction(voiceId: string, btn: HTMLElement): Promise<v
         method: 'POST',
         body: {
           text: PREVIEW_TEXT,
-          model_id: 'eleven_monolingual_v1',
+          model_id: 'eleven_multilingual_v2',
           voice_settings: { stability: 0.5, similarity_boost: 0.75 },
         }
       }
     });
 
-    if (error || data?.error) {
+    if (error || data?.error || !data?.audio_base64) {
       throw new Error(data?.error || error?.message || 'TTS preview failed');
     }
 
@@ -112,7 +112,17 @@ async function playViaEdgeFunction(voiceId: string, btn: HTMLElement): Promise<v
     audio.addEventListener('error', () => stopPreview());
     await audio.play();
   } catch (err) {
-    console.warn('[TTS Preview] Edge function failed:', err);
+    console.warn('[TTS Preview] Edge function failed, trying browser TTS:', err);
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(PREVIEW_TEXT);
+        utterance.onend = () => stopPreview();
+        utterance.onerror = () => stopPreview();
+        window.speechSynthesis.speak(utterance);
+        return;
+      } catch {}
+    }
     stopPreview();
   }
 }
