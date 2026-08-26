@@ -261,7 +261,7 @@ function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLEle
   // Copy share link
   overlay.querySelector('#sg-btn-share-link')?.addEventListener('click', () => {
     const code = currentSquad?.roomCode || '';
-    const shareUrl = `${window.location.origin}/#reader/${options.storyId}?squad=${code}`;
+    const shareUrl = `${window.location.origin}/#join?squad=${code}&story=${options.storyId}`;
     navigator.clipboard?.writeText(shareUrl).then(() => {
       const txt = overlay.querySelector('#sg-share-link-text');
       if (txt) txt.textContent = 'Link Copied!';
@@ -305,4 +305,34 @@ export function closeSquadGateModal(): void {
     document.body.style.overflow = '';
     setTimeout(() => overlay.remove(), 300);
   }
+}
+
+
+/** Open Squad Gate from a deep link join URL. Called from main.ts when #join route is detected. */
+export function openSquadGateFromDeepLink(storyId: string, storyTitle: string, squadCode: string): void {
+  // First try to join the squad
+  const joinResult = joinSquadByCode(squadCode);
+  if (joinResult.success && joinResult.squad) {
+    currentSquad = joinResult.squad;
+  } else {
+    // If join failed (squad not found), still create/find one for this story
+    const existing = getActiveSquadForStory(storyId);
+    if (existing) {
+      currentSquad = existing;
+    }
+  }
+
+  // Save pending squad join info for auth redirect
+  localStorage.setItem('drive_pending_squad_join', JSON.stringify({
+    storyId,
+    storyTitle,
+    squadCode,
+    timestamp: Date.now()
+  }));
+
+  openSquadGateModal({
+    storyId,
+    storyTitle,
+    onReplay: () => { /* no replay from deep link */ },
+  });
 }

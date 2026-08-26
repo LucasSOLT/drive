@@ -11,6 +11,7 @@ import { initAuth, isAuthenticated, onAuthChange } from './lib/auth.ts';
 import { loadUserData, migrateLocalData, clearCache } from './lib/db.ts';
 
 // Lazy import views
+import { openSquadGateFromDeepLink } from './components/squad-gate-modal.ts';
 import * as homeView from './views/home.ts';
 import * as featuredView from './views/featured.ts';
 import * as exploreView from './views/explore.ts';
@@ -224,6 +225,7 @@ function renderView(route: string) {
     case 'lfg-browse': viewModule = lfgBrowseView; title = 'Find Players'; break;
     case 'sparc': viewModule = sparcCheckpointView; title = 'SPARC'; break;
     case 'beta': viewModule = betaInviteView; title = ''; break;
+    case 'join': viewModule = homeView; title = 'Home'; break;
     default: viewModule = homeView; title = 'Home'; break;
   }
 
@@ -273,6 +275,21 @@ function renderView(route: string) {
 
   container.innerHTML = html;
   viewModule.init();
+
+  // ── Phase 4b: Handle deep link squad join ──
+  if (baseRoute === 'join') {
+    const hash = window.location.hash;
+    const squadMatch = hash.match(/squad=([^&]+)/);
+    const storyMatch = hash.match(/story=([^&]+)/);
+    if (squadMatch) {
+      const squadCode = squadMatch[1];
+      const storyId = storyMatch ? storyMatch[1] : '';
+      // Small delay to let home view render first
+      setTimeout(() => {
+        openSquadGateFromDeepLink(storyId, 'Story Journey', squadCode);
+      }, 200);
+    }
+  }
 
   // ── Phase 5: Update navigation (avoid full rebuild when possible) ──
   if (!isFullScreen) {
