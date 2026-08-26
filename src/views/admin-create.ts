@@ -601,13 +601,16 @@ function renderStudioOrbs(): string {
 }
 
 function renderCanvasToolbar(formatLabel: string): string {
-  const isBook = formatLabel === 'Illustrated Book';
+  const isBook = formatLabel.startsWith('Illustrated Book');
   
   return `
     <div class="canvas-toolbar" id="canvas-toolbar">
       <div class="canvas-toolbar__left" style="display:flex; align-items:center; gap:6px;">
         <button class="canvas-toolbar__btn" id="btn-toolbar-quit" title="Quit without saving">
           ${ICON.backArrow}
+        </button>
+        <button class="canvas-toolbar__btn" id="btn-toolbar-complete" title="Mark episode as completed" style="background:rgba(34,197,94,0.15); border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border:none; cursor:pointer;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
       </div>
       <span class="canvas-toolbar__title">${formatLabel}</span>

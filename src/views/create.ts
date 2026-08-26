@@ -470,7 +470,7 @@ function renderStudioOrbs(): string {
 }
 
 function renderCanvasToolbar(formatLabel: string): string {
-  const isBook = formatLabel === 'Illustrated Book';
+  const isBook = formatLabel.startsWith('Illustrated Book');
   
   return `
     <div class="canvas-toolbar" id="canvas-toolbar">
