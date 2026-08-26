@@ -101,7 +101,7 @@ export function render(): string {
       <footer class="site-footer slide-up stagger-4">
         <div class="footer__brand">
           <span class="footer__logo gradient-text">DRiVE</span>
-          <p class="footer__desc">A story-driven creative platform. Discover, read, and create AI-powered stories in Waterfall Storyboard, illustrated book, and comic strip formats.</p>
+          <p class="footer__desc">A story-driven creative platform. Discover, read, and create AI-powered stories in Waterfall Storyboard and illustrated book formats.</p>
         </div>
 
         <div class="footer__links-grid">

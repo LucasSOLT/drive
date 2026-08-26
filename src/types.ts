@@ -1,4 +1,4 @@
-export type StoryFormat = 'scroll' | 'book' | 'comic';
+export type StoryFormat = 'scroll' | 'book';
 
 export type Genre = 'Fantasy' | 'Sci-Fi' | 'Romance' | 'Horror' | 'Comedy' | 'Drama' | 'Mystery' | 'Slice of Life' | 'Action' | 'Adventure' | 'Thriller' | 'Historical' | 'Superhero' | 'Sports' | 'Psychological' | 'Supernatural' | 'Mecha' | 'Musical' | 'Custom';
 
@@ -24,6 +24,8 @@ export interface Story {
   contentRating?: ContentRating;
   isOfficial?: boolean;
   officialStatus?: 'draft' | 'live';
+  storyGroupId?: string;                 // Groups episodes of the same story together
+  episodeNumber?: number;                // 1-based episode number within the story group
 }
 
 export interface UserStory {

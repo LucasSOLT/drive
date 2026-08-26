@@ -98,7 +98,6 @@ function isVideoMedia(url?: string | null, vidUrl?: string | null): boolean {
 const ICON = {
   scroll: `<svg width="40" height="40" viewBox="0 0 48 48" fill="none"><rect x="12" y="4" width="24" height="40" rx="4" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="14" x2="30" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="20" x2="28" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="26" x2="26" y2="26" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="32" x2="30" y2="32" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M24 38v4M24 0v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.4"/></svg>`,
   book: `<svg width="40" height="40" viewBox="0 0 48 48" fill="none"><path d="M6 8c0-2 2-4 6-4h6c4 0 6 2 6 2s2-2 6-2h6c4 0 6 2 6 4v28c0 2-2 4-6 4h-6c-4 0-6 2-6 2s-2-2-6-2h-6c-4 0-6-2-6-4V8z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M24 6v34" stroke="currentColor" stroke-width="2"/></svg>`,
-  comic: `<svg width="40" height="40" viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="4" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="4" y="26" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="26" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/></svg>`,
   chevLeft: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>`,
   chevRight: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 6 15 12 9 18"/></svg>`,
   upload: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
@@ -332,12 +331,7 @@ function renderFormatSelection(): string {
       id: 'book', title: 'Illustrated Book', subtitle: 'AI-powered pages',
       desc: 'Generate illustrations with AI for each page. Add story text below each image.',
       icon: ICON.book, accent: 'var(--color-purple)',
-    },
-    {
-      id: 'comic', title: 'Comic Strip', subtitle: 'Coming soon',
-      desc: 'Dynamic multi-panel grids for action-packed stories. Stay tuned!',
-      icon: ICON.comic, accent: 'var(--color-pink)', disabled: true,
-    },
+    }
   ];
 
   return `
@@ -1686,7 +1680,6 @@ export function init(): void {
     const formatLabels: Record<string, string> = {
       'scroll': 'Waterfall Storyboard',
       'book': 'Illustrated Book',
-      'comic': 'Comic Strip',
     };
     const formatLabel = formatLabels[selectedFormat || 'scroll'] || selectedFormat || 'Unknown';
 

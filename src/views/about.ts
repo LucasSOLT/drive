@@ -41,14 +41,6 @@ export function render(): string {
               <p class="text-muted" style="margin: 0; font-size: 0.9rem;">Page-by-page narratives</p>
             </div>
           </div>
-
-          <div style="display: flex; align-items: center; background: var(--color-surface); border-radius: var(--radius-lg); padding: 1.25rem; border: 1px solid var(--color-border); box-shadow: var(--shadow-sm);">
-            <div style="font-size: 2rem; margin-right: 1rem; width: 48px; text-align: center;">🖼️</div>
-            <div>
-              <h3 style="font-family: var(--font-heading); font-size: 1.1rem; font-weight: 600; margin-bottom: 0.15rem;">Comic Strip</h3>
-              <p class="text-muted" style="margin: 0; font-size: 0.9rem;">Multi-panel visual stories</p>
-            </div>
-          </div>
         </div>
       </div>
 

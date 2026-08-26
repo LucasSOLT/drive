@@ -2,8 +2,7 @@ import type { Story } from '../types.ts';
 
 const FORMAT_ICONS: Record<string, string> = {
   'scroll': '📜 Waterfall Storyboard',
-  'book': '📖 Book',
-  'comic': '🖼️ Comic'
+  'book': '📖 Book'
 };
 
 function renderCover(story: Story, cssClass: string = 'story-card__cover'): string {

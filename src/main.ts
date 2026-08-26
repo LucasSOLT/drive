@@ -226,26 +226,28 @@ function renderView(route: string) {
     case 'beta': viewModule = betaInviteView; title = ''; break;
     default: viewModule = homeView; title = 'Home'; break;
   }
-  
-  // On very first render, skip fade-in animation to prevent white flash
-  let html = viewModule.render();
-  if (isFirstRender) {
-    html = html.replace(/\bfade-in\b/g, 'fade-in no-initial-fade');
-    isFirstRender = false;
-  }
 
-  container.innerHTML = html;
-  viewModule.init();
-  
+  // ── Phase 1: Compute layout state BEFORE touching the DOM ──
   const isFullScreen = ['story', 'book', 'shared', 'login', 'signup', 'beta', 'admin-create'].includes(baseRoute);
-  
-  // Content Management mode handling
   const isCMActive = isContentManagementMode();
   const isCMFeedPage = ['home', 'featured', 'explore'].includes(baseRoute);
 
+  // ── Phase 2: Reset scroll BEFORE new content is visible ──
+  appContent.scrollTop = 0;
+
+  // ── Phase 3: Set header/nav/CM visibility BEFORE injecting content ──
   const hamburgerBtn = document.getElementById('hamburger-btn');
   const cmBackBtn = document.getElementById('cm-back-btn');
   const cmBanner = document.getElementById('cm-top-banner');
+
+  if (isFullScreen) {
+    header.style.display = 'none';
+    navContainer.style.display = 'none';
+  } else {
+    header.style.display = 'flex';
+    navContainer.style.display = 'block';
+    viewTitle.textContent = title;
+  }
 
   if (isCMActive && isCMFeedPage) {
     document.body.classList.add('content-management-mode');
@@ -262,15 +264,35 @@ function renderView(route: string) {
     }
   }
 
-  if (isFullScreen) {
-    header.style.display = 'none';
-    navContainer.style.display = 'none';
-  } else {
-    header.style.display = 'flex';
-    navContainer.style.display = 'block';
-    viewTitle.textContent = title;
-    navContainer.innerHTML = renderNav(baseRoute);
-    initNav();
+  // ── Phase 4: Inject content (single main reflow) ──
+  let html = viewModule.render();
+  if (isFirstRender) {
+    html = html.replace(/\bfade-in\b/g, 'fade-in no-initial-fade');
+    isFirstRender = false;
+  }
+
+  container.innerHTML = html;
+  viewModule.init();
+
+  // ── Phase 5: Update navigation (avoid full rebuild when possible) ──
+  if (!isFullScreen) {
+    const existingNav = navContainer.querySelector('.bottom-nav');
+    const needsCMClass = isCMActive && isCMFeedPage;
+    const hasCMClass = existingNav?.classList.contains('bottom-nav--cm') ?? false;
+
+    if (!existingNav || needsCMClass !== hasCMClass) {
+      // Full rebuild needed (first render or CM mode changed)
+      navContainer.innerHTML = renderNav(baseRoute);
+      initNav();
+    } else {
+      // Just update active tab highlighting — no DOM destruction
+      navContainer.querySelectorAll('.nav-item').forEach(item => {
+        const itemRoute = item.getAttribute('data-route');
+        if (itemRoute) {
+          item.classList.toggle('active', itemRoute === baseRoute);
+        }
+      });
+    }
 
     // Refresh header avatar (may have changed on profile page)
     const headerAvatarImg = document.getElementById('header-avatar-img');
@@ -278,8 +300,6 @@ function renderView(route: string) {
       headerAvatarImg.innerHTML = getHeaderAvatarHtml();
     }
   }
-  
-  appContent.scrollTop = 0;
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

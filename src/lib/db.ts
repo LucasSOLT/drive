@@ -769,6 +769,8 @@ export async function fetchOfficialStories(): Promise<Story[]> {
     contentRating: s.content_rating || 'All Ages',
     isOfficial: true,
     officialStatus: s.status || 'draft',
+    storyGroupId: s.story_group_id || s.id,
+    episodeNumber: s.episode_number || 1,
   }));
 }
 
@@ -795,6 +797,8 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     status: story.officialStatus || 'draft',
     created_by: userId,
     updated_at: new Date().toISOString(),
+    story_group_id: story.storyGroupId || story.id,
+    episode_number: story.episodeNumber || 1,
   };
 
   const { error } = await supabase
@@ -870,6 +874,8 @@ export async function fetchLiveOfficialStories(): Promise<Story[]> {
     contentRating: s.content_rating || 'All Ages',
     isOfficial: true,
     officialStatus: 'live' as const,
+    storyGroupId: s.story_group_id || s.id,
+    episodeNumber: s.episode_number || 1,
   }));
 }
 

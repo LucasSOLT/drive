@@ -83,12 +83,14 @@ let currentPage = 0;
 let activeDraftId: string | null = null;
 let _coverThumbnail: string | null = null;
 let editStoryId: string | null = null;
+let episodeStoryGroupId: string | null = null;  // Links this episode to a story group
+let episodeNumber: number = 1;                  // Which episode number in the group
+let episodeParentTitle: string | null = null;    // Parent story title for context display
 let updateView: () => void;
 // â”€â”€â”€ SVG Icons â”€â”€â”€
 const ICON = {
   scroll: `<svg width="40" height="40" viewBox="0 0 48 48" fill="none"><rect x="12" y="4" width="24" height="40" rx="4" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="14" x2="30" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="20" x2="28" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="26" x2="26" y2="26" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="32" x2="30" y2="32" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M24 38v4M24 0v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.4"/></svg>`,
   book: `<svg width="40" height="40" viewBox="0 0 48 48" fill="none"><path d="M6 8c0-2 2-4 6-4h6c4 0 6 2 6 2s2-2 6-2h6c4 0 6 2 6 4v28c0 2-2 4-6 4h-6c-4 0-6 2-6 2s-2-2-6-2h-6c-4 0-6-2-6-4V8z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M24 6v34" stroke="currentColor" stroke-width="2"/></svg>`,
-  comic: `<svg width="40" height="40" viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="4" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="4" y="26" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="26" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/></svg>`,
   chevLeft: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>`,
   chevRight: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 6 15 12 9 18"/></svg>`,
   upload: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
@@ -105,6 +107,13 @@ const ICON = {
   checkSave: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
   dots: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>`,
 };
+
+
+function escapeHtml(str: string): string {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
 
 // â”€â”€â”€ Helpers â”€â”€â”€
 
@@ -266,8 +275,9 @@ function buildStory(status: 'draft' | 'live'): Story {
   const pages = selectedFormat === 'book'
     ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent, dialogText: p.dialogText }))
     : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
+  const storyId = editStoryId || 'story_' + Date.now();
   return {
-    id: editStoryId || 'story_' + Date.now(),
+    id: storyId,
     title: storyTitle,
     author: storyAuthorName,
     genre: storyGenre,
@@ -283,6 +293,8 @@ function buildStory(status: 'draft' | 'live'): Story {
     coverVideo: storyCoverVideo || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined),
     isOfficial: true,
     officialStatus: status,
+    storyGroupId: episodeStoryGroupId || storyId,
+    episodeNumber: episodeNumber,
   };
 }
 
@@ -296,7 +308,6 @@ function openStorySettings(): void {
   const formatLabels: Record<string, string> = {
     'scroll': 'Waterfall Storyboard',
     'book': 'Illustrated Book',
-    'comic': 'Comic Strip',
   };
   const formatLabel = formatLabels[selectedFormat || 'scroll'] || selectedFormat || 'Unknown';
 
@@ -1475,10 +1486,46 @@ let attachListenersGlobal: () => void = () => {};
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function renderPhase(): string {
+  const formatLabel = selectedFormat === 'book' ? '📖 Illustrated Book' : '📜 Waterfall Storyboard';
+
+  // Episode context banner — shown when creating a new episode for an existing story
+  const episodeBanner = (episodeStoryGroupId && (episodeNumber > 1 || episodeParentTitle)) ? `
+    <div style="
+      background: linear-gradient(135deg, rgba(139,92,246,0.1), rgba(59,130,246,0.1));
+      border: 1px solid rgba(139,92,246,0.3);
+      border-radius: 14px;
+      padding: 14px 18px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    ">
+      <div style="
+        width: 42px; height: 42px; border-radius: 12px;
+        background: linear-gradient(135deg, var(--color-purple), #8a2be2);
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-weight: 800; font-size: 1rem; flex-shrink: 0;
+      ">EP${episodeNumber}</div>
+      <div style="flex: 1; min-width: 200px;">
+        <div style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: 2px;">
+          ${episodeParentTitle ? `Adding Episode ${episodeNumber} to "${escapeHtml(episodeParentTitle)}"` : `Episode ${episodeNumber}`}
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <span style="
+            background: rgba(139,92,246,0.15); color: var(--color-purple);
+            padding: 2px 10px; border-radius: 8px; font-size: 0.7rem; font-weight: 700;
+          ">${formatLabel}</span>
+          <span style="font-size: 0.7rem; color: var(--color-text-muted);">Format locked to match existing episodes</span>
+        </div>
+      </div>
+    </div>
+  ` : '';
+
   if (phase === 'canvas') {
-    return selectedFormat === 'book' ? renderBookCanvas() : renderScrollCanvas();
+    return episodeBanner + (selectedFormat === 'book' ? renderBookCanvas() : renderScrollCanvas());
   }
-  return '';
+  return episodeBanner;
 }
 
 export function render(): string {
@@ -1500,6 +1547,14 @@ export function init(): void {
   const queryMatch = window.location.hash.match(/format=([^&]+)/);
   const qFormat = queryMatch ? queryMatch[1] : null;
 
+  // Parse episode context from URL params (when adding a new episode to an existing story)
+  const groupIdMatch = window.location.hash.match(/storyGroupId=([^&]+)/);
+  const epNumMatch = window.location.hash.match(/episodeNumber=([^&]+)/);
+  const titleMatch = window.location.hash.match(/storyTitle=([^&]+)/);
+  if (groupIdMatch) episodeStoryGroupId = groupIdMatch[1];
+  if (epNumMatch) episodeNumber = parseInt(epNumMatch[1], 10) || 1;
+  if (titleMatch) episodeParentTitle = decodeURIComponent(titleMatch[1]);
+
   const loadData = async () => {
     if (editId) {
       const stories = await fetchOfficialStories();
@@ -1514,6 +1569,9 @@ export function init(): void {
         _coverThumbnail = storyToEdit.coverImage;
         storyContentRating = storyToEdit.contentRating || 'All Ages';
         storyCoverVideo = storyToEdit.coverVideo || '';
+        // Load episode metadata from existing story
+        episodeStoryGroupId = storyToEdit.storyGroupId || storyToEdit.id;
+        episodeNumber = storyToEdit.episodeNumber || 1;
 
         if (selectedFormat === 'book') {
            bookPages = storyToEdit.panels.map((p, i) => ({

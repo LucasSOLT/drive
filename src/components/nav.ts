@@ -5,7 +5,7 @@ export function renderNav(activeTab: string): string {
   const inCM = isContentManagementMode();
   const locked = !isLibraryUnlocked();
   return `
-    <nav class="bottom-nav slide-up ${inCM ? 'bottom-nav--cm' : ''}">
+    <nav class="bottom-nav ${inCM ? 'bottom-nav--cm' : ''}">
       <a class="nav-item ${activeTab === 'home' ? 'active' : ''}" data-route="home">
         <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>

@@ -105,16 +105,6 @@ export function render(): string {
         </div>
       </div>
     `;
-  } else if (story.format === 'comic') {
-    contentHtml = `
-      <div class="reader__comic-content">
-        ${story.panels.map((panel: string, i: number) => `
-          <div class="reader__comic-panel">
-            <img src="${panel}" alt="Comic panel ${i + 1}">
-          </div>
-        `).join('')}
-      </div>
-    `;
   }
 
   return `
@@ -418,8 +408,6 @@ export function init(): void {
     });
 
     updatePage();
-  } else if (story.format === 'comic') {
-    if (progressBar) progressBar.style.width = '100%';
   }
 
   // Waterfall autoplay with IntersectionObserver

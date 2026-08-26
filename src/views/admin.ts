@@ -145,7 +145,6 @@ export function render(): string {
           <option value="all">All Formats</option>
           <option value="scroll">Waterfall Storyboard</option>
           <option value="book">Illustrated Book</option>
-          <option value="comic">Comic Strip</option>
         </select>
       </div>
 
@@ -331,10 +330,6 @@ async function loadTabContent(): Promise<void> {
   }
 }
 
-// ═══════════════════════════════════════════
-// TAB: DRiVE ORIGINALS
-// ═══════════════════════════════════════════
-
 async function loadOriginalsTab(area: HTMLElement): Promise<void> {
   currentOfficialStories = await fetchOfficialStories();
 
@@ -353,7 +348,20 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
     filtered = filtered.filter(s => s.format === currentFormat);
   }
 
-  if (filtered.length === 0) {
+  // Group stories by storyGroupId into episode stacks
+  const groupMap = new Map<string, Story[]>();
+  for (const story of filtered) {
+    const gid = story.storyGroupId || story.id;
+    if (!groupMap.has(gid)) groupMap.set(gid, []);
+    groupMap.get(gid)!.push(story);
+  }
+  // Sort episodes within each group by episodeNumber
+  for (const episodes of groupMap.values()) {
+    episodes.sort((a, b) => (a.episodeNumber || 1) - (b.episodeNumber || 1));
+  }
+  const storyGroups = Array.from(groupMap.values());
+
+  if (storyGroups.length === 0) {
     area.innerHTML = `
       <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; text-align: center;">
         <div style="font-size: 3rem; margin-bottom: 16px;">📖</div>
@@ -372,13 +380,13 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
 
   area.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-      <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">DRiVE Originals (${filtered.length})</h2>
+      <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">DRiVE Originals (${storyGroups.length} stories, ${filtered.length} episodes)</h2>
       <button id="btn-add-original" style="padding: 8px 14px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 6px;">
         ${ICON.plus} Add New
       </button>
     </div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;" id="originals-grid">
-      ${filtered.map((s, i) => renderOfficialCard(s, i)).join('')}
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px;" id="originals-grid">
+      ${storyGroups.map((episodes, i) => renderStoryStack(episodes, i)).join('')}
     </div>
   `;
 
@@ -386,71 +394,204 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
     openFormatPopup();
   });
   attachOfficialCardListeners();
+  attachStackListeners();
 }
 
-function renderOfficialCard(story: Story, index: number): string {
-  const coverSrc = story.coverImage || (story.panels?.[0]) || '';
-  const hasCoverVideo = !!story.coverVideo;
-  const isLive = story.officialStatus === 'live';
-  const statusColor = isLive ? '#10b981' : '#ef4444';
-  const statusBg = isLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
-  const statusBorder = isLive ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
-  const statusLabel = isLive ? '🟢 LIVE' : '🔴 DRAFT';
+/** Renders a stack of episode tiles that look like pages of a book */
+function renderStoryStack(episodes: Story[], groupIndex: number): string {
+  const first = episodes[0];
+  const formatBadge = first.format === 'book' ? '📖 Book' : '📜 Waterfall';
+  const groupId = first.storyGroupId || first.id;
+
+  const episodeCards = episodes.map((story, epIdx) => {
+    const coverSrc = story.coverImage || (story.panels?.[0]) || '';
+    const isLive = story.officialStatus === 'live';
+    const statusColor = isLive ? '#10b981' : '#ef4444';
+    const statusBorder = isLive ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+    const statusBg = isLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+    const statusLabel = isLive ? '🟢 LIVE' : '🔴 DRAFT';
+    const epNum = story.episodeNumber || (epIdx + 1);
+    const isFirst = epIdx === 0;
+    // Visual stacking: first card fully visible, others peeking 36px each
+    const topOffset = isFirst ? 0 : 0; // will be controlled by the stack container
+    const zIndex = episodes.length - epIdx;
+
+    return `
+      <div class="episode-tile" data-episode-id="${story.id}" data-episode-index="${epIdx}" data-group-id="${groupId}"
+           style="
+             background: var(--color-surface);
+             border: 2px solid ${statusBorder};
+             border-radius: 16px;
+             overflow: hidden;
+             box-shadow: var(--shadow-sm);
+             transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s, opacity 0.3s;
+             position: ${isFirst ? 'relative' : 'absolute'};
+             top: ${isFirst ? '0' : epIdx * 36 + 'px'};
+             left: 0;
+             right: 0;
+             z-index: ${zIndex};
+             cursor: ${isFirst ? 'default' : 'pointer'};
+             ${!isFirst ? 'opacity: 0.85;' : ''}
+           ">
+        <div style="position: relative; aspect-ratio: 16/10; background: var(--color-bg); overflow: hidden;">
+          ${coverSrc
+            ? `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" />`
+            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`
+          }
+          <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
+            <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; text-transform: uppercase;">${statusLabel}</span>
+            <span style="background: rgba(139,92,246,0.9); color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">EP ${epNum}</span>
+            ${story.isFeatured ? `<span style="background: #F59E0B; color: #000; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">⭐ FEATURED</span>` : ''}
+            ${story.isEditorPick ? `<span style="background: #10b981; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">🏆 PICK</span>` : ''}
+          </div>
+          <div style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; padding: 3px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 700;">${formatBadge}</div>
+        </div>
+        <div style="padding: 12px 14px;">
+          <h3 style="margin: 0 0 4px 0; font-family: var(--font-heading); font-size: 0.95rem; color: var(--color-text-primary);">${escapeHtml(story.title)}</h3>
+          <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 8px;">
+            ${escapeHtml(story.author)} · ${story.genre} · ${story.panels?.length || 0} pages · ${formatNumber(story.readCount)} reads
+          </div>
+          ${story.synopsis ? `<p style="margin: 0 0 10px 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(story.synopsis)}</p>` : ''}
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
+            <button data-edit-official="${story.id}" style="flex: 2; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
+              ${ICON.eye} Edit
+            </button>
+            <button data-move-up="${story.id}" title="Move up" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">↑</button>
+            <button data-move-down="${story.id}" title="Move down" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">↓</button>
+            <button data-delete-official="${story.id}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-muted); cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='var(--color-text-muted)';this.style.borderColor='var(--color-border)'">
+              ${ICON.trash}
+            </button>
+          </div>
+          <!-- Status Action Bar -->
+          <div style="background: ${statusBg}; border: 1px solid ${statusBorder}; border-radius: 10px; padding: 8px; display: flex; gap: 6px; align-items: center;">
+            ${isLive ? `
+              <button data-toggle-featured="${story.id}" data-is-featured="${story.isFeatured}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: ${story.isFeatured ? '#F59E0B' : 'var(--color-bg)'}; color: ${story.isFeatured ? '#000' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
+                ⭐ ${story.isFeatured ? 'Unfeature' : 'Feature'}
+              </button>
+              <button data-toggle-pick="${story.id}" data-is-pick="${story.isEditorPick}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: ${story.isEditorPick ? 'var(--color-purple)' : 'var(--color-bg)'}; color: ${story.isEditorPick ? '#fff' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
+                🏆 ${story.isEditorPick ? 'Unpick' : 'Pick'}
+              </button>
+              <button data-take-offline="${story.id}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: none; background: #ef4444; color: white; cursor: pointer; font-size: 0.7rem; font-weight: 700;">
+                📴 Offline
+              </button>
+            ` : `
+              <button data-go-live="${story.id}" style="flex: 1; padding: 8px; border-radius: 8px; border: none; background: #10b981; color: white; cursor: pointer; font-size: 0.8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                🚀 Go Live
+              </button>
+            `}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Container height: first card height is auto, plus peeking space for subsequent episodes
+  const peekingHeight = (episodes.length - 1) * 36;
 
   return `
-    <div class="admin-original-card" data-id="${story.id}" style="background: var(--color-surface); border: 2px solid ${statusBorder}; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-sm); transition: transform 0.15s, box-shadow 0.15s;">
-      <div style="position: relative; aspect-ratio: 16/10; background: var(--color-bg); overflow: hidden;">
-        ${coverSrc
-          ? `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" />`
-          : hasCoverVideo
-            ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#1a1a2e;color:var(--color-text-muted);font-size:0.8rem;">\uD83C\uDFAC Video Cover</div>`
-            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`
-        }
-        <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 4px;">
-          <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; text-transform: uppercase;">${statusLabel}</span>
-          ${story.isFeatured ? `<span style="background: #F59E0B; color: #000; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">\u2B50 FEATURED</span>` : ''}
-          ${story.isEditorPick ? `<span style="background: #10b981; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">\uD83C\uDFC6 PICK</span>` : ''}
-        </div>
-        <div style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; padding: 3px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 700;">#${index + 1}</div>
-        <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; padding: 3px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 700;">${story.format.toUpperCase()}</div>
-      </div>
-      <div style="padding: 12px 14px;">
-        <h3 style="margin: 0 0 4px 0; font-family: var(--font-heading); font-size: 0.95rem; color: var(--color-text-primary);">${escapeHtml(story.title)}</h3>
-        <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 8px;">
-          ${escapeHtml(story.author)} \u00B7 ${story.genre} \u00B7 ${story.panels?.length || 0} pages \u00B7 ${formatNumber(story.readCount)} reads
-        </div>
-        ${story.synopsis ? `<p style="margin: 0 0 10px 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(story.synopsis)}</p>` : ''}
-        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
-          <button data-edit-official="${story.id}" style="flex: 2; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
-            ${ICON.eye} Edit
-          </button>
-          <button data-move-up="${story.id}" title="Move up" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">\u2191</button>
-          <button data-move-down="${story.id}" title="Move down" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">\u2193</button>
-          <button data-delete-official="${story.id}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-muted); cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='var(--color-text-muted)';this.style.borderColor='var(--color-border)'">
-            ${ICON.trash}
-          </button>
-        </div>
-        <!-- Status Action Bar -->
-        <div style="background: ${statusBg}; border: 1px solid ${statusBorder}; border-radius: 10px; padding: 8px; display: flex; gap: 6px; align-items: center;">
-          ${isLive ? `
-            <button data-toggle-featured="${story.id}" data-is-featured="${story.isFeatured}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: ${story.isFeatured ? '#F59E0B' : 'var(--color-bg)'}; color: ${story.isFeatured ? '#000' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
-              \u2B50 ${story.isFeatured ? 'Unfeature' : 'Feature'}
-            </button>
-            <button data-toggle-pick="${story.id}" data-is-pick="${story.isEditorPick}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: ${story.isEditorPick ? 'var(--color-purple)' : 'var(--color-bg)'}; color: ${story.isEditorPick ? '#fff' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
-              \uD83C\uDFC6 ${story.isEditorPick ? 'Unpick' : 'Pick'}
-            </button>
-            <button data-take-offline="${story.id}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: none; background: #ef4444; color: white; cursor: pointer; font-size: 0.7rem; font-weight: 700;">
-              📴 Offline
-            </button>
-          ` : `
-            <button data-go-live="${story.id}" style="flex: 1; padding: 8px; border-radius: 8px; border: none; background: #10b981; color: white; cursor: pointer; font-size: 0.8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px;">
-              🚀 Go Live
-            </button>
-          `}
-        </div>
-      </div>
+    <div class="story-stack" data-stack-group="${groupId}" style="position: relative; padding-bottom: ${peekingHeight}px;">
+      ${episodeCards}
+      <button data-add-episode="${groupId}" data-group-format="${first.format}" data-group-title="${escapeHtml(first.title)}" data-next-ep="${episodes.length + 1}"
+              style="
+                display: flex; align-items: center; justify-content: center; gap: 6px;
+                width: 100%;
+                padding: 10px;
+                margin-top: 8px;
+                border: 2px dashed var(--color-border);
+                border-radius: 12px;
+                background: transparent;
+                color: var(--color-text-muted);
+                cursor: pointer;
+                font-size: 0.8rem;
+                font-weight: 600;
+                transition: all 0.2s;
+                position: relative;
+                z-index: 0;
+              "
+              onmouseover="this.style.borderColor='var(--color-purple)';this.style.color='var(--color-purple)';this.style.background='rgba(139,92,246,0.05)'"
+              onmouseout="this.style.borderColor='var(--color-border)';this.style.color='var(--color-text-muted)';this.style.background='transparent'">
+        ${ICON.plus} Add New Episode
+      </button>
     </div>
   `;
+}
+
+/** Attach hover-to-reveal listeners for stacked episode tiles */
+function attachStackListeners(): void {
+  document.querySelectorAll('.story-stack').forEach(stack => {
+    const tiles = stack.querySelectorAll('.episode-tile') as NodeListOf<HTMLElement>;
+    if (tiles.length <= 1) return;
+
+    let activeIndex = 0;
+
+    const resetStack = () => {
+      tiles.forEach((tile, idx) => {
+        if (idx === 0) {
+          tile.style.position = 'relative';
+          tile.style.top = '0';
+          tile.style.zIndex = String(tiles.length - idx);
+          tile.style.opacity = '1';
+          tile.style.transform = 'scale(1)';
+          tile.style.boxShadow = 'var(--shadow-sm)';
+        } else {
+          tile.style.position = 'absolute';
+          tile.style.top = idx * 36 + 'px';
+          tile.style.zIndex = String(tiles.length - idx);
+          tile.style.opacity = '0.85';
+          tile.style.transform = 'scale(1)';
+          tile.style.boxShadow = 'var(--shadow-sm)';
+        }
+      });
+      activeIndex = 0;
+    };
+
+    const bringToFront = (targetIdx: number) => {
+      if (targetIdx === activeIndex) return;
+      tiles.forEach((tile, idx) => {
+        if (idx === targetIdx) {
+          tile.style.position = 'absolute';
+          tile.style.top = '0';
+          tile.style.zIndex = String(tiles.length + 1);
+          tile.style.opacity = '1';
+          tile.style.transform = 'scale(1)';
+          tile.style.boxShadow = '0 8px 32px rgba(139,92,246,0.25)';
+        } else {
+          const peekPos = idx * 36;
+          if (idx === 0) {
+            tile.style.position = 'relative';
+            tile.style.top = '0';
+          } else {
+            tile.style.position = 'absolute';
+            tile.style.top = peekPos + 'px';
+          }
+          tile.style.zIndex = String(tiles.length - idx);
+          tile.style.opacity = '0.65';
+          tile.style.transform = 'scale(0.98)';
+          tile.style.boxShadow = 'var(--shadow-sm)';
+        }
+      });
+      activeIndex = targetIdx;
+    };
+
+    tiles.forEach((tile, idx) => {
+      if (idx === 0) return;
+      tile.addEventListener('mouseenter', () => bringToFront(idx));
+    });
+
+    (stack as HTMLElement).addEventListener('mouseleave', () => resetStack());
+  });
+
+  // "+ Add New Episode" button handler
+  document.querySelectorAll('[data-add-episode]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const el = e.currentTarget as HTMLElement;
+      const groupId = el.dataset.addEpisode!;
+      const format = el.dataset.groupFormat!;
+      const title = el.dataset.groupTitle!;
+      const nextEp = el.dataset.nextEp!;
+      navigate(`admin-create?format=${format}&storyGroupId=${groupId}&episodeNumber=${nextEp}&storyTitle=${encodeURIComponent(title)}`);
+    });
+  });
 }
 
 function attachOfficialCardListeners(): void {
@@ -589,8 +730,7 @@ function attachOfficialCardListeners(): void {
 const GENRE_OPTIONS: Genre[] = ['Fantasy','Sci-Fi','Romance','Horror','Comedy','Drama','Mystery','Slice of Life','Action','Adventure','Thriller','Historical','Superhero','Sports','Psychological','Supernatural','Mecha','Musical','Custom'];
 const FORMAT_OPTIONS: { value: StoryFormat; label: string }[] = [
   { value: 'scroll', label: 'Waterfall Storyboard' },
-  { value: 'book', label: 'Illustrated Book' },
-  { value: 'comic', label: 'Comic Strip' },
+  { value: 'book', label: 'Illustrated Book' }
 ];
 const RATING_OPTIONS: ContentRating[] = ['All Ages', 'PG-13', 'Mature'];
 
@@ -732,16 +872,6 @@ function openFormatPopup(): void {
           <div>
             <div style="font-weight: 700; font-size: 0.95rem; color: var(--color-text-primary); margin-bottom: 2px;">🎬 Waterfall Storyboard</div>
             <div style="font-size: 0.78rem; color: var(--color-text-muted);">Vertical scrolling panels with multi-tile grids & Character Sheet Studio</div>
-          </div>
-        </button>
-        
-        <button disabled style="display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 16px; border: 2px dashed var(--color-border); background: var(--color-surface); cursor: not-allowed; text-align: left; opacity: 0.5;">
-          <div style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #6b7280, #9ca3af); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;">
-            <svg width="24" height="24" viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="4" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="4" y="26" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="26" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2.5"/></svg>
-          </div>
-          <div>
-            <div style="font-weight: 700; font-size: 0.95rem; color: var(--color-text-primary); margin-bottom: 2px;">💬 Comic Strip</div>
-            <div style="font-size: 0.78rem; color: var(--color-text-muted);">Coming soon</div>
           </div>
         </button>
       </div>`;

@@ -163,12 +163,6 @@ export function render(): string {
               </div>
               <span>Illustrated Book</span>
             </div>
-            <div class="paywall__bg-card">
-              <div class="paywall__bg-card-icon">
-                <svg width="28" height="28" viewBox="0 0 48 48" fill="none" stroke="#ccc" stroke-width="2"><rect x="4" y="4" width="18" height="18" rx="3"/><rect x="26" y="4" width="18" height="18" rx="3"/><rect x="4" y="26" width="18" height="18" rx="3"/><rect x="26" y="26" width="18" height="18" rx="3"/></svg>
-              </div>
-              <span>Comic Strip</span>
-            </div>
           </div>
 
           <!-- Overlay card -->

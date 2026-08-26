@@ -15,7 +15,7 @@ export function getCurrentRoute(): string {
   // Fallback: restore last route from localStorage if hash is empty
   const saved = localStorage.getItem(ROUTE_KEY);
   if (saved) {
-    window.location.hash = saved;
+    window.location.replace('#' + saved);
     return saved;
   }
 
@@ -62,13 +62,11 @@ export function requireAuth(route: string): boolean {
 }
 
 export function onRouteChange(callback: (route: string) => void): void {
+  let lastRoute = '';
   window.addEventListener('hashchange', () => {
     const route = getCurrentRoute();
-    localStorage.setItem(ROUTE_KEY, route);
-    callback(route);
-  });
-  window.addEventListener('popstate', () => {
-    const route = getCurrentRoute();
+    if (route === lastRoute) return;
+    lastRoute = route;
     localStorage.setItem(ROUTE_KEY, route);
     callback(route);
   });

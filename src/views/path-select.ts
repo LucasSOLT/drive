@@ -101,7 +101,7 @@ export function init(): void {
           <span class="path-desc-feature-icon">🖼️</span>
           <div>
             <strong>Multiple Formats</strong>
-            <span>Waterfall storyboards, comic strip panels, and illustrated book pages</span>
+            <span>Waterfall storyboards and illustrated book pages</span>
           </div>
         </div>
         <div class="path-desc-feature">
