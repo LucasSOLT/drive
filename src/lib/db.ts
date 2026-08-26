@@ -777,7 +777,9 @@ export async function fetchOfficialStories(): Promise<Story[]> {
 /** Create or update an official story */
 export async function saveOfficialStory(story: Partial<Story> & { id: string }): Promise<void> {
   const userId = getUserId();
-  const payload: any = {
+
+  // Build the full payload with ALL desired columns
+  const payload: Record<string, any> = {
     id: story.id,
     title: story.title,
     author: story.author || 'DRiVE Studios',
@@ -797,35 +799,42 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     status: story.officialStatus || 'draft',
     created_by: userId,
     updated_at: new Date().toISOString(),
-  };
-
-  // Try with episode columns first (for when they exist in DB)
-  const fullPayload = {
-    ...payload,
     story_group_id: story.storyGroupId || story.id,
     episode_number: story.episodeNumber || 1,
   };
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);
 
-  let { error } = await supabase
-    .from('official_stories')
-    .upsert(fullPayload, { onConflict: 'id' });
-
-  // If episode columns don't exist yet, retry without them
-  if (error && error.message?.includes('episode_number') || error && error.message?.includes('story_group_id')) {
-    console.warn('[DB] Episode columns not in DB yet, saving without them...');
-    const retryResult = await supabase
+  // Retry loop: attempt upsert, strip unknown columns on failure, retry
+  let attempts = 0;
+  const maxAttempts = 5;
+  while (attempts < maxAttempts) {
+    attempts++;
+    const { error } = await supabase
       .from('official_stories')
       .upsert(payload, { onConflict: 'id' });
-    error = retryResult.error;
-  }
 
-  if (error) {
+    if (!error) {
+      console.log('[DB] Official story saved successfully:', payload.id);
+      return;
+    }
+
+    // Check if the error is about a missing column
+    const colMatch = error.message?.match(/Could not find the '(\w+)' column/);
+    if (colMatch && colMatch[1]) {
+      const badCol = colMatch[1];
+      console.warn(`[DB] Column '${badCol}' not in DB, stripping and retrying (attempt ${attempts})...`);
+      delete payload[badCol];
+      continue;
+    }
+
+    // Non-column error — throw immediately
     console.error('[DB] Error saving official story:', error);
     throw error;
   }
-  console.log('[DB] Official story saved successfully:', payload.id);
+
+  console.error('[DB] Failed to save after', maxAttempts, 'attempts');
+  throw new Error('Failed to save official story after stripping unknown columns');
 }
 
 /** Delete an official story */
