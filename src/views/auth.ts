@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase.ts';
+import { openSquadGateFromDeepLink } from '../components/squad-gate-modal.ts';
 import { navigate } from '../router.ts';
 import { loadUserData } from '../lib/db.ts';
 
@@ -78,6 +79,24 @@ export function init(): void {
   const tabsContainer = document.querySelector('.auth-tabs');
   const form = document.getElementById('auth-form') as HTMLFormElement;
   const usernameGroup = document.getElementById('username-group');
+
+  // Auto-select signup tab if navigated to #signup
+  const currentHash = window.location.hash.substring(1).split('/')[0].split('?')[0];
+  if (currentHash === 'signup' && tabsContainer) {
+    tabsContainer.setAttribute('data-active', 'signup');
+    // Trigger the tab switch visually
+    tabs.forEach(tab => {
+      const t = tab as HTMLElement;
+      t.classList.toggle('auth-tab--active', t.dataset.tab === 'signup');
+    });
+    if (usernameGroup) usernameGroup.style.display = 'block';
+    const submitBtnInit = document.getElementById('submit-btn');
+    if (submitBtnInit) submitBtnInit.textContent = 'Create Account';
+    const confirmPwGroupInit = document.getElementById('confirm-password-group');
+    if (confirmPwGroupInit) confirmPwGroupInit.style.display = 'block';
+    const forgotInit = document.getElementById('forgot-password');
+    if (forgotInit) (forgotInit as HTMLElement).style.display = 'none';
+  }
   const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;
   const forgotPasswordLink = document.getElementById('forgot-password');
   const errorEl = document.getElementById('auth-error');
@@ -257,6 +276,23 @@ export function init(): void {
           showError(error.message);
         } else {
           await loadUserData();
+          // Check if there's a pending squad join (from deep link)
+          const pendingSquad = localStorage.getItem('drive_pending_squad_join');
+          if (pendingSquad) {
+            try {
+              const pending = JSON.parse(pendingSquad);
+              // Only use if less than 30 minutes old
+              if (Date.now() - pending.timestamp < 30 * 60 * 1000) {
+                localStorage.removeItem('drive_pending_squad_join');
+                navigate('home');
+                setTimeout(() => {
+                  openSquadGateFromDeepLink(pending.storyId, pending.storyTitle || 'Story Journey', pending.squadCode);
+                }, 300);
+                return;
+              }
+            } catch { /* ignore invalid JSON */ }
+            localStorage.removeItem('drive_pending_squad_join');
+          }
           // Returning users go to home, not path-select
           navigate('home');
         }
@@ -278,6 +314,22 @@ export function init(): void {
         } else {
           if (data.session) {
             await loadUserData();
+            // Check if there's a pending squad join (from deep link)
+            const pendingSquadSignup = localStorage.getItem('drive_pending_squad_join');
+            if (pendingSquadSignup) {
+              try {
+                const pending = JSON.parse(pendingSquadSignup);
+                if (Date.now() - pending.timestamp < 30 * 60 * 1000) {
+                  localStorage.removeItem('drive_pending_squad_join');
+                  navigate('home');
+                  setTimeout(() => {
+                    openSquadGateFromDeepLink(pending.storyId, pending.storyTitle || 'Story Journey', pending.squadCode);
+                  }, 300);
+                  return;
+                }
+              } catch { /* ignore invalid JSON */ }
+              localStorage.removeItem('drive_pending_squad_join');
+            }
             navigate('path-select');
           } else {
             // No session = email confirmation required
@@ -310,6 +362,22 @@ export function init(): void {
                   // Email was verified and sign-in succeeded!
                   clearInterval(pollInterval);
                   await loadUserData();
+                  // Check if there's a pending squad join
+                  const pendingSquadPoll = localStorage.getItem('drive_pending_squad_join');
+                  if (pendingSquadPoll) {
+                    try {
+                      const pending = JSON.parse(pendingSquadPoll);
+                      if (Date.now() - pending.timestamp < 30 * 60 * 1000) {
+                        localStorage.removeItem('drive_pending_squad_join');
+                        navigate('home');
+                        setTimeout(() => {
+                          openSquadGateFromDeepLink(pending.storyId, pending.storyTitle || 'Story Journey', pending.squadCode);
+                        }, 300);
+                        return;
+                      }
+                    } catch { /* ignore invalid JSON */ }
+                    localStorage.removeItem('drive_pending_squad_join');
+                  }
                   navigate('path-select');
                 }
                 // If error, email isn't verified yet — keep polling

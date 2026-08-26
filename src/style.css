@@ -11089,3 +11089,141 @@ body.content-management-mode .story-card:hover {
 .episode-tile--front {
   border-color: rgba(139, 92, 246, 0.4) !important;
 }
+
+
+/* ─── Squad Gate Auth Banner (unauthenticated users) ─── */
+.squad-auth-banner {
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 0 20px 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: authBannerSlideIn 0.4s ease-out;
+}
+
+@keyframes authBannerSlideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.squad-auth-banner-icon {
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.squad-auth-banner-text {
+  font-size: 0.82rem;
+  color: #fca5a5;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.squad-auth-banner-text em {
+  color: #fda4af;
+  font-style: italic;
+}
+
+.squad-auth-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.squad-auth-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  flex: 1;
+  min-width: 160px;
+  text-align: center;
+}
+
+.squad-auth-btn--login {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.squad-auth-btn--login:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.squad-auth-btn--signup {
+  background: #8b5cf6;
+  color: #fff;
+}
+
+.squad-auth-btn--signup:hover {
+  background: #7c3aed;
+  transform: translateY(-1px);
+}
+
+/* ─── Yellow "Account Pending" badge ─── */
+.squad-slot-status.pending {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: help;
+  position: relative;
+  white-space: nowrap;
+  transition: background 0.2s ease;
+}
+
+.squad-slot-status.pending:hover {
+  background: rgba(251, 191, 36, 0.25);
+}
+
+/* Tooltip on hover for Account Pending */
+.squad-slot-status.pending::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 260px;
+  background: #1e1b2e;
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  font-weight: 400;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  line-height: 1.4;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.squad-slot-status.pending:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Unauthed slot visual treatment */
+.squad-slot.unauthed {
+  border-color: rgba(251, 191, 36, 0.25);
+  background: rgba(251, 191, 36, 0.05);
+}
+
+.squad-slot.unauthed .squad-slot-avatar {
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #fbbf24;
+}

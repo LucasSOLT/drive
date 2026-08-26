@@ -1,6 +1,7 @@
 // ─── SQUAD GATE MODAL COMPONENT (Engine A - Module 2) ───
 
 import { navigate } from '../router.ts';
+import { isAuthenticated, getUser } from '../lib/auth.ts';
 import {
   type Squad,
   createSquad,
@@ -45,6 +46,20 @@ export function openSquadGateModal(options: SquadGateOptions): void {
     <div class="squad-gate-card">
       <!-- Glow effect top border -->
       <div class="squad-gate-glow"></div>
+
+      ${!isAuthenticated() ? `
+      <!-- Auth Required Banner -->
+      <div class="squad-auth-banner">
+        <div class="squad-auth-banner-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <p class="squad-auth-banner-text">To join this squad, you must first log in or create an account. This is required to prevent authentication issues during this story session. <em>This data is not being sold or shared.</em></p>
+        <div class="squad-auth-banner-actions">
+          <button class="squad-auth-btn squad-auth-btn--login" id="sg-auth-login-btn">Log into an existing account</button>
+          <button class="squad-auth-btn squad-auth-btn--signup" id="sg-auth-signup-btn">Sign up for this session</button>
+        </div>
+      </div>
+      ` : ''}
 
       <!-- Header -->
       <div class="squad-gate-header">
@@ -115,14 +130,20 @@ function renderTabContent(options: SquadGateOptions): string {
     for (let i = 0; i < maxMembers; i++) {
       const member = members[i];
       if (member) {
+        // Check if this is the current user and they're not authenticated
+        const isCurrentUserUnauthed = !isAuthenticated() && member.isHost;
+        const statusBadge = isCurrentUserUnauthed
+          ? `<span class="squad-slot-status pending" title="This user must first log in or sign up for an account. This is required to prevent authentication issues during this story session. This data is not being sold or shared.">Account Pending</span>`
+          : `<span class="squad-slot-status ready">Ready</span>`;
+
         slots.push(`
-          <div class="squad-slot filled">
+          <div class="squad-slot filled ${isCurrentUserUnauthed ? 'unauthed' : ''}">
             <div class="squad-slot-avatar">${member.username.charAt(0).toUpperCase()}</div>
             <div class="squad-slot-info">
               <span class="squad-slot-name">${member.username}</span>
               <span class="squad-slot-role">${member.isHost ? 'Squad Leader' : 'Member'}</span>
             </div>
-            <span class="squad-slot-status ready">Ready</span>
+            ${statusBadge}
           </div>
         `);
       } else {
@@ -232,6 +253,30 @@ function attachSquadGateListeners(options: SquadGateOptions, overlay: HTMLElemen
   });
 
   attachBodySpecificListeners(options, overlay);
+
+  // Auth banner buttons (only rendered for unauthenticated users)
+  overlay.querySelector('#sg-auth-login-btn')?.addEventListener('click', () => {
+    // Save pending squad info so auth.ts can redirect back
+    localStorage.setItem('drive_pending_squad_join', JSON.stringify({
+      storyId: options.storyId,
+      storyTitle: options.storyTitle,
+      squadCode: currentSquad?.roomCode || '',
+      timestamp: Date.now()
+    }));
+    close();
+    navigate('login');
+  });
+
+  overlay.querySelector('#sg-auth-signup-btn')?.addEventListener('click', () => {
+    localStorage.setItem('drive_pending_squad_join', JSON.stringify({
+      storyId: options.storyId,
+      storyTitle: options.storyTitle,
+      squadCode: currentSquad?.roomCode || '',
+      timestamp: Date.now()
+    }));
+    close();
+    navigate('signup');
+  });
 }
 
 function refreshBody(options: SquadGateOptions, overlay: HTMLElement): void {
