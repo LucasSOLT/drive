@@ -1584,7 +1584,7 @@ function getFormData(): void {
   storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || storyCoverVideo || '';
 }
 
-function buildStory(status: 'draft' | 'under-review'): UserStory {
+function buildStory(status: 'draft' | 'under-review' | 'live'): UserStory {
   getFormData();
   const pages = selectedFormat === 'book'
     ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent, dialogText: p.dialogText }))
@@ -1596,7 +1596,7 @@ function buildStory(status: 'draft' | 'under-review'): UserStory {
     genre: storyGenre === 'Custom' ? storyCustomGenre as any : storyGenre,
     format: selectedFormat as StoryFormat,
     synopsis: storySynopsis,
-    status,
+    status: status === 'live' ? 'published' : status,
     createdAt: new Date().toISOString(),
     pages,
     coverImage: _coverThumbnail || pages[0]?.image || '',
@@ -1931,12 +1931,12 @@ export function init(): void {
     });
   }
 
-  function promptSaveDraftUser(): void {
+  function promptSaveStoryUser(saveStatus: 'draft' | 'live' = 'draft'): void {
     getFormData();
     const hasValidTitle = storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled';
     if (hasValidTitle) {
       saveDraft();
-      addUserStory(buildStory('draft')).catch(e => console.warn('Failed to save draft user story to DB', e));
+      addUserStory(buildStory(saveStatus)).catch(e => console.warn('Failed to save user story to DB', e));
       hideModal();
       navigate('library');
       return;
@@ -1946,13 +1946,13 @@ export function init(): void {
       title: 'Story Title Required',
       content: `
         <p style="line-height:1.5; margin-bottom:14px; font-size:0.88rem; color:var(--color-text-secondary);">
-          Please enter a title for your story to save it as a draft:
+          Please enter a title for your story before saving:
         </p>
         <div style="margin-bottom:8px;">
           <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="" maxlength="80" style="width:100%; box-sizing:border-box;" />
         </div>
       `,
-      confirmText: 'Save as Draft',
+      confirmText: 'Save, and Exit',
       cancelText: 'Cancel',
       onConfirm: async () => {
         const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
@@ -1968,9 +1968,9 @@ export function init(): void {
 
         saveDraft();
         try {
-          await addUserStory(buildStory('draft'));
+          await addUserStory(buildStory(saveStatus));
         } catch (e) {
-          console.warn('Failed to save draft user story to DB', e);
+          console.warn('Failed to save user story to DB', e);
         }
         hideModal();
         navigate('library');
@@ -2002,7 +2002,7 @@ export function init(): void {
           confirmText: 'Discard',
           onConfirm: () => { clearDraft(); navigate('library'); },
           onExtra: () => {
-            promptSaveDraftUser();
+            promptSaveStoryUser('draft');
           },
         });
       });
@@ -2014,8 +2014,7 @@ export function init(): void {
           confirmText: 'Yes',
           cancelText: 'Cancel',
           onConfirm: () => {
-            // For now, just navigate back — full completion logic will come later
-            navigate('library');
+            promptSaveStoryUser('live');
           },
         });
       });

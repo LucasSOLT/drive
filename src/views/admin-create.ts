@@ -1564,16 +1564,16 @@ export function init(): void {
 
   loadData();
 
-  async function promptSaveDraftAdmin(): Promise<void> {
+  async function promptSaveStoryAdmin(saveStatus: 'draft' | 'live' = 'draft'): Promise<void> {
     getFormData();
     const hasValidTitle = storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled';
     if (hasValidTitle) {
       saveDraft();
       hideModal();
       try {
-        await saveOfficialStory(buildStory('draft'));
+        await saveOfficialStory(buildStory(saveStatus));
       } catch (e) {
-        console.warn('Draft save error', e);
+        console.warn('Story save error', e);
       }
       navigate('admin');
       return;
@@ -1583,7 +1583,7 @@ export function init(): void {
       title: 'Story Title Required',
       content: `
         <p style="line-height:1.5; margin-bottom:14px; font-size:0.88rem; color:var(--color-text-secondary);">
-          Please enter a title for your story to save it as a draft:
+          Please enter a title for your story before saving:
         </p>
         <div style="margin-bottom:8px;">
           <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="" maxlength="80" style="width:100%; box-sizing:border-box;" />
@@ -1605,9 +1605,9 @@ export function init(): void {
 
         saveDraft();
         try {
-          await saveOfficialStory(buildStory('draft'));
+          await saveOfficialStory(buildStory(saveStatus));
         } catch (e) {
-          console.warn('Draft save error', e);
+          console.warn('Story save error', e);
         }
         hideModal();
         navigate('admin');
@@ -1638,7 +1638,7 @@ export function init(): void {
           confirmText: 'Discard',
           onConfirm: () => { clearDraft(); navigate('admin'); },
           onExtra: () => {
-            promptSaveDraftAdmin();
+            promptSaveStoryAdmin('draft');
           },
         });
       });
@@ -1650,8 +1650,7 @@ export function init(): void {
           confirmText: 'Yes',
           cancelText: 'Cancel',
           onConfirm: () => {
-            // For now, just navigate back — full completion logic will come later
-            navigate('admin');
+            promptSaveStoryAdmin('live');
           },
         });
       });

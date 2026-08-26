@@ -54,10 +54,19 @@ export function openTileConfigModal(options: {
         </div>
 
         <!-- Insert story action -->
-        <button class="tile-config-insert-btn" id="tile-config-insert-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Insert story
-        </button>
+        <!-- Insert / Change story action -->
+        <div style="display:flex; gap:10px; margin-bottom:16px;">
+          <button class="tile-config-insert-btn" id="tile-config-insert-btn" style="flex:1; margin-bottom:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            ${options.storyId ? 'Change story' : 'Insert story'}
+          </button>
+          ${options.storyId ? `
+          <button class="tile-config-remove-btn" id="tile-config-remove-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Remove
+          </button>
+          ` : ''}
+        </div>
 
         <!-- Insert Story Drawer (hidden initially) -->
         <div class="tile-config-drawer" id="tile-config-drawer" style="display:none;">
@@ -108,6 +117,16 @@ export function openTileConfigModal(options: {
       const grid = document.getElementById('tile-config-grid');
       if (grid) grid.innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444;">Failed to load stories</div>`;
     }
+  });
+
+  // Remove story button
+  document.getElementById('tile-config-remove-btn')?.addEventListener('click', () => {
+    const currentEl = document.getElementById('tile-config-current');
+    if (currentEl) {
+      currentEl.innerHTML = `<div class="tile-config-current-empty">No story assigned to this slot</div>`;
+    }
+    currentSlotStoryId = null;
+    console.log(`[CM] Removed story from slot ${currentSlotType}[${currentSlotIndex}]`);
   });
 
   // Search input (live filtering)
