@@ -801,6 +801,8 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     episode_number: story.episodeNumber || 1,
   };
 
+  console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);
+
   const { error } = await supabase
     .from('official_stories')
     .upsert(payload, { onConflict: 'id' });
@@ -809,6 +811,7 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     console.error('[DB] Error saving official story:', error);
     throw error;
   }
+  console.log('[DB] Official story saved successfully:', payload.id);
 }
 
 /** Delete an official story */

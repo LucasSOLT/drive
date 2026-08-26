@@ -67,8 +67,13 @@ export function showModal(options: {
   
   if (confirmBtn) {
     confirmBtn.addEventListener('click', () => {
+      const prevTitle = container.querySelector('.modal-title')?.textContent;
       if (options.onConfirm) options.onConfirm();
-      close();
+      // Only auto-close if the onConfirm didn't open a new modal
+      const newTitle = container.querySelector('.modal-title')?.textContent;
+      if (newTitle === prevTitle || !container.querySelector('.modal-backdrop')) {
+        close();
+      }
     });
   }
 
