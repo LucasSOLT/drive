@@ -924,14 +924,6 @@ function openPageFullscreen(pageIndex: number): void {
   fsDialog?.addEventListener('input', updateFsDialog);
   fsDialog?.addEventListener('paste', () => setTimeout(updateFsDialog, 0));
 
-  // Fullscreen Voice Tuning slider
-  const fsStabilitySlider = document.getElementById('fs-stability-slider') as HTMLInputElement;
-  const fsStabilityPct = document.getElementById('fs-stability-pct');
-  fsStabilitySlider?.addEventListener('input', () => {
-    const val = parseFloat(fsStabilitySlider.value);
-    bookPages[pageIndex].stability = val;
-    if (fsStabilityPct) fsStabilityPct.textContent = Math.round(val * 100) + '%';
-  });
 
   // Fullscreen Deeper Dive toggle
   document.getElementById('fs-dd-toggle')?.addEventListener('click', (e) => {
@@ -1080,17 +1072,6 @@ function openStoryboard(): void {
     ta.addEventListener('paste', () => setTimeout(handleInput, 0));
   });
 
-  // Stability sliders
-  overlay.querySelectorAll('[data-sb-stability]').forEach(slider => {
-    slider.addEventListener('input', () => {
-      const idx = parseInt(slider.getAttribute('data-sb-stability') || '0');
-      const val = parseFloat((slider as HTMLInputElement).value);
-      bookPages[idx].stability = val;
-      const pct = overlay.querySelector(`[data-sb-pct="${idx}"]`);
-      if (pct) pct.textContent = Math.round(val * 100) + '%';
-      saveDraft();
-    });
-  });
 
   // Deeper dive content
   overlay.querySelectorAll('[data-sb-dd]').forEach(ta => {
@@ -2865,15 +2846,6 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       tileDialog?.addEventListener('input', handleTileDialog);
       tileDialog?.addEventListener('paste', () => setTimeout(handleTileDialog, 0));
 
-      // Voice Tuning slider
-      const stabilitySlider = wizard.querySelector(`[data-tile-stability="${i}"]`) as HTMLInputElement;
-      stabilitySlider?.addEventListener('input', () => {
-        const val = parseFloat(stabilitySlider.value);
-        bookPages[i].stability = val;
-        const pctEl = wizard.querySelector(`[data-tile-stability-pct="${i}"]`);
-        if (pctEl) pctEl.textContent = Math.round(val * 100) + '%';
-        saveDraft();
-      });
 
       // Pre-record Audio for book page
       const doPrerecordBook = async (pageIdx: number) => {

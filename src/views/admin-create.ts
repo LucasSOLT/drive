@@ -834,9 +834,6 @@ function renderBookCanvas(): string {
         placeholder="Write dialogue for this page..."
         rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
 
-          min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
-      </div>
-
       <div class="prerecord-row">
         <button class="prerecord-btn ${page.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-book="${i}" type="button">
           ${page.audioUrl
@@ -954,16 +951,6 @@ function openPageFullscreen(pageIndex: number): void {
         placeholder="Write dialogue for this page..."
         rows="4" maxlength="1000">${page.dialogText || ''}</textarea>
 
-      <!-- Voice Tuning (fullscreen) -->
-      <div class="book-tile__voice-tuning" style="margin-top: var(--space-md);">
-        <div class="book-tile__voice-label">
-          <span>VOICE TUNING</span>
-          <span class="book-tile__voice-pct" id="fs-stability-pct">${Math.round((page.stability ?? 0.5) * 100)}%</span>
-        </div>
-        <input type="range" class="book-tile__voice-slider" id="fs-stability-slider"
-          min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
-      </div>
-
       <!-- Deeper Dive (fullscreen) -->
       <div class="book-tile__deeper-dive" style="margin-top: var(--space-md);">
         <button class="book-tile__dd-toggle" id="fs-dd-toggle">
@@ -1053,14 +1040,6 @@ function openPageFullscreen(pageIndex: number): void {
   fsDialog?.addEventListener('input', updateFsDialog);
   fsDialog?.addEventListener('paste', () => setTimeout(updateFsDialog, 0));
 
-  // Fullscreen Voice Tuning slider
-  const fsStabilitySlider = document.getElementById('fs-stability-slider') as HTMLInputElement;
-  const fsStabilityPct = document.getElementById('fs-stability-pct');
-  fsStabilitySlider?.addEventListener('input', () => {
-    const val = parseFloat(fsStabilitySlider.value);
-    bookPages[pageIndex].stability = val;
-    if (fsStabilityPct) fsStabilityPct.textContent = Math.round(val * 100) + '%';
-  });
 
   // Fullscreen Deeper Dive toggle
   document.getElementById('fs-dd-toggle')?.addEventListener('click', (e) => {
@@ -1148,14 +1127,6 @@ function openStoryboard(): void {
         </div>
       </div>
 
-      <div class="sb-card__section">
-        <div class="sb-card__section-label">
-          VOICE TUNING
-          <span class="sb-card__pct" data-sb-pct="${i}">${Math.round((page.stability ?? 0.5) * 100)}%</span>
-        </div>
-        <input type="range" class="book-tile__voice-slider" data-sb-stability="${i}"
-          min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
-      </div>
 
       <details class="sb-card__deeper-dive">
         <summary class="sb-card__dd-summary">🎓 DEEPER DIVE</summary>
@@ -1217,17 +1188,7 @@ function openStoryboard(): void {
     ta.addEventListener('paste', () => setTimeout(handleInput, 0));
   });
 
-  // Stability sliders
-  overlay.querySelectorAll('[data-sb-stability]').forEach(slider => {
-    slider.addEventListener('input', () => {
-      const idx = parseInt(slider.getAttribute('data-sb-stability') || '0');
-      const val = parseFloat((slider as HTMLInputElement).value);
-      bookPages[idx].stability = val;
-      const pct = overlay.querySelector(`[data-sb-pct="${idx}"]`);
-      if (pct) pct.textContent = Math.round(val * 100) + '%';
-      saveDraft();
-    });
-  });
+
 
   // Deeper dive content
   overlay.querySelectorAll('[data-sb-dd]').forEach(ta => {
@@ -2440,15 +2401,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       tileDialog?.addEventListener('input', handleTileDialog);
       tileDialog?.addEventListener('paste', () => setTimeout(handleTileDialog, 0));
 
-      // Voice Tuning slider
-      const stabilitySlider = wizard.querySelector(`[data-tile-stability="${i}"]`) as HTMLInputElement;
-      stabilitySlider?.addEventListener('input', () => {
-        const val = parseFloat(stabilitySlider.value);
-        bookPages[i].stability = val;
-        const pctEl = wizard.querySelector(`[data-tile-stability-pct="${i}"]`);
-        if (pctEl) pctEl.textContent = Math.round(val * 100) + '%';
-        saveDraft();
-      });
+
 
       // Pre-record Audio for book page
       const doPrerecordBookPage = async (pageIdx: number) => {
