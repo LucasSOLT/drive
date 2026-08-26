@@ -605,7 +605,7 @@ function renderCanvasToolbar(formatLabel: string): string {
   
   return `
     <div class="canvas-toolbar" id="canvas-toolbar">
-      <div class="canvas-toolbar__left">
+      <div class="canvas-toolbar__left" style="display:flex; align-items:center; gap:6px;">
         <button class="canvas-toolbar__btn" id="btn-toolbar-quit" title="Quit without saving">
           ${ICON.backArrow}
         </button>
@@ -648,9 +648,9 @@ function renderScrollCanvas(): string {
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
-      ${renderCanvasToolbar('Waterfall Storyboard')}
+      ${renderCanvasToolbar('Waterfall Storyboard - Ep.' + episodeNumber)}
 
-      <!-- â”€â”€â”€ CHARACTER SHEET STUDIO â”€â”€â”€ -->
+      <!-- ─── CHARACTER SHEET STUDIO ─── -->
       <div class="cs-studio">
         <button class="cs-studio-toggle" id="cs-studio-toggle" type="button">
           <div style="display:flex; align-items:center;">
@@ -834,13 +834,6 @@ function renderBookCanvas(): string {
         placeholder="Write dialogue for this page..."
         rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
 
-      <!-- Voice Tuning -->
-      <div class="book-tile__voice-tuning">
-        <div class="book-tile__voice-label">
-          <span>VOICE TUNING</span>
-          <span class="book-tile__voice-pct" data-tile-stability-pct="${i}">${Math.round((page.stability ?? 0.5) * 100)}%</span>
-        </div>
-        <input type="range" class="book-tile__voice-slider" data-tile-stability="${i}"
           min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
       </div>
 
@@ -885,7 +878,7 @@ function renderBookCanvas(): string {
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
-      ${renderCanvasToolbar('Illustrated Book')}
+      ${renderCanvasToolbar('Illustrated Book - Ep.' + episodeNumber)}
 
       <h2 class="create-phase__title" style="margin-bottom:4px;">Your Pages</h2>
       <p class="create-phase__desc">Page ${currentPage + 1} of ${bookPages.length}. Long-press to delete.</p>
@@ -1683,7 +1676,18 @@ export function init(): void {
         });
       });
 
-
+      document.getElementById('btn-toolbar-complete')?.addEventListener('click', () => {
+        showModal({
+          title: 'Mark as Completed?',
+          content: '<p style="line-height:1.6;">Would you like to mark this episode as completed? You can always revisit and edit.</p>',
+          confirmText: 'Yes',
+          cancelText: 'Cancel',
+          onConfirm: () => {
+            // For now, just navigate back — full completion logic will come later
+            navigate('admin');
+          },
+        });
+      });
 
       // Scroll-hide/show toolbar
       const appContent = document.getElementById('app-content');

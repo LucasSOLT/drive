@@ -474,9 +474,12 @@ function renderCanvasToolbar(formatLabel: string): string {
   
   return `
     <div class="canvas-toolbar" id="canvas-toolbar">
-      <div class="canvas-toolbar__left">
+      <div class="canvas-toolbar__left" style="display:flex; align-items:center; gap:6px;">
         <button class="canvas-toolbar__btn" id="btn-toolbar-quit" title="Quit without saving">
           ${ICON.backArrow}
+        </button>
+        <button class="canvas-toolbar__btn" id="btn-toolbar-complete" title="Mark episode as completed" style="background:rgba(34,197,94,0.15); border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border:none; cursor:pointer;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
       </div>
       <span class="canvas-toolbar__title">${formatLabel}</span>
@@ -521,7 +524,7 @@ function renderScrollCanvas(): string {
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
-      ${renderCanvasToolbar('Waterfall Storyboard')}
+      ${renderCanvasToolbar('Waterfall Storyboard - Ep.1')}
 
       <!-- ─── CHARACTER SHEET STUDIO ─── -->
       <div class="cs-studio">
@@ -711,15 +714,7 @@ function renderBookCanvas(): string {
         placeholder="Write dialogue for this page..."
         rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
 
-      <!-- Voice Tuning -->
-      <div class="book-tile__voice-tuning">
-        <div class="book-tile__voice-label">
-          <span>VOICE TUNING</span>
-          <span class="book-tile__voice-pct" data-tile-stability-pct="${i}">${Math.round((page.stability ?? 0.5) * 100)}%</span>
-        </div>
-        <input type="range" class="book-tile__voice-slider" data-tile-stability="${i}"
-          min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
-      </div>
+
 
       <!-- Pre-record Audio -->
       <div class="prerecord-row">
@@ -763,7 +758,7 @@ function renderBookCanvas(): string {
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
-      ${renderCanvasToolbar('Illustrated Book')}
+      ${renderCanvasToolbar('Illustrated Book - Ep.1')}
 
       <h2 class="create-phase__title" style="margin-bottom:4px;">Your Pages</h2>
       <p class="create-phase__desc">Page ${currentPage + 1} of ${bookPages.length}. Long-press to delete.</p>
@@ -838,15 +833,7 @@ function openPageFullscreen(pageIndex: number): void {
         placeholder="Write dialogue for this page..."
         rows="4" maxlength="1000">${page.dialogText || ''}</textarea>
 
-      <!-- Voice Tuning (fullscreen) -->
-      <div class="book-tile__voice-tuning" style="margin-top: var(--space-md);">
-        <div class="book-tile__voice-label">
-          <span>VOICE TUNING</span>
-          <span class="book-tile__voice-pct" id="fs-stability-pct">${Math.round((page.stability ?? 0.5) * 100)}%</span>
-        </div>
-        <input type="range" class="book-tile__voice-slider" id="fs-stability-slider"
-          min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
-      </div>
+
 
       <!-- Deeper Dive (fullscreen) -->
       <div class="book-tile__deeper-dive" style="margin-top: var(--space-md);">
@@ -1031,14 +1018,7 @@ function openStoryboard(): void {
         </div>
       </div>
 
-      <div class="sb-card__section">
-        <div class="sb-card__section-label">
-          VOICE TUNING
-          <span class="sb-card__pct" data-sb-pct="${i}">${Math.round((page.stability ?? 0.5) * 100)}%</span>
-        </div>
-        <input type="range" class="book-tile__voice-slider" data-sb-stability="${i}"
-          min="0" max="1" step="0.1" value="${page.stability ?? 0.5}">
-      </div>
+
 
       <details class="sb-card__deeper-dive">
         <summary class="sb-card__dd-summary">🎓 DEEPER DIVE</summary>
@@ -2036,8 +2016,8 @@ export function init(): void {
         showModal({
           title: 'Discard Changes?',
           content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          extraText: 'Save as Draft',
-          cancelText: 'Keep Editing',
+          extraText: 'Save, and Exit',
+          cancelText: '',
           confirmText: 'Discard',
           onConfirm: () => { clearDraft(); navigate('library'); },
           onExtra: () => {
@@ -2046,7 +2026,18 @@ export function init(): void {
         });
       });
 
-
+      document.getElementById('btn-toolbar-complete')?.addEventListener('click', () => {
+        showModal({
+          title: 'Mark as Completed?',
+          content: '<p style="line-height:1.6;">Would you like to mark this episode as completed? You can always revisit and edit.</p>',
+          confirmText: 'Yes',
+          cancelText: 'Cancel',
+          onConfirm: () => {
+            // For now, just navigate back — full completion logic will come later
+            navigate('library');
+          },
+        });
+      });
 
       // Scroll-hide/show toolbar
       const appContent = document.getElementById('app-content');
