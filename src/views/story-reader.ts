@@ -26,6 +26,65 @@ function formatCount(n: number): string {
   return String(n);
 }
 
+
+function renderEpisode1InfoPage(format: 'book' | 'scroll'): string {
+  const btnId = format === 'book' ? 'btn-book-lets-begin' : 'btn-waterfall-lets-begin';
+  return `
+    <div class="reader__info-page reader__info-page--${format}">
+      <div class="reader__info-glow"></div>
+      
+      <div class="reader__info-badge">
+        <span class="squad-gate-badge-dot"></span>
+        <span>EPISODE 1 COMPLETE · SQUAD GATE</span>
+      </div>
+
+      <h2 class="reader__info-title">Nobody Plays Alone on DRiVE</h2>
+      
+      <p class="reader__info-lead">
+        What is a story without the whole <strong>CAST</strong> of characters?
+      </p>
+
+      <div class="reader__info-card">
+        <div class="reader__info-pillar">
+          <div class="reader__info-pillar-icon">✨</div>
+          <div class="reader__info-pillar-text">
+            <strong>Episode 1 is Free & Solo</strong>
+            <span>All first episodes are 100% free and accessible solo to experience the hook.</span>
+          </div>
+        </div>
+
+        <div class="reader__info-pillar">
+          <div class="reader__info-pillar-icon">👥</div>
+          <div class="reader__info-pillar-text">
+            <strong>Episodes 2+ Require a Squad of 3 to 5</strong>
+            <span>To continue the journey, assemble your friends or match globally with fellow adventurers.</span>
+          </div>
+        </div>
+
+        <div class="reader__info-pillar">
+          <div class="reader__info-pillar-icon">💎</div>
+          <div class="reader__info-pillar-text">
+            <strong>Affordable Story Credit Pass</strong>
+            <span>Subsequent episodes vary in price with simple credit unlocks — zero microtransactions.</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="reader__info-closing">
+        Form your squad, coordinate your sparks, and experience the story together as a team.
+      </p>
+
+      <button class="reader__info-btn" id="${btnId}">
+        <span>Let's Begin</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+      </button>
+    </div>
+  `;
+}
+
 export function render(): string {
   const storyId = getRouteParam();
   if (!storyId) return '<div class="reader-error">No story ID provided.</div>';
@@ -53,21 +112,8 @@ export function render(): string {
           </div>
         `).join('')}
 
-        <!-- Waterfall End-of-Episode Squad Gate Banner -->
-        <div class="reader__waterfall-endcard" id="waterfall-endcard">
-          <div class="reader__endcard-badge">
-            <span class="squad-gate-badge-dot"></span>
-            <span>EPISODE 1 COMPLETE</span>
-          </div>
-          <h3 class="reader__endcard-title">The Hook is Set.</h3>
-          <p class="reader__endcard-desc">
-            To unlock <strong>Episode 2</strong> and continue the journey, form or join a Squad of <strong>3 to 5 players</strong>.
-          </p>
-          <button class="reader__endcard-btn" id="btn-waterfall-squad-gate">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            Unlock Episode 2 with Squad
-          </button>
-        </div>
+        <!-- Waterfall Episode 1 Informational Page -->
+        ${(!story.episodeNumber || story.episodeNumber === 1) ? renderEpisode1InfoPage('scroll') : ''}
       </div>
     `;
   } else if (story.format === 'book') {
@@ -114,7 +160,7 @@ export function render(): string {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <div class="reader__page-dots" id="book-dots">
-            ${story.panels.map((_: string, i: number) => `<span class="reader__dot ${i === 0 ? 'active' : ''}" data-page="${i}"></span>`).join('')}
+            ${Array.from({ length: (!story.episodeNumber || story.episodeNumber === 1) ? story.panels.length + 1 : story.panels.length }).map((_, i) => `<span class="reader__dot ${i === 0 ? 'active' : ''} ${i >= story.panels.length ? 'reader__dot--info' : ''}" data-page="${i}" title="${i >= story.panels.length ? 'Squad Info' : 'Page ' + (i + 1)}"></span>`).join('')}
           </div>
           <button class="reader__page-btn" id="book-next" aria-label="Next page">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -313,79 +359,109 @@ export function init(): void {
   if (story.format === 'book') {
     let currentPage = 0;
     let scriptVisible = false;
-    const totalPages = story.panels.length;
+    const isEpisode1 = !story.episodeNumber || story.episodeNumber === 1;
+    const totalPages = isEpisode1 ? story.panels.length + 1 : story.panels.length;
     const pageContainer = document.getElementById('book-page');
     const dotsContainer = document.getElementById('book-dots');
     let scriptContainer = document.getElementById('book-script');
 
     const updatePage = () => {
+      const toggleBtn = document.getElementById('reader-text-toggle');
+      const isInfoPage = isEpisode1 && currentPage === story.panels.length;
+
       if (pageContainer) {
-        const isVideo = story.pageVideos && story.pageVideos[currentPage];
-        const hasAudio = !!story.pageAudio?.[currentPage];
-        if (isVideo) {
-          pageContainer.innerHTML = `<video id="book-video" src="${story.pageVideos![currentPage]}" autoplay loop muted playsinline style="width:100%;height:auto;border-radius:8px;"></video>`;
+        if (isInfoPage) {
+          // Render full Informational Page on the last slide of Episode 1
+          pageContainer.innerHTML = renderEpisode1InfoPage('book');
+          // Hide text toggle button and script container
+          if (toggleBtn) toggleBtn.style.display = 'none';
+          if (scriptContainer) scriptContainer.style.display = 'none';
+
+          // Attach listener to "Let's Begin" button
+          document.getElementById('btn-book-lets-begin')?.addEventListener('click', () => {
+            stopSpeaking();
+            openSquadGateModal({
+              storyId: story.id,
+              storyTitle: story.title,
+              storyCoverImage: story.coverImage,
+              episodeNumber: story.episodeNumber || 1,
+              onReplay: () => {
+                currentPage = 0;
+                updatePage();
+              },
+            });
+          });
         } else {
-          pageContainer.innerHTML = `<img id="book-img" src="${story.panels[currentPage]}" alt="Page ${currentPage + 1}">`;
-        }
-        // Add audio play button if page has audio
-        if (hasAudio) {
-          const audioBtn = document.createElement('button');
-          audioBtn.className = 'reader-audio-btn';
-          audioBtn.id = 'reader-audio-toggle';
-          audioBtn.title = isSpeaking() ? 'Pause audio' : 'Play audio';
-          audioBtn.innerHTML = isSpeaking()
-            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
-            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-          pageContainer.appendChild(audioBtn);
-          audioBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (isSpeaking()) {
-              stopSpeaking();
-              audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-              audioBtn.title = 'Play audio';
-            } else {
+          // Render regular book panel
+          if (toggleBtn) toggleBtn.style.display = 'flex';
+          const isVideo = story.pageVideos && story.pageVideos[currentPage];
+          const hasAudio = !!story.pageAudio?.[currentPage];
+          if (isVideo) {
+            pageContainer.innerHTML = `<video id="book-video" src="${story.pageVideos![currentPage]}" autoplay loop muted playsinline style="width:100%;height:auto;border-radius:8px;"></video>`;
+          } else {
+            pageContainer.innerHTML = `<img id="book-img" src="${story.panels[currentPage]}" alt="Page ${currentPage + 1}">`;
+          }
+          // Add audio play button if page has audio
+          if (hasAudio) {
+            const audioBtn = document.createElement('button');
+            audioBtn.className = 'reader-audio-btn';
+            audioBtn.id = 'reader-audio-toggle';
+            audioBtn.title = isSpeaking() ? 'Pause audio' : 'Play audio';
+            audioBtn.innerHTML = isSpeaking()
+              ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+              : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+            pageContainer.appendChild(audioBtn);
+            audioBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              if (isSpeaking()) {
+                stopSpeaking();
+                audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+                audioBtn.title = 'Play audio';
+              } else {
+                playAudioUrl(story.pageAudio![currentPage]);
+                audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+                audioBtn.title = 'Pause audio';
+              }
+            });
+
+            // Autoplay if setting is on
+            if (getSettings().autoPlay) {
               playAudioUrl(story.pageAudio![currentPage]);
               audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
               audioBtn.title = 'Pause audio';
             }
-          });
+          }
 
-          // Autoplay if setting is on
-          if (getSettings().autoPlay) {
-            playAudioUrl(story.pageAudio![currentPage]);
-            audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
-            audioBtn.title = 'Pause audio';
+          // Update script text
+          scriptContainer = document.getElementById('book-script');
+          if (scriptContainer) {
+            const scriptText = story.pageScripts && story.pageScripts[currentPage] ? story.pageScripts[currentPage] : '';
+            if (scriptText) {
+              scriptContainer.innerHTML = scriptText.split('\n').map((line: string) => {
+                if (!line.trim()) return '<br>';
+                const match = line.match(/^(\w+)\s*\(([^)]+)\):\s*"([^"]*)"$/);
+                if (match) {
+                  return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">
+                    <span style="color:#60a5fa;font-weight:600;">${match[1]}</span>
+                    <span style="color:#94a3b8;font-size:0.8rem;"> (${match[2]})</span>
+                    <span style="color:#f1f5f9;font-style:italic;"> "${match[3]}"</span>
+                  </p>`;
+                }
+                return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">${line}</p>`;
+              }).join('');
+              scriptContainer.style.display = scriptVisible ? 'block' : 'none';
+            } else {
+              scriptContainer.style.display = 'none';
+            }
           }
         }
 
         // Re-add position:relative for audio button positioning
         pageContainer.style.position = 'relative';
       }
-      // Update script text
-      scriptContainer = document.getElementById('book-script');
-      if (scriptContainer) {
-        const scriptText = story.pageScripts && story.pageScripts[currentPage] ? story.pageScripts[currentPage] : '';
-        if (scriptText) {
-          scriptContainer.innerHTML = scriptText.split('\n').map((line: string) => {
-            if (!line.trim()) return '<br>';
-            const match = line.match(/^(\w+)\s*\(([^)]+)\):\s*"([^"]*)"$/);
-            if (match) {
-              return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">
-                <span style="color:#60a5fa;font-weight:600;">${match[1]}</span>
-                <span style="color:#94a3b8;font-size:0.8rem;"> (${match[2]})</span>
-                <span style="color:#f1f5f9;font-style:italic;"> "${match[3]}"</span>
-              </p>`;
-            }
-            return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">${line}</p>`;
-          }).join('');
-          scriptContainer.style.display = scriptVisible ? 'block' : 'none';
-        } else {
-          scriptContainer.style.display = 'none';
-        }
-      }
+      
       // Update text toggle button icon
-      const toggleBtn = document.getElementById('reader-text-toggle');
-      if (toggleBtn) {
+      if (toggleBtn && !isInfoPage) {
         toggleBtn.innerHTML = scriptVisible
           ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
           : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>`;
@@ -410,7 +486,7 @@ export function init(): void {
         currentPage++;
         updatePage();
       } else {
-        // Reached end of Episode 1 in Illustrated Book
+        // Reached end of Illustrated Book (on info page) -> open Squad Gate
         stopSpeaking();
         openSquadGateModal({
           storyId: story.id,
@@ -425,8 +501,8 @@ export function init(): void {
       }
     });
 
-    // Waterfall squad gate button listener
-    document.getElementById('btn-waterfall-squad-gate')?.addEventListener('click', () => {
+    // Waterfall squad gate button listener ("Let's Begin")
+    document.getElementById('btn-waterfall-lets-begin')?.addEventListener('click', () => {
       openSquadGateModal({
         storyId: story.id,
         storyTitle: story.title,

@@ -11227,3 +11227,180 @@ body.content-management-mode .story-card:hover {
   border-color: rgba(251, 191, 36, 0.5);
   color: #fbbf24;
 }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   EPISODE 1 INFORMATIONAL END PAGE (Both Formats)
+   ══════════════════════════════════════════════════════════════════ */
+
+.reader__info-page {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: linear-gradient(165deg, #181528 0%, #0d0b14 100%);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 40px rgba(139, 92, 246, 0.15);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.reader__info-page--book {
+  max-width: 600px;
+  min-height: 480px;
+  padding: 32px 24px;
+  margin: auto;
+  animation: fadeInInfoPage 0.4s ease-out;
+}
+
+.reader__info-page--scroll {
+  max-width: 680px;
+  padding: 40px 28px;
+  margin: 40px auto 60px;
+}
+
+@keyframes fadeInInfoPage {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.reader__info-glow {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #a855f7, #ec4899, transparent);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.8);
+}
+
+.reader__info-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  background: rgba(139, 92, 246, 0.18);
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  border-radius: 100px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #c084fc;
+  margin-bottom: 16px;
+  text-transform: uppercase;
+}
+
+.reader__info-title {
+  font-family: var(--font-heading);
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px 0;
+  line-height: 1.2;
+}
+
+.reader__info-lead {
+  font-size: 0.96rem;
+  color: #c4b5fd;
+  margin: 0 0 20px 0;
+  line-height: 1.4;
+}
+
+.reader__info-lead strong {
+  color: #f472b6;
+  font-weight: 700;
+}
+
+.reader__info-card {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 16px 14px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+.reader__info-pillar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.reader__info-pillar-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 6px;
+  background: rgba(139, 92, 246, 0.15);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.reader__info-pillar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reader__info-pillar-text strong {
+  font-size: 0.88rem;
+  color: #f1f5f9;
+  font-weight: 700;
+}
+
+.reader__info-pillar-text span {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.reader__info-closing {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: 0 0 24px 0;
+  line-height: 1.45;
+  max-width: 420px;
+}
+
+.reader__info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+  padding: 14px 28px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #a855f7 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4), 0 0 20px rgba(168, 85, 247, 0.25);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reader__info-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 32px rgba(139, 92, 246, 0.6), 0 0 30px rgba(168, 85, 247, 0.4);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.reader__info-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.reader__dot--info {
+  background: #a855f7 !important;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+}
