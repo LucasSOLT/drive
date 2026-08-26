@@ -797,15 +797,29 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     status: story.officialStatus || 'draft',
     created_by: userId,
     updated_at: new Date().toISOString(),
+  };
+
+  // Try with episode columns first (for when they exist in DB)
+  const fullPayload = {
+    ...payload,
     story_group_id: story.storyGroupId || story.id,
     episode_number: story.episodeNumber || 1,
   };
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('official_stories')
-    .upsert(payload, { onConflict: 'id' });
+    .upsert(fullPayload, { onConflict: 'id' });
+
+  // If episode columns don't exist yet, retry without them
+  if (error && error.message?.includes('episode_number') || error && error.message?.includes('story_group_id')) {
+    console.warn('[DB] Episode columns not in DB yet, saving without them...');
+    const retryResult = await supabase
+      .from('official_stories')
+      .upsert(payload, { onConflict: 'id' });
+    error = retryResult.error;
+  }
 
   if (error) {
     console.error('[DB] Error saving official story:', error);
