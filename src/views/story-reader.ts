@@ -1,3 +1,4 @@
+import { openSquadGateModal } from '../components/squad-gate-modal.ts';
 import { getRouteParam, navigate } from '../router.ts';
 import { getStoryById } from '../data/stories.ts';
 import {
@@ -51,6 +52,22 @@ export function render(): string {
             ` : ''}
           </div>
         `).join('')}
+
+        <!-- Waterfall End-of-Episode Squad Gate Banner -->
+        <div class="reader__waterfall-endcard" id="waterfall-endcard">
+          <div class="reader__endcard-badge">
+            <span class="squad-gate-badge-dot"></span>
+            <span>EPISODE 1 COMPLETE</span>
+          </div>
+          <h3 class="reader__endcard-title">The Hook is Set.</h3>
+          <p class="reader__endcard-desc">
+            To unlock <strong>Episode 2</strong> and continue the journey, form or join a Squad of <strong>3 to 5 players</strong>.
+          </p>
+          <button class="reader__endcard-btn" id="btn-waterfall-squad-gate">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Unlock Episode 2 with Squad
+          </button>
+        </div>
       </div>
     `;
   } else if (story.format === 'book') {
@@ -388,7 +405,37 @@ export function init(): void {
       if (currentPage > 0) { stopSpeaking(); currentPage--; updatePage(); }
     });
     document.getElementById('book-next')?.addEventListener('click', () => {
-      if (currentPage < totalPages - 1) { stopSpeaking(); currentPage++; updatePage(); }
+      if (currentPage < totalPages - 1) {
+        stopSpeaking();
+        currentPage++;
+        updatePage();
+      } else {
+        // Reached end of Episode 1 in Illustrated Book
+        stopSpeaking();
+        openSquadGateModal({
+          storyId: story.id,
+          storyTitle: story.title,
+          storyCoverImage: story.coverImage,
+          episodeNumber: story.episodeNumber || 1,
+          onReplay: () => {
+            currentPage = 0;
+            updatePage();
+          },
+        });
+      }
+    });
+
+    // Waterfall squad gate button listener
+    document.getElementById('btn-waterfall-squad-gate')?.addEventListener('click', () => {
+      openSquadGateModal({
+        storyId: story.id,
+        storyTitle: story.title,
+        storyCoverImage: story.coverImage,
+        episodeNumber: story.episodeNumber || 1,
+        onReplay: () => {
+          container.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+      });
     });
 
     // Text toggle

@@ -1512,6 +1512,8 @@ export function init(): void {
   if (epNumMatch) episodeNumber = parseInt(epNumMatch[1], 10) || 1;
   if (titleMatch) episodeParentTitle = decodeURIComponent(titleMatch[1]);
 
+  let attachListeners: () => void;
+
   const loadData = async () => {
     if (editId) {
       const stories = await fetchOfficialStories();
@@ -1539,6 +1541,25 @@ export function init(): void {
              image: p, notes: storyToEdit.pageScripts?.[i] || '', layout: 'single', tiles: [p], textOverlays: [[]], audioUrl: null
            }));
         }
+      }
+    } else if (groupIdMatch) {
+      // Adding a brand new episode to an existing story group - start 100% blank
+      clearDraft();
+      editStoryId = null;
+      selectedFormat = (qFormat as StoryFormat) || 'book';
+      storyTitle = episodeParentTitle || '';
+      _coverThumbnail = '';
+      storyCoverVideo = '';
+      storySynopsis = '';
+      currentPage = 0;
+      if (selectedFormat === 'book') {
+        bookPages = [{
+          image: '', text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null
+        }];
+      } else {
+        scrollPanels = [{
+          image: '', notes: '', layout: 'single', tiles: [''], textOverlays: [[]], audioUrl: null
+        }];
       }
     } else {
       const draft = getDraft();
@@ -1626,7 +1647,7 @@ export function init(): void {
     }, 100);
   }
 
-  const attachListeners = () => {
+  attachListeners = () => {
     // ─── SHARED CANVAS TOOLBAR ───
     if (phase === 'canvas') {
       // Quit without saving / with draft save
