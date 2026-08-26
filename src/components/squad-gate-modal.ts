@@ -1,6 +1,7 @@
 // ─── SQUAD GATE MODAL COMPONENT (Engine A - Module 2) ───
 
 import { navigate } from '../router.ts';
+import { getStoryById } from '../data/stories.ts';
 import { isAuthenticated, getUser } from '../lib/auth.ts';
 import {
   type Squad,
@@ -131,7 +132,7 @@ function renderTabContent(options: SquadGateOptions): string {
       const member = members[i];
       if (member) {
         // Check if this is the current user and they're not authenticated
-        const isCurrentUserUnauthed = !isAuthenticated() && member.isHost;
+        const isCurrentUserUnauthed = member.id.startsWith('unauthed_') || (!isAuthenticated() && (member.isHost || !member.id.startsWith('user_auth_')));
         const statusBadge = isCurrentUserUnauthed
           ? `<span class="squad-slot-status pending" title="This user must first log in or sign up for an account. This is required to prevent authentication issues during this story session. This data is not being sold or shared.">Account Pending</span>`
           : `<span class="squad-slot-status ready">Ready</span>`;
@@ -355,6 +356,10 @@ export function closeSquadGateModal(): void {
 
 /** Open Squad Gate from a deep link join URL. Called from main.ts when #join route is detected. */
 export function openSquadGateFromDeepLink(storyId: string, storyTitle: string, squadCode: string): void {
+  const story = storyId ? getStoryById(storyId) : undefined;
+  const resolvedTitle = story?.title || storyTitle || 'Story Journey';
+  const resolvedCover = story?.coverImage;
+
   // First try to join the squad
   const joinResult = joinSquadByCode(squadCode);
   if (joinResult.success && joinResult.squad) {
@@ -370,14 +375,15 @@ export function openSquadGateFromDeepLink(storyId: string, storyTitle: string, s
   // Save pending squad join info for auth redirect
   localStorage.setItem('drive_pending_squad_join', JSON.stringify({
     storyId,
-    storyTitle,
+    storyTitle: resolvedTitle,
     squadCode,
     timestamp: Date.now()
   }));
 
   openSquadGateModal({
     storyId,
-    storyTitle,
+    storyTitle: resolvedTitle,
+    storyCoverImage: resolvedCover,
     onReplay: () => { /* no replay from deep link */ },
   });
 }

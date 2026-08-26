@@ -87,7 +87,7 @@ export function createSquad(options: {
 }): Squad {
   const user = getUser();
   const currentUsername = localStorage.getItem('drive_username') || user?.email?.split('@')[0] || 'Leader';
-  const currentUserId = user?.id || 'user_' + Date.now();
+  const currentUserId = user?.id || 'unauthed_' + Date.now();
 
   const hostMember: SquadMember = {
     id: currentUserId,
