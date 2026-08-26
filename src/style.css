@@ -1709,10 +1709,14 @@ p {
 }
 
 /* 9. Genre Pills */
+.genre-section {
+  margin: 0 var(--space-md);
+  overflow: hidden;
+}
 .genre-pills {
   display: flex;
   gap: var(--space-sm);
-  padding: var(--space-md);
+  padding: 0 0 var(--space-xs) 0;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
 }
@@ -1787,6 +1791,10 @@ p {
   text-decoration: none;
 }
 
+.editor-pick-hero {
+  padding: 0 var(--space-md);
+}
+
 /* 12. Scroll Row */
 .scroll-row {
   display: flex;
@@ -1797,6 +1805,15 @@ p {
 }
 .scroll-row > * {
   scroll-snap-align: start;
+}
+
+.bestselling-carousel-wrapper {
+  margin: 0 var(--space-md);
+  overflow: hidden;
+}
+.bestselling-carousel-wrapper .scroll-row {
+  padding: 0 0 var(--space-sm) 0;
+  scroll-padding: 0 4px;
 }
 
 /* 13. Story Grid */

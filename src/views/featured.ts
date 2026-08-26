@@ -15,7 +15,7 @@ export function render(): string {
         <div class="section__header">
           <h2 class="section__title">Editor's Pick</h2>
         </div>
-        <div class="editor-pick-hero" style="position: relative;" id="featured-hero">
+        <div class="editor-pick-hero" style="position: relative; padding: 0 var(--space-md);" id="featured-hero">
           ${topPick ? renderStoryCard(topPick, 'hero') : ''}
         </div>
       </section>

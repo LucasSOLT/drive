@@ -40,8 +40,8 @@ export function render(): string {
         </div>
       </div>
 
-      <div class="genre-section slide-up stagger-2" style="padding: 0.75rem 0 1rem 0;">
-        <div class="genre-pills scroll-row no-scrollbar" id="explore-genres" style="padding: 0 1rem;">
+      <div class="genre-section slide-up stagger-2" style="margin: 0 var(--space-md); overflow: hidden; padding: 0.75rem 0 1rem 0;">
+        <div class="genre-pills scroll-row no-scrollbar" id="explore-genres" style="padding: 0 0 4px 0; margin: 0; gap: var(--space-sm); scroll-padding: 0 4px;">
           <button class="genre-pill active" data-genre="All">All</button>
           ${genres.map(genre => `<button class="genre-pill" data-genre="${genre}">${genre}</button>`).join('')}
         </div>

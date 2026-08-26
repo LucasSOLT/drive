@@ -92,8 +92,10 @@ export function render(): string {
           <h2 class="section__title">Best-Selling</h2>
           <a href="#explore" class="section__see-all" data-link="explore">See all</a>
         </div>
-        <div class="scroll-row no-scrollbar" id="home-bestselling-grid" style="padding: 0 1rem;">
-          ${[...stories].sort((a, b) => b.readCount - a.readCount).map(story => renderStoryCard(story, 'full')).join('')}
+        <div class="bestselling-carousel-wrapper" style="margin: 0 var(--space-md); overflow: hidden;">
+          <div class="scroll-row no-scrollbar" id="home-bestselling-grid" style="padding: 0 0 var(--space-sm) 0; margin: 0;">
+            ${[...stories].sort((a, b) => b.readCount - a.readCount).map(story => renderStoryCard(story, 'full')).join('')}
+          </div>
         </div>
       </section>
 
