@@ -403,36 +403,39 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
   const first = episodes[0];
   const formatBadge = first.format === 'book' ? '📖 Book' : '📜 Waterfall';
   const groupId = first.storyGroupId || first.id;
+  const PEEK_OFFSET = 48; // 48px visible lip per cascading layer
 
   const episodeCards = episodes.map((story, epIdx) => {
     const coverSrc = story.coverImage || (story.panels?.[0]) || '';
     const isLive = story.officialStatus === 'live';
     const statusColor = isLive ? '#10b981' : '#ef4444';
-    const statusBorder = isLive ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+    const statusBorder = isLive ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)';
     const statusBg = isLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
     const statusLabel = isLive ? '🟢 LIVE' : '🔴 DRAFT';
     const epNum = story.episodeNumber || (epIdx + 1);
     const isFirst = epIdx === 0;
-    // Visual stacking: first card fully visible, others peeking 36px each
-    const topOffset = isFirst ? 0 : 0; // will be controlled by the stack container
+    const topOffset = epIdx * PEEK_OFFSET;
     const zIndex = episodes.length - epIdx;
 
     return `
-      <div class="episode-tile" data-episode-id="${story.id}" data-episode-index="${epIdx}" data-group-id="${groupId}"
+      <div class="episode-tile ${isFirst ? 'episode-tile--front' : ''}"
+           data-episode-id="${story.id}"
+           data-episode-index="${epIdx}"
+           data-group-id="${groupId}"
            style="
              background: var(--color-surface);
              border: 2px solid ${statusBorder};
              border-radius: 16px;
              overflow: hidden;
-             box-shadow: var(--shadow-sm);
-             transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s, opacity 0.3s;
+             box-shadow: ${isFirst ? '0 12px 32px rgba(0,0,0,0.5), 0 0 20px rgba(139,92,246,0.2)' : 'var(--shadow-sm)'};
+             transition: box-shadow 0.38s ease, filter 0.38s ease, border-color 0.38s ease;
              position: ${isFirst ? 'relative' : 'absolute'};
-             top: ${isFirst ? '0' : epIdx * 36 + 'px'};
+             top: ${topOffset}px;
              left: 0;
              right: 0;
              z-index: ${zIndex};
-             cursor: ${isFirst ? 'default' : 'pointer'};
-             ${!isFirst ? 'opacity: 0.85;' : ''}
+             cursor: pointer;
+             filter: brightness(${isFirst ? '1' : '0.78'});
            ">
         <div style="position: relative; aspect-ratio: 16/10; background: var(--color-bg); overflow: hidden;">
           ${story.coverVideo
@@ -490,17 +493,17 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
   }).join('');
 
   // Container height: first card height is auto, plus peeking space for subsequent episodes
-  const peekingHeight = (episodes.length - 1) * 36;
+  const peekingHeight = (episodes.length - 1) * PEEK_OFFSET;
 
   return `
-    <div class="story-stack" data-stack-group="${groupId}" style="position: relative; padding-bottom: ${peekingHeight}px;">
+    <div class="story-stack" data-stack-group="${groupId}" style="position: relative; padding-bottom: ${peekingHeight}px; margin-bottom: 20px;">
       ${episodeCards}
       <button data-add-episode="${groupId}" data-group-format="${first.format}" data-group-title="${escapeHtml(first.title)}" data-next-ep="${episodes.length + 1}"
               style="
                 display: flex; align-items: center; justify-content: center; gap: 6px;
                 width: 100%;
                 padding: 10px;
-                margin-top: 8px;
+                margin-top: 10px;
                 border: 2px dashed var(--color-border);
                 border-radius: 12px;
                 background: transparent;
@@ -520,7 +523,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
   `;
 }
 
-/** Attach hover-to-reveal listeners for stacked episode tiles */
+/** Attach hover-to-reveal listeners for stacked episode tiles (Zero X/Y movement, pure z-index elevation) */
 function attachStackListeners(): void {
   document.querySelectorAll('.story-stack').forEach(stack => {
     const tiles = stack.querySelectorAll('.episode-tile') as NodeListOf<HTMLElement>;
@@ -530,19 +533,12 @@ function attachStackListeners(): void {
 
     const resetStack = () => {
       tiles.forEach((tile, idx) => {
+        tile.style.zIndex = String(tiles.length - idx);
         if (idx === 0) {
-          tile.style.position = 'relative';
-          tile.style.top = '0';
-          tile.style.zIndex = String(tiles.length - idx);
-          tile.style.opacity = '1';
-          tile.style.transform = 'scale(1)';
-          tile.style.boxShadow = 'var(--shadow-sm)';
+          tile.style.filter = 'brightness(1)';
+          tile.style.boxShadow = '0 12px 32px rgba(0,0,0,0.5), 0 0 20px rgba(139,92,246,0.2)';
         } else {
-          tile.style.position = 'absolute';
-          tile.style.top = idx * 36 + 'px';
-          tile.style.zIndex = String(tiles.length - idx);
-          tile.style.opacity = '0.85';
-          tile.style.transform = 'scale(1)';
+          tile.style.filter = 'brightness(0.78)';
           tile.style.boxShadow = 'var(--shadow-sm)';
         }
       });
@@ -550,42 +546,30 @@ function attachStackListeners(): void {
     };
 
     const bringToFront = (targetIdx: number) => {
-      if (targetIdx === activeIndex) return;
+      activeIndex = targetIdx;
       tiles.forEach((tile, idx) => {
         if (idx === targetIdx) {
-          tile.style.position = 'absolute';
-          tile.style.top = '0';
-          tile.style.zIndex = String(tiles.length + 1);
-          tile.style.opacity = '1';
-          tile.style.transform = 'scale(1)';
-          tile.style.boxShadow = '0 8px 32px rgba(139,92,246,0.25)';
+          // Front active layer (no X/Y movement, stays at its cascaded top offset)
+          tile.style.zIndex = '100';
+          tile.style.filter = 'brightness(1)';
+          tile.style.boxShadow = '0 18px 48px rgba(0,0,0,0.75), 0 0 32px rgba(139,92,246,0.35)';
         } else {
-          const peekPos = idx * 36;
-          if (idx === 0) {
-            tile.style.position = 'relative';
-            tile.style.top = '0';
-          } else {
-            tile.style.position = 'absolute';
-            tile.style.top = peekPos + 'px';
-          }
-          tile.style.zIndex = String(tiles.length - idx);
-          tile.style.opacity = '0.65';
-          tile.style.transform = 'scale(0.98)';
+          // Back layers: distance determines sub-layer stacking
+          const distance = Math.abs(idx - targetIdx);
+          tile.style.zIndex = String(50 - distance);
+          tile.style.filter = 'brightness(0.75)';
           tile.style.boxShadow = 'var(--shadow-sm)';
         }
       });
-      activeIndex = targetIdx;
     };
 
     tiles.forEach((tile, idx) => {
-      if (idx === 0) return;
       tile.addEventListener('mouseenter', () => bringToFront(idx));
     });
 
     (stack as HTMLElement).addEventListener('mouseleave', () => resetStack());
   });
 
-  // "+ Add New Episode" button handler
   document.querySelectorAll('[data-add-episode]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const el = e.currentTarget as HTMLElement;

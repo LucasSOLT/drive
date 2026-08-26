@@ -11067,3 +11067,25 @@ body.content-management-mode .story-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 26px rgba(139, 92, 246, 0.5);
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   LAYERED PHYSICAL BOOK STACK EPISODES (Admin Library)
+   ══════════════════════════════════════════════════════════════════ */
+
+.story-stack {
+  position: relative;
+  transition: padding-bottom 0.3s ease;
+}
+
+.episode-tile {
+  transition: box-shadow 0.38s ease, filter 0.38s ease, border-color 0.38s ease !important;
+  will-change: filter, box-shadow, z-index;
+}
+
+.episode-tile:hover {
+  border-color: rgba(139, 92, 246, 0.6) !important;
+}
+
+.episode-tile--front {
+  border-color: rgba(139, 92, 246, 0.4) !important;
+}
