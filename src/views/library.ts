@@ -28,7 +28,7 @@ function renderUserStoryCard(story: UserStory): string {
     <div class="lib-card slide-up" data-story-id="${story.id}">
       <div class="lib-card__cover">
         ${story.coverVideo
-          ? `<video class="lib-card__cover-img" src="${story.coverVideo}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          ? `<video class="lib-card__cover-img" src="${story.coverVideo}" poster="${coverImage || ''}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
           : coverImage
             ? `<img class="lib-card__cover-img" src="${coverImage}" alt="${story.title}">`
             : `<div class="lib-card__cover-empty">
@@ -71,7 +71,7 @@ function renderAdminDraftCard(story: Story): string {
     <div class="lib-card slide-up" data-admin-story-id="${story.id}">
       <div class="lib-card__cover">
         ${story.coverVideo
-          ? `<video class="lib-card__cover-img" src="${story.coverVideo}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          ? `<video class="lib-card__cover-img" src="${story.coverVideo}" poster="${coverImage || ''}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
           : coverImage
             ? `<img class="lib-card__cover-img" src="${coverImage}" alt="${story.title}">`
             : `<div class="lib-card__cover-empty">

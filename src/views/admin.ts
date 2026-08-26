@@ -434,9 +434,12 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
              ${!isFirst ? 'opacity: 0.85;' : ''}
            ">
         <div style="position: relative; aspect-ratio: 16/10; background: var(--color-bg); overflow: hidden;">
-          ${coverSrc
-            ? `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" />`
-            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`
+          ${story.coverVideo
+            ? `<video src="${story.coverVideo}" poster="${coverSrc || ''}" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>`
+            : (coverSrc
+              ? `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" />`
+              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`
+            )
           }
           <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
             <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; text-transform: uppercase;">${statusLabel}</span>

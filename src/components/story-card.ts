@@ -7,7 +7,8 @@ const FORMAT_ICONS: Record<string, string> = {
 
 function renderCover(story: Story, cssClass: string = 'story-card__cover'): string {
   if (story.coverVideo) {
-    return `<video class="${cssClass} story-card__video" src="${story.coverVideo}" muted loop playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>`;
+    const posterAttr = story.coverImage ? ` poster="${story.coverImage}"` : '';
+    return `<video class="${cssClass} story-card__video" src="${story.coverVideo}"${posterAttr} muted loop playsinline preload="auto" style="width:100%;height:100%;object-fit:cover;"></video>`;
   }
   if (story.coverImage) {
     return `<img class="${cssClass}" src="${story.coverImage}" alt="${story.title}" loading="lazy" />`;
