@@ -1,4 +1,6 @@
 import { navigate } from '../router.ts';
+import { isContentManagementMode } from '../state.ts';
+import { openTileConfigModal } from '../components/tile-config-modal.ts';
 import { renderStoryCard, initVideoCovers } from '../components/story-card.ts';
 import { stories, getFeaturedStories, getEditorPicks } from '../data/stories.ts';
 import { fetchFeaturedStories, fetchUnifiedExploreStories } from '../lib/db.ts';
@@ -241,7 +243,20 @@ export function init(): void {
     if (card) {
       const storyId = card.getAttribute('data-story-id');
       if (storyId) {
-        navigate('story/' + storyId);
+        if (isContentManagementMode()) {
+          e.preventDefault();
+          const titleEl = card.querySelector('.story-title');
+          const allCards = Array.from(container.querySelectorAll('[data-story-id]'));
+          const slotIndex = allCards.indexOf(card as Element);
+          openTileConfigModal({
+            storyId,
+            slotType: 'home-bestselling',
+            slotIndex: slotIndex >= 0 ? slotIndex : 0,
+            storyTitle: titleEl?.textContent || undefined,
+          });
+        } else {
+          navigate('story/' + storyId);
+        }
       }
     }
   });

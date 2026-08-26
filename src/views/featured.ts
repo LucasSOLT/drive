@@ -1,6 +1,8 @@
 import { getEditorPicks, stories } from '../data/stories.ts';
 import { renderStoryCard, initVideoCovers } from '../components/story-card.ts';
 import { navigate } from '../router.ts';
+import { isContentManagementMode } from '../state.ts';
+import { openTileConfigModal } from '../components/tile-config-modal.ts';
 import { fetchFeaturedStories, fetchUnifiedExploreStories } from '../lib/db.ts';
 
 export function render(): string {
@@ -96,7 +98,21 @@ export function init(): void {
     if (card) {
       const storyId = card.getAttribute('data-story-id');
       if (storyId) {
-        navigate('story/' + storyId);
+        if (isContentManagementMode()) {
+          e.preventDefault();
+          const titleEl = card.querySelector('.story-title');
+          const allCards = Array.from(container.querySelectorAll('.story-card'));
+          const slotIndex = allCards.indexOf(card as Element);
+          const isHero = card.classList.contains('story-card--hero');
+          openTileConfigModal({
+            storyId,
+            slotType: isHero ? 'featured-hero' : 'featured-rising',
+            slotIndex: slotIndex >= 0 ? slotIndex : 0,
+            storyTitle: titleEl?.textContent || undefined,
+          });
+        } else {
+          navigate('story/' + storyId);
+        }
       }
     }
   });

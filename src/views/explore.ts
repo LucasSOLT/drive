@@ -2,6 +2,8 @@ import type { Story, UserStory } from '../types.ts';
 import { stories as staticStories, genres } from '../data/stories.ts';
 import { renderStoryCard, initVideoCovers } from '../components/story-card.ts';
 import { navigate } from '../router.ts';
+import { isContentManagementMode } from '../state.ts';
+import { openTileConfigModal } from '../components/tile-config-modal.ts';
 import { fetchUnifiedExploreStories } from '../lib/db.ts';
 
 function mapUserStoryToStory(us: UserStory): Story {
@@ -129,7 +131,20 @@ export async function init(): Promise<void> {
     if (card) {
       const storyId = card.getAttribute('data-story-id');
       if (storyId) {
-        navigate('story/' + storyId);
+        if (isContentManagementMode()) {
+          e.preventDefault();
+          const titleEl = card.querySelector('.story-title');
+          const allCards = Array.from(gridContainer.querySelectorAll('.story-card'));
+          const slotIndex = allCards.indexOf(card as Element);
+          openTileConfigModal({
+            storyId,
+            slotType: 'explore-grid',
+            slotIndex: slotIndex >= 0 ? slotIndex : 0,
+            storyTitle: titleEl?.textContent || undefined,
+          });
+        } else {
+          navigate('story/' + storyId);
+        }
       }
     }
   });
