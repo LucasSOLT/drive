@@ -361,40 +361,41 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
   }
   const storyGroups = Array.from(groupMap.values());
 
+  // Always show the + Add Official Story button at the top
+  const addButtonHtml = `
+    <button id="btn-add-original" style="width: 100%; padding: 14px 20px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); color: white; border: none; border-radius: 14px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: var(--shadow-md); margin-bottom: 20px; transition: all 0.2s ease;">
+      ${ICON.plus} Add Official Story
+    </button>
+  `;
+
   if (storyGroups.length === 0) {
     area.innerHTML = `
-      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; text-align: center;">
-        <div style="font-size: 3rem; margin-bottom: 16px;">📖</div>
-        <h3 style="margin: 0 0 8px 0; color: var(--color-text-primary); font-family: var(--font-heading);">No Official Stories Yet</h3>
-        <p style="margin: 0 0 20px 0; color: var(--color-text-muted); max-width: 400px;">Upload your first DRiVE Original to get started. Official stories appear at the top of the Featured and Explore feeds.</p>
-        <button id="btn-add-original" style="padding: 10px 20px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: var(--shadow-md);">
-          ${ICON.plus} Add Official Story
-        </button>
+      ${addButtonHtml}
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; opacity: 0.7;">
+        <div style="font-size: 2.5rem; margin-bottom: 12px;">📖</div>
+        <h3 style="margin: 0 0 6px 0; color: var(--color-text-primary); font-family: var(--font-heading); font-size: 1rem;">No stories match your filters</h3>
+        <p style="margin: 0; color: var(--color-text-muted); max-width: 360px; font-size: 0.82rem;">Create your first DRiVE Original using the button above, or adjust your search filters.</p>
       </div>
     `;
-    document.getElementById('btn-add-original')?.addEventListener('click', () => {
-      openFormatPopup();
-    });
-    return;
+  } else {
+    area.innerHTML = `
+      ${addButtonHtml}
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">DRiVE Originals (${storyGroups.length} stories, ${filtered.length} episodes)</h2>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px;" id="originals-grid">
+        ${storyGroups.map((episodes, i) => renderStoryStack(episodes, i)).join('')}
+      </div>
+    `;
   }
-
-  area.innerHTML = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-      <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">DRiVE Originals (${storyGroups.length} stories, ${filtered.length} episodes)</h2>
-      <button id="btn-add-original" style="padding: 8px 14px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-        ${ICON.plus} Add New
-      </button>
-    </div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px;" id="originals-grid">
-      ${storyGroups.map((episodes, i) => renderStoryStack(episodes, i)).join('')}
-    </div>
-  `;
 
   document.getElementById('btn-add-original')?.addEventListener('click', () => {
     openFormatPopup();
   });
-  attachOfficialCardListeners();
-  attachStackListeners();
+  if (storyGroups.length > 0) {
+    attachOfficialCardListeners();
+    attachStackListeners();
+  }
 }
 
 /** Renders a stack of episode tiles that look like pages of a book */

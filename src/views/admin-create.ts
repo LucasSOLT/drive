@@ -1564,13 +1564,17 @@ export function init(): void {
 
   loadData();
 
-  function promptSaveDraftAdmin(): void {
+  async function promptSaveDraftAdmin(): Promise<void> {
     getFormData();
     const hasValidTitle = storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled';
     if (hasValidTitle) {
       saveDraft();
-      saveOfficialStory(buildStory('draft')).catch(e => console.warn('Draft save error', e));
       hideModal();
+      try {
+        await saveOfficialStory(buildStory('draft'));
+      } catch (e) {
+        console.warn('Draft save error', e);
+      }
       navigate('admin');
       return;
     }
@@ -1585,7 +1589,7 @@ export function init(): void {
           <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="" maxlength="80" style="width:100%; box-sizing:border-box;" />
         </div>
       `,
-      confirmText: 'Save as Draft',
+      confirmText: 'Save, and Exit',
       cancelText: 'Cancel',
       onConfirm: async () => {
         const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
@@ -1630,8 +1634,7 @@ export function init(): void {
         showModal({
           title: 'Discard Changes?',
           content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          extraText: 'Save as Draft',
-          cancelText: 'Keep Editing',
+          extraText: 'Save, and Exit',
           confirmText: 'Discard',
           onConfirm: () => { clearDraft(); navigate('admin'); },
           onExtra: () => {
