@@ -1,4 +1,5 @@
 import { openSquadGateModal } from '../components/squad-gate-modal.ts';
+import { trackStoryReading, updateTrackedStoryStatus } from '../lib/reading-tracker.ts';
 import { getRouteParam, navigate } from '../router.ts';
 import { getStoryById } from '../data/stories.ts';
 import {
@@ -231,6 +232,18 @@ export function init(): void {
   const storyId = container.dataset.storyId || '';
   const story = getStoryById(storyId);
   if (!story) return;
+
+  // Auto-track reading session in My Stories library
+  trackStoryReading({
+    id: story.id,
+    title: story.title,
+    coverImage: story.coverImage,
+    coverVideo: story.coverVideo,
+    format: story.format,
+    author: story.author,
+    genre: story.genre,
+    episodeNumber: story.episodeNumber || 1,
+  });
 
   const progressBar = document.getElementById('reader-progress');
   const header = document.getElementById('reader-header');

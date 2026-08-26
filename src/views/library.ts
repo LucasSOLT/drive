@@ -1,4 +1,5 @@
 import type { UserStory, Story } from '../types.ts';
+import { getTrackedStories, removeTrackedStory, type TrackedStory } from '../lib/reading-tracker.ts';
 import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteUserStory, getUserPlan, getUserSubscription, canCreateStory, getTokensRemaining, getCreditsBalance } from '../state.ts';
 import { navigate } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
@@ -142,6 +143,79 @@ function renderLocalAdminDraftCard(draft: any): string {
   `;
 }
 
+
+function renderTrackedReadingCard(story: TrackedStory): string {
+  const statusLabels: Record<string, { label: string; color: string; bg: string; border: string }> = {
+    'episode-1-access': {
+      label: 'Episode 1 Access',
+      color: '#c084fc',
+      bg: 'rgba(192, 132, 252, 0.12)',
+      border: 'rgba(192, 132, 252, 0.3)'
+    },
+    'awaiting-squad': {
+      label: 'Awaiting Squad',
+      color: '#fbbf24',
+      bg: 'rgba(251, 191, 36, 0.12)',
+      border: 'rgba(251, 191, 36, 0.3)'
+    },
+    'active-journey': {
+      label: 'Active Squad Journey',
+      color: '#34d399',
+      bg: 'rgba(52, 211, 153, 0.12)',
+      border: 'rgba(52, 211, 153, 0.3)'
+    },
+    'blocked': {
+      label: 'Waiting on Squad',
+      color: '#f87171',
+      bg: 'rgba(248, 113, 113, 0.12)',
+      border: 'rgba(248, 113, 113, 0.3)'
+    },
+    'completed': {
+      label: 'Completed',
+      color: '#60a5fa',
+      bg: 'rgba(96, 165, 250, 0.12)',
+      border: 'rgba(96, 165, 250, 0.3)'
+    }
+  };
+
+  const statusInfo = statusLabels[story.status] || statusLabels['episode-1-access'];
+  const cover = story.storyCoverImage;
+
+  return `
+    <div class="lib-card reading-journey-card slide-up" data-tracked-story-id="${story.storyId}">
+      <div class="lib-card__cover">
+        ${story.storyCoverVideo
+          ? `<video class="lib-card__cover-img" src="${story.storyCoverVideo}" poster="${cover || ''}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          : cover
+            ? `<img class="lib-card__cover-img" src="${cover}" alt="${story.storyTitle}">`
+            : `<div class="lib-card__cover-empty">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+                </svg>
+              </div>`
+        }
+        <span class="lib-card__format">${story.format === 'book' ? '📖 Book' : '📜 Waterfall'}</span>
+      </div>
+      <div class="lib-card__body">
+        <h3 class="lib-card__title">${story.storyTitle}</h3>
+        <div class="lib-card__meta">
+          <span class="lib-card__status" style="color:${statusInfo.color}; background:${statusInfo.bg}; border:1px solid ${statusInfo.border}; padding:2px 8px; border-radius:12px; font-size:0.7rem; font-weight:700;">
+            ● ${statusInfo.label}
+          </span>
+          <span class="lib-card__date">Ep. ${story.currentEpisode}</span>
+        </div>
+
+        <div class="lib-card__actions" style="margin-top:10px;">
+          <button class="lib-card__btn lib-card__btn--continue" data-continue-reading="${story.storyId}" style="background:linear-gradient(135deg, #8B5CF6, #6366F1); color:white; font-weight:600; flex:1;" title="Continue Reading">
+            📖 Continue
+          </button>
+          <button class="lib-card__btn lib-card__btn--delete" data-remove-tracked="${story.storyId}" title="Remove from Reading History">${ICON.trash}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function render(): string {
   const unlocked = isLibraryUnlocked();
 
@@ -203,22 +277,51 @@ export function render(): string {
           <button class="btn btn--ghost btn--sm" id="manage-plan-btn" style="font-size:0.72rem; padding:4px 10px; border-radius:20px;">Manage</button>
         </div>
 
+        <!-- Section 1: Active Reading Journeys (Auto-tracked when opening any Ep. 1) -->
         <div class="section__header slide-up stagger-1" style="display: flex; justify-content: space-between; align-items: center;">
-          <h2 class="section__title" style="margin: 0;">My Stories</h2>
-          <button class="btn btn--primary btn--sm" id="create-new-btn" style="border-radius: 20px; padding: 0.5rem 1rem;">Create New</button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:1.2rem;">📖</span>
+            <h2 class="section__title" style="margin: 0;">Reading Journeys</h2>
+          </div>
+          <button class="btn btn--ghost btn--sm" id="btn-browse-catalog" style="font-size:0.75rem; padding:4px 10px; border-radius:20px;">Browse Catalog →</button>
+        </div>
+
+        <div class="library-unlocked__content slide-up stagger-2" style="margin-top: 1rem; margin-bottom: 2rem;">
+          ${(() => {
+            const tracked = getTrackedStories();
+            if (tracked.length > 0) {
+              return `<div class="lib-grid">${tracked.map(s => renderTrackedReadingCard(s)).join('')}</div>`;
+            }
+            return `
+              <div class="library-empty text-center" style="padding: 2rem 1.5rem; background: var(--color-surface); border-radius: var(--radius-xl); border: 1px dashed var(--color-border);">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.5rem; opacity: 0.6;">
+                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                </svg>
+                <h3 style="font-family: var(--font-heading); margin-bottom: 0.25rem; color: var(--color-text-primary); font-size: 1rem;">No stories started yet</h3>
+                <p class="text-muted" style="font-size: 0.82rem; margin: 0 0 1rem 0;">Start reading Episode 1 of any story to track your journey here!</p>
+                <button class="btn btn--primary btn--sm" id="btn-empty-browse" style="border-radius: 20px; font-size:0.8rem;">Explore Stories</button>
+              </div>
+            `;
+          })()}
+        </div>
+
+        <!-- Section 2: My Created Stories -->
+        <div class="section__header slide-up stagger-3" style="display: flex; justify-content: space-between; align-items: center; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:1.2rem;">✍️</span>
+            <h2 class="section__title" style="margin: 0;">My Creations</h2>
+          </div>
+          <button class="btn btn--primary btn--sm" id="create-new-btn" style="border-radius: 20px; padding: 0.5rem 1rem;">+ Create New</button>
         </div>
         
-        <div class="library-unlocked__content slide-up stagger-2" style="margin-top: 1.5rem;">
+        <div class="library-unlocked__content slide-up stagger-4" style="margin-top: 1rem;">
           ${userStories.length > 0 
             ? `<div class="lib-grid">${userStories.map(s => renderUserStoryCard(s)).join('')}</div>`
             : `
-            <div class="library-empty text-center" style="padding: 2rem 1.5rem; background: var(--color-surface); border-radius: var(--radius-xl); border: 1px dashed var(--color-border);">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.75rem; opacity: 0.6;">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-              </svg>
-              <h3 style="font-family: var(--font-heading); margin-bottom: 0.25rem; color: var(--color-text-primary); font-size: 1.1rem;">Your stories will appear here</h3>
-              <p class="text-muted" style="font-size: 0.88rem; margin: 0;">Tap Create New to begin your first story</p>
+            <div class="library-empty text-center" style="padding: 1.75rem 1.5rem; background: var(--color-surface); border-radius: var(--radius-xl); border: 1px dashed var(--color-border);">
+              <h3 style="font-family: var(--font-heading); margin-bottom: 0.25rem; color: var(--color-text-primary); font-size: 0.95rem;">Your creations will appear here</h3>
+              <p class="text-muted" style="font-size: 0.8rem; margin: 0;">Tap Create New to build your own interactive story</p>
             </div>
             `
           }
@@ -632,6 +735,40 @@ export function init(): void {
       });
     }
   }
+
+  // Continue reading tracked stories
+  container.querySelectorAll('[data-continue-reading]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const storyId = btn.getAttribute('data-continue-reading');
+      if (storyId) navigate(`story/${storyId}`);
+    });
+  });
+
+  // Remove tracked story from reading history
+  container.querySelectorAll('[data-remove-tracked]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const storyId = btn.getAttribute('data-remove-tracked');
+      if (!storyId) return;
+      showModal({
+        title: 'Remove from Reading History',
+        content: '<p style="line-height:1.6;">Remove this story from your reading journeys? (You can always restart it anytime from the catalog.)</p>',
+        confirmText: 'Remove',
+        cancelText: 'Cancel',
+        onConfirm: () => {
+          removeTrackedStory(storyId);
+          const viewContainer = document.getElementById('view-container');
+          if (viewContainer) {
+            viewContainer.innerHTML = render();
+            init();
+          }
+        }
+      });
+    });
+  });
+
+  // Browse catalog buttons
+  document.getElementById('btn-browse-catalog')?.addEventListener('click', () => navigate('home'));
+  document.getElementById('btn-empty-browse')?.addEventListener('click', () => navigate('home'));
 
   // View story buttons
   container.querySelectorAll('[data-view]').forEach(btn => {
