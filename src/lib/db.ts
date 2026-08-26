@@ -19,6 +19,7 @@ interface CachedProfile {
   social_links: Record<string, string>;
   library_unlocked: boolean;
   role: UserRole;
+  friend_code?: string;
 }
 
 let _profile: CachedProfile | null = null;
@@ -63,6 +64,7 @@ export async function loadUserData(): Promise<void> {
       library_unlocked: profileRes.data.library_unlocked || false,
       // Support new 'role' column; fallback: if old is_admin boolean exists, map it
       role: (profileRes.data.role as UserRole) || (profileRes.data.is_admin === true ? 'admin' : 'user'),
+      friend_code: profileRes.data.friend_code || undefined,
     } : null;
 
     // HARDCODED ADMIN EMAIL FALLBACK — guarantees admin access regardless of DB column state
@@ -1299,3 +1301,14 @@ export async function runAutoMatch(): Promise<string | null> {
 
 
 
+
+
+export function getCachedFriendCode(): string | undefined {
+  return (_profile as any)?.friend_code;
+}
+
+export function setCachedFriendCode(code: string): void {
+  if (_profile) {
+    (_profile as any).friend_code = code;
+  }
+}

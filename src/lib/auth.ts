@@ -65,8 +65,8 @@ export function isAdmin(): boolean {
 }
 
 export function isBetaTester(): boolean {
-  if (!_currentUser) return false;
-  return _currentUser.user_metadata?.beta_tester === true;
+  // MVP Beta Access: All users granted beta tester access for testing
+  return true;
 }
 
 // ─── Auth Actions ───
