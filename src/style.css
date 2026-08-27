@@ -2785,6 +2785,55 @@ p {
   transform: scale(0.97);
 }
 
+/* --- Find & Add Friends Button (Profile) --- */
+.profile-friends-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  padding: 14px 18px;
+  border: 1.5px solid rgba(168, 85, 247, 0.35);
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.12), rgba(99, 102, 241, 0.12));
+  color: #f1f5f9;
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform var(--transition-bounce), box-shadow var(--transition), border-color var(--transition);
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.15);
+}
+.profile-friends-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 6px 24px rgba(139, 92, 246, 0.3);
+  border-color: rgba(168, 85, 247, 0.55);
+}
+.profile-friends-btn:active {
+  transform: scale(0.97);
+}
+.profile-friends-btn__left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.profile-friends-btn__right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.profile-friends-btn__badge {
+  font-size: 0.7rem;
+  padding: 3px 10px;
+  background: rgba(168, 85, 247, 0.2);
+  color: #C084FC;
+  border-radius: 10px;
+  font-family: monospace;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 /* --- Account Actions --- */
 .profile-account-actions {
   display: flex;
