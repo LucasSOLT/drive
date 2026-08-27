@@ -22,6 +22,7 @@ import * as storyReaderView from './views/story-reader.ts';
 import * as helpView from './views/help.ts';
 import * as aboutView from './views/about.ts';
 import * as profileView from './views/profile.ts';
+import * as friendsView from './views/friends.ts';
 import * as bookViewerView from './views/book-viewer.ts';
 import * as guestViewerView from './views/guest-viewer.ts';
 import * as authView from './views/auth.ts';
@@ -214,6 +215,7 @@ function renderView(route: string) {
     case 'help': viewModule = helpView; title = 'Help'; break;
     case 'about': viewModule = aboutView; title = 'About'; break;
     case 'profile': viewModule = profileView; title = 'Profile'; break;
+    case 'friends': viewModule = friendsView; title = 'Social'; break;
     case 'story': viewModule = storyReaderView; title = ''; break;
     case 'book': viewModule = bookViewerView; title = ''; break;
     case 'shared': viewModule = guestViewerView; title = ''; break;

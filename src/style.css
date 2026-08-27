@@ -11435,3 +11435,404 @@ body.content-management-mode .story-card:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
 }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   SOCIAL & FRIENDING HUB STYLES (Engine A Social)
+   ══════════════════════════════════════════════════════════════════ */
+
+.view-friends {
+  padding: 1.5rem 1rem 4rem;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.friends-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.friends-hero {
+  position: relative;
+  text-align: center;
+  padding: 24px 16px 12px;
+}
+
+.friends-hero__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: 100px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #c084fc;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.friends-hero__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a855f7;
+  box-shadow: 0 0 8px #a855f7;
+}
+
+.friends-hero__title {
+  font-family: var(--font-heading);
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+}
+
+.friends-hero__subtitle {
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  line-height: 1.45;
+  margin: 0 auto;
+  max-width: 460px;
+}
+
+.friend-card {
+  background: linear-gradient(180deg, #181528 0%, #110e1c 100%);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(139, 92, 246, 0.08);
+}
+
+.friend-section-pill {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #a78bfa;
+  text-transform: uppercase;
+}
+
+.friend-card__title {
+  font-family: var(--font-heading);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 2px 0 0 0;
+}
+
+.friend-card__desc {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin: 6px 0 16px 0;
+  line-height: 1.4;
+}
+
+/* Friend Code Box */
+.friend-code-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1.5px solid rgba(139, 92, 246, 0.4);
+  border-radius: 14px;
+  margin: 16px 0 20px 0;
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.15) inset;
+}
+
+.friend-code-number {
+  font-family: 'SF Mono', 'Roboto Mono', Monaco, monospace;
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #e9d5ff;
+  text-shadow: 0 0 12px rgba(192, 132, 252, 0.6);
+}
+
+.friend-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #8b5cf6;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.friend-copy-btn:hover {
+  background: #7c3aed;
+  transform: translateY(-1px);
+}
+
+/* QR Code Display */
+.friend-qr-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.friend-qr-frame {
+  padding: 14px;
+  background: #1e1b2e;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 20px rgba(168, 85, 247, 0.2);
+  margin-bottom: 12px;
+}
+
+.friend-qr-caption {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  max-width: 280px;
+  margin: 0 0 14px 0;
+  line-height: 1.4;
+}
+
+.friend-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f1f5f9;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.friend-share-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* Add Friend Input Form */
+.friend-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.friend-input-wrap {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.friend-add-input {
+  flex: 1;
+  min-width: 220px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.95rem;
+  letter-spacing: 1px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.friend-add-input:focus {
+  border-color: #a855f7;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.friend-add-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.friend-add-submit-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.4);
+}
+
+.friend-form-msg {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.friend-form-msg.success {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+}
+
+.friend-form-msg.error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+/* Friends List Tiles */
+.friends-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.friends-count-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 100px;
+}
+
+.friends-list-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.friend-tile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  transition: all 0.2s ease;
+}
+
+.friend-tile:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(139, 92, 246, 0.3);
+  transform: translateX(2px);
+}
+
+.friend-tile__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #231f3d;
+  border: 1.5px solid rgba(168, 85, 247, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.friend-tile__avatar svg {
+  width: 100%;
+  height: 100%;
+}
+
+.friend-tile__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.friend-tile__name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0 0 2px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.friend-tile__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.friend-tile__code {
+  font-family: monospace;
+  color: #a78bfa;
+}
+
+.friend-tile__duration {
+  color: #94a3b8;
+}
+
+.friend-tile__remove-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.friend-tile__remove-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+  transform: scale(1.05);
+}
+
+/* Empty State */
+.friends-empty-state {
+  text-align: center;
+  padding: 36px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+}
+
+.friends-empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 8px;
+}
+
+.friends-empty-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0 0 4px 0;
+}
+
+.friends-empty-desc {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  max-width: 340px;
+  margin: 0 auto;
+  line-height: 1.45;
+}
