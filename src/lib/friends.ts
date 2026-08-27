@@ -95,26 +95,30 @@ export async function getFriendsList(): Promise<FriendUser[]> {
 
   try {
     // Query friendships from Supabase
-    const { data, error } = await supabase
+    const { data: friendships, error } = await supabase
       .from('friends')
-      .select(`
-        id,
-        created_at,
-        user_id,
-        friend_id,
-        friend:profiles!friends_friend_id_fkey(id, username, avatar_index, friend_code),
-        user:profiles!friends_user_id_fkey(id, username, avatar_index, friend_code)
-      `)
+      .select('id, created_at, user_id, friend_id')
       .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
 
-    if (!error && data && data.length > 0) {
-      const dbFriends: FriendUser[] = data.map((row: any) => {
-        const other = row.user_id === user.id ? row.friend : row.user;
+    if (!error && friendships && friendships.length > 0) {
+      const friendUserIds = friendships.map((row: any) => row.user_id === user.id ? row.friend_id : row.user_id);
+      
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_index, friend_code')
+        .in('id', friendUserIds);
+
+      const profMap = new Map<string, any>();
+      (profs || []).forEach((p: any) => profMap.set(p.id, p));
+
+      const dbFriends: FriendUser[] = friendships.map((row: any) => {
+        const otherId = row.user_id === user.id ? row.friend_id : row.user_id;
+        const prof = profMap.get(otherId);
         return {
-          id: other?.id || (row.user_id === user.id ? row.friend_id : row.user_id),
-          username: other?.username || 'Friend',
-          avatarIndex: other?.avatar_index ?? 0,
-          friendCode: other?.friend_code || '',
+          id: otherId,
+          username: prof?.username || 'Friend',
+          avatarIndex: prof?.avatar_index ?? 0,
+          friendCode: prof?.friend_code || '',
           friendsSince: row.created_at,
         };
       });
