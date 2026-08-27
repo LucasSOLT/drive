@@ -2,7 +2,7 @@ import type { StoryFormat, Genre, Story } from '../types.ts';
 import { genres } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { speakText, stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl } from '../lib/tts.ts';
 import { cleanUpText } from '../lib/groq.ts';
 import { saveOfficialStory, fetchOfficialStories } from '../lib/db.ts';
 
@@ -823,7 +823,6 @@ function renderBookCanvas(): string {
       <!-- Story text -->
       <div class="book-tile__text-header">
         <span>STORY TEXT</span>
-        <button class="book-tile__tts" data-tile-tts="${i}" title="Read aloud">${ICON.speaker}</button>
       </div>
       <textarea class="book-tile__textarea" data-tile-text="${i}"
         placeholder="Write the story for this page..."
@@ -940,7 +939,6 @@ function openPageFullscreen(pageIndex: number): void {
       </div>
       <div class="book-fullscreen__text-label">
         <span>Story Text</span>
-        <button class="book-fullscreen__tts" id="fs-tts-btn" title="Read aloud">${ICON.speaker}</button>
       </div>
       <textarea class="book-fullscreen__textarea" id="fs-textarea"
         placeholder="Write the story for this page..."
@@ -1016,13 +1014,6 @@ function openPageFullscreen(pageIndex: number): void {
     const wizard = document.getElementById('create-wizard');
     if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }
     openPageFullscreen(pageIndex);
-  });
-
-  // TTS
-  document.getElementById('fs-tts-btn')?.addEventListener('click', () => {
-    const text = bookPages[pageIndex].text;
-    if (!text.trim()) return;
-    if (isSpeaking()) { stopSpeaking(); } else { speakText(text); }
   });
 
   // Text changes
@@ -2400,13 +2391,6 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         e.stopPropagation();
         bookPages[i].image = null;
         updateView();
-      });
-
-      // TTS
-      wizard.querySelector(`[data-tile-tts="${i}"]`)?.addEventListener('click', () => {
-        const text = (bookPages[i].dialogText || bookPages[i].text || '').trim();
-        if (!text) return;
-        if (isSpeaking()) { stopSpeaking(); } else { speakText(text); }
       });
 
       // Save story text
