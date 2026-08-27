@@ -2,7 +2,8 @@ import './style.css';
 import { getCurrentRoute, onRouteChange, navigate, requireAuth } from './router.ts';
 import { renderNav, initNav } from './components/nav.ts';
 import { renderMenu, initMenu } from './components/menu.ts';
-import { renderModalContainer } from './components/modal.ts';
+import { renderModalContainer, showModal } from './components/modal.ts';
+import { addFriendByCode, findUserByFriendCode } from './lib/friends.ts';
 import { getGearButtonHtml, openSettings } from './components/settings-drawer.ts';
 import { applyTheme, applyTextSize } from './lib/settings.ts';
 import { MONSTER_AVATARS } from './data/avatars.ts';
@@ -226,6 +227,7 @@ function renderView(route: string) {
     case 'sparc': viewModule = sparcCheckpointView; title = 'SPARC'; break;
     case 'beta': viewModule = betaInviteView; title = ''; break;
     case 'join': viewModule = homeView; title = 'Home'; break;
+    case 'add-friend': viewModule = homeView; title = 'Home'; break;
     default: viewModule = homeView; title = 'Home'; break;
   }
 
@@ -275,6 +277,73 @@ function renderView(route: string) {
 
   container.innerHTML = html;
   viewModule.init();
+
+  // ── Phase 4c: Handle QR code / deep link friend scan (#add-friend?code=...) ──
+  if (baseRoute === 'add-friend') {
+    const hash = window.location.hash;
+    const codeMatch = hash.match(/code=([^&]+)/);
+    if (codeMatch) {
+      const friendCode = codeMatch[1].trim();
+      setTimeout(async () => {
+        if (!isAuthenticated()) {
+          // Unauthenticated user scanned QR code -> save pending friend and prompt login
+          localStorage.setItem('drive_pending_friend_add', friendCode);
+          showModal({
+            title: 'Add Friend on DRiVE',
+            content: `
+              <div style="text-align:center; padding:10px 0;">
+                <div style="font-size:2.5rem; margin-bottom:8px;">👥</div>
+                <p style="line-height:1.5; color:#f1f5f9; font-size:0.95rem; margin-bottom:12px;">
+                  You scanned a friend code! Please log in or create an account to connect as friends on DRiVE.
+                </p>
+                <div style="padding:8px 12px; background:rgba(139,92,246,0.12); border-radius:8px; display:inline-block; font-family:monospace; font-weight:700; font-size:1.1rem; color:#c084fc; letter-spacing:2px;">
+                  ${friendCode}
+                </div>
+              </div>
+            `,
+            confirmText: 'Log In / Sign Up',
+            cancelText: 'Cancel',
+            onConfirm: () => {
+              navigate('login');
+            }
+          });
+          return;
+        }
+
+        // Authenticated user scanned QR code -> look up friend and show confirmation prompt
+        const targetUser = await findUserByFriendCode(friendCode);
+        const displayName = targetUser?.username || ('User ' + friendCode.slice(-4));
+
+        showModal({
+          title: 'Add Friend?',
+          content: `
+            <div style="text-align:center; padding:10px 0;">
+              <div style="font-size:2.5rem; margin-bottom:8px;">🤝</div>
+              <p style="line-height:1.5; color:#f1f5f9; font-size:0.95rem; margin-bottom:12px;">
+                Would you like to add <strong>${displayName}</strong> as a friend on DRiVE?
+              </p>
+              <div style="padding:6px 14px; background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); border-radius:100px; display:inline-block; font-family:monospace; font-weight:700; font-size:0.9rem; color:#c084fc; letter-spacing:1px;">
+                Code: ${friendCode}
+              </div>
+            </div>
+          `,
+          confirmText: 'Yes, Add Friend',
+          cancelText: 'Cancel',
+          onConfirm: async () => {
+            const res = await addFriendByCode(friendCode);
+            showModal({
+              title: res.success ? 'Friend Added! 🎉' : 'Notice',
+              content: `<p style="line-height:1.6; text-align:center;">${res.message}</p>`,
+              confirmText: 'Go to Social Hub',
+              onConfirm: () => {
+                navigate('friends');
+              }
+            });
+          }
+        });
+      }, 250);
+    }
+  }
 
   // ── Phase 4b: Handle deep link squad join ──
   if (baseRoute === 'join') {

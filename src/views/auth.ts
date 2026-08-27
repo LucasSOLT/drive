@@ -293,6 +293,13 @@ export function init(): void {
             } catch { /* ignore invalid JSON */ }
             localStorage.removeItem('drive_pending_squad_join');
           }
+          // Check for pending friend add from QR scan
+          const pendingFriend = localStorage.getItem('drive_pending_friend_add');
+          if (pendingFriend) {
+            localStorage.removeItem('drive_pending_friend_add');
+            navigate('add-friend?code=' + pendingFriend);
+            return;
+          }
           // Returning users go to home, not path-select
           navigate('home');
         }
@@ -329,6 +336,12 @@ export function init(): void {
                 }
               } catch { /* ignore invalid JSON */ }
               localStorage.removeItem('drive_pending_squad_join');
+            }
+            const pendingFriendSignup = localStorage.getItem('drive_pending_friend_add');
+            if (pendingFriendSignup) {
+              localStorage.removeItem('drive_pending_friend_add');
+              navigate('add-friend?code=' + pendingFriendSignup);
+              return;
             }
             navigate('path-select');
           } else {
