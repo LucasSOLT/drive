@@ -191,11 +191,19 @@ export async function init(): Promise<void> {
         await navigator.share(shareData);
       } else {
         await navigator.clipboard.writeText(shareUrl);
-        alert('Invite link copied to clipboard!');
+        showModal({
+          title: 'Link Copied! 🔗',
+          content: '<p style="line-height:1.6; text-align:center;">Your personal invite link has been copied to your clipboard. Send it to friends to connect instantly!</p>',
+          confirmText: 'Awesome',
+        });
       }
     } catch {
       await navigator.clipboard.writeText(shareUrl);
-      alert('Invite link copied to clipboard!');
+      showModal({
+        title: 'Link Copied! 🔗',
+        content: '<p style="line-height:1.6; text-align:center;">Your personal invite link has been copied to your clipboard. Send it to friends to connect instantly!</p>',
+        confirmText: 'Awesome',
+      });
     }
   });
 
