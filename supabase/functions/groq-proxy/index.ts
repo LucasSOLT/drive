@@ -40,13 +40,13 @@ serve(async (req) => {
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: res.status,
+      status: 200, // Always return 200 so supabase.functions.invoke doesn't throw FunctionsHttpError
     });
   } catch (error: any) {
     console.error("Groq proxy error:", error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 400,
+      status: 200, // Return 200 even on error so client doesn't get FunctionsHttpError
     });
   }
 });

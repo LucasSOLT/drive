@@ -66,10 +66,11 @@ serve(async (req) => {
     if (contentType.includes("audio/") || contentType.includes("octet-stream")) {
       const audioData = await res.arrayBuffer();
       const uint8 = new Uint8Array(audioData);
+      // Safe base64 conversion — byte-by-byte to avoid call stack overflow
+      // (String.fromCharCode.apply pushes N args onto stack and crashes on large audio)
       let binary = '';
-      const chunkSize = 8192;
-      for (let i = 0; i < uint8.length; i += chunkSize) {
-        binary += String.fromCharCode.apply(null, uint8.subarray(i, i + chunkSize) as any);
+      for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i]);
       }
       const base64 = btoa(binary);
       return new Response(
