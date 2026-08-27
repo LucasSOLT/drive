@@ -283,7 +283,13 @@ export function render(): string {
             <span style="font-size:1.2rem;">📖</span>
             <h2 class="section__title" style="margin: 0;">Reading Journeys</h2>
           </div>
-          <button class="btn btn--ghost btn--sm" id="btn-browse-catalog" style="font-size:0.75rem; padding:4px 10px; border-radius:20px;">Browse Catalog →</button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn--secondary btn--sm" id="btn-library-friends" style="font-size:0.75rem; padding:4px 12px; border-radius:20px; display:inline-flex; align-items:center; gap:4px;">
+              <span>👥</span>
+              <span>Find Friends</span>
+            </button>
+            <button class="btn btn--ghost btn--sm" id="btn-browse-catalog" style="font-size:0.75rem; padding:4px 10px; border-radius:20px;">Browse Catalog →</button>
+          </div>
         </div>
 
         <div class="library-unlocked__content slide-up stagger-2" style="margin-top: 1rem; margin-bottom: 2rem;">
@@ -765,6 +771,9 @@ export function init(): void {
       });
     });
   });
+
+  // Friends button in library
+  document.getElementById('btn-library-friends')?.addEventListener('click', () => navigate('friends'));
 
   // Browse catalog buttons
   document.getElementById('btn-browse-catalog')?.addEventListener('click', () => navigate('home'));

@@ -128,6 +128,23 @@ export function render(): string {
         </div>
       </section>
 
+      <!-- ===== FRIENDS & SOCIAL BUTTON ===== -->
+      <section class="section slide-up stagger-2" style="padding: 0 var(--space-md); margin-bottom: 0.75rem;">
+        <button class="profile-library-btn" id="go-to-friends" style="background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(99,102,241,0.12)); border-color: rgba(168,85,247,0.35);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C084FC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <span style="font-weight: 700; color: #F1F5F9;">Find & Add Friends</span>
+          <span style="margin-left: auto; font-size: 0.75rem; padding: 2px 8px; background: rgba(168,85,247,0.2); color: #C084FC; border-radius: 10px; font-family: monospace; font-weight: 700;">QR & Codes</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 6px; opacity: 0.7;">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </section>
+
       <!-- ===== MY LIBRARY BUTTON ===== -->
       <section class="section slide-up stagger-2" style="padding: 0 var(--space-md);">
         <button class="profile-library-btn" id="go-to-library">
