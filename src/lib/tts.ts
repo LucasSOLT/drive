@@ -6,6 +6,39 @@
 import { getSelectedVoiceId } from './settings.ts';
 import { supabase } from './supabase.ts';
 
+/** Split dialogue text into sentences with their terminal punctuation for mood-aware TTS. */
+export function splitDialogueIntoSentences(text: string): { text: string; punctuation: string }[] {
+  // Match sentences ending with punctuation groups like .!?… or end-of-string
+  const regex = /([^.!?…]+[.!?…]+|[^.!?…]+$)/g;
+  const matches = text.match(regex);
+  if (!matches || matches.length === 0) return [{ text: text.trim(), punctuation: '.' }];
+  return matches
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map(s => {
+      const lastChar = s.slice(-1);
+      const punctuation = ['!', '?', '…'].includes(lastChar) ? lastChar
+        : s.endsWith('...') ? '…'
+        : '.';
+      return { text: s, punctuation };
+    });
+}
+
+/** Get ElevenLabs voice_settings tailored to the sentence's terminal punctuation. */
+export function getPunctuationVoiceSettings(punctuation: string): { stability: number; similarity_boost: number; style: number } {
+  switch (punctuation) {
+    case '!':
+      return { stability: 0.32, similarity_boost: 0.70, style: 0.25 };
+    case '?':
+      return { stability: 0.45, similarity_boost: 0.75, style: 0.08 };
+    case '…':
+      return { stability: 0.55, similarity_boost: 0.75, style: 0.05 };
+    case '.':
+    default:
+      return { stability: 0.65, similarity_boost: 0.75, style: 0.0 };
+  }
+}
+
 let currentAudio: HTMLAudioElement | null = null;
 let currentObjectURL: string | null = null;
 
@@ -109,8 +142,9 @@ export async function speakText(text: string): Promise<void> {
 
 /**
  * Pre-record audio for the given text using ElevenLabs.
- * Returns a base64 data URL (audio/mpeg) that can be stored and played later.
- * Uses the user's selected voice and the given stability setting.
+ * Returns a base64 data URL (audio/mpeg or audio/wav) that can be stored and played later.
+ * Supports sentence-level punctuation-aware pacing: sentences ending with ! are energetic,
+ * ? are inquisitive, . are calm/steady.
  */
 export async function preRecordAudio(text: string, stability = 0.5, customVoiceId?: string): Promise<string> {
   if (!text || !text.trim()) {
@@ -118,9 +152,38 @@ export async function preRecordAudio(text: string, stability = 0.5, customVoiceI
   }
 
   const voiceId = customVoiceId || getSelectedVoiceId();
+  const sentences = splitDialogueIntoSentences(text);
 
-  console.log('[TTS Pre-record] Calling ElevenLabs proxy with voice:', voiceId, 'stability:', stability, 'text length:', text.length);
+  // Check if all sentences share the same punctuation mood
+  const moods = new Set(sentences.map(s => s.punctuation));
+  const isUniformMood = moods.size <= 1;
 
+  if (isUniformMood) {
+    // Single mood — synthesize in one call with that mood's settings
+    const settings = getPunctuationVoiceSettings(sentences[0].punctuation);
+    console.log('[TTS Pre-record] Single mood synthesis, voice:', voiceId, 'punctuation:', sentences[0].punctuation, 'settings:', settings);
+    return await synthesizeSingleSegment(text, voiceId, settings);
+  }
+
+  // Multiple moods — synthesize each sentence individually and concatenate
+  console.log('[TTS Pre-record] Multi-mood synthesis:', sentences.length, 'sentences, voice:', voiceId);
+  const segmentDataUrls: string[] = [];
+  for (const sentence of sentences) {
+    const settings = getPunctuationVoiceSettings(sentence.punctuation);
+    console.log('[TTS Pre-record]   Sentence:', sentence.text.substring(0, 40), '| mood:', sentence.punctuation, '| settings:', settings);
+    const dataUrl = await synthesizeSingleSegment(sentence.text, voiceId, settings);
+    segmentDataUrls.push(dataUrl);
+  }
+
+  return await concatenateAudioSegments(segmentDataUrls);
+}
+
+/** Internal: synthesize a single text segment with specific voice settings. */
+async function synthesizeSingleSegment(
+  text: string,
+  voiceId: string,
+  settings: { stability: number; similarity_boost: number; style: number }
+): Promise<string> {
   const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
     body: {
       endpoint: `/v1/text-to-speech/${voiceId}`,
@@ -128,13 +191,18 @@ export async function preRecordAudio(text: string, stability = 0.5, customVoiceI
       body: {
         text,
         model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: Number(stability), similarity_boost: 0.75 },
+        voice_settings: {
+          stability: settings.stability,
+          similarity_boost: settings.similarity_boost,
+          style: settings.style,
+          use_speaker_boost: true,
+        },
       }
     }
   });
 
   if (error) {
-    console.error('[TTS Pre-record] Edge function error:', error);
+    console.error('[TTS] Segment synthesis error:', error);
     let msg = error.message;
     try {
       if ('context' in error && (error as any).context) {
@@ -142,28 +210,137 @@ export async function preRecordAudio(text: string, stability = 0.5, customVoiceI
         msg = body?.error || body?.detail?.message || body?.detail || JSON.stringify(body);
       }
     } catch {}
-    throw new Error(msg || 'TTS pre-recording failed');
+    throw new Error(msg || 'TTS synthesis failed');
   }
 
   if (data?.error) {
     const msg = typeof data.error === 'string' ? data.error : (data.error.message || data.error.detail?.message || JSON.stringify(data.error));
-    console.error('[TTS Pre-record] API error:', msg);
     throw new Error(msg);
   }
 
   if (data?.detail) {
     const msg = typeof data.detail === 'string' ? data.detail : (data.detail.message || JSON.stringify(data.detail));
-    console.error('[TTS Pre-record] Detail error:', msg);
     throw new Error(msg);
   }
 
   if (!data?.audio_base64) {
-    console.error('[TTS Pre-record] No audio data in response:', data);
     throw new Error('No audio data returned from ElevenLabs.');
   }
 
   const contentType = data.content_type || 'audio/mpeg';
   return `data:${contentType};base64,${data.audio_base64}`;
+}
+
+/**
+ * Concatenate multiple base64 audio data URLs into a single audio Blob.
+ * Inserts a brief silence between segments for natural inter-sentence pacing.
+ * Falls back to returning the first audio if AudioContext is unavailable.
+ */
+async function concatenateAudioSegments(dataUrls: string[], pauseMs = 120): Promise<string> {
+  if (dataUrls.length === 0) throw new Error('No audio segments to concatenate');
+  if (dataUrls.length === 1) return dataUrls[0];
+
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return dataUrls[0];
+    const ctx = new AudioCtx();
+
+    // Decode all segments
+    const buffers: AudioBuffer[] = [];
+    for (const dataUrl of dataUrls) {
+      const b64 = dataUrl.split(',')[1];
+      const binaryStr = atob(b64);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+      const decoded = await ctx.decodeAudioData(bytes.buffer.slice(0));
+      buffers.push(decoded);
+    }
+
+    // Calculate total length with pauses
+    const sampleRate = buffers[0].sampleRate;
+    const pauseSamples = Math.floor((pauseMs / 1000) * sampleRate);
+    let totalSamples = 0;
+    for (let i = 0; i < buffers.length; i++) {
+      totalSamples += buffers[i].length;
+      if (i < buffers.length - 1) totalSamples += pauseSamples;
+    }
+
+    const channels = buffers[0].numberOfChannels;
+    const combined = ctx.createBuffer(channels, totalSamples, sampleRate);
+
+    for (let ch = 0; ch < channels; ch++) {
+      const output = combined.getChannelData(ch);
+      let offset = 0;
+      for (let i = 0; i < buffers.length; i++) {
+        const chData = buffers[i].numberOfChannels > ch
+          ? buffers[i].getChannelData(ch)
+          : buffers[i].getChannelData(0);
+        output.set(chData, offset);
+        offset += buffers[i].length;
+        if (i < buffers.length - 1) {
+          // Silence gap already zero-initialized
+          offset += pauseSamples;
+        }
+      }
+    }
+
+    // Encode to WAV
+    const wavBlob = audioBufferToWav(combined);
+    const reader = new FileReader();
+    return new Promise<string>((resolve) => {
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(wavBlob);
+    });
+  } catch (err) {
+    console.warn('[TTS] Audio concatenation failed, returning first segment:', err);
+    return dataUrls[0];
+  }
+}
+
+/** Encode an AudioBuffer to a WAV Blob. */
+function audioBufferToWav(buffer: AudioBuffer): Blob {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const dataLength = buffer.length * blockAlign;
+  const headerLength = 44;
+  const totalLength = headerLength + dataLength;
+
+  const arrayBuffer = new ArrayBuffer(totalLength);
+  const view = new DataView(arrayBuffer);
+
+  // WAV header
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeString(0, 'RIFF');
+  view.setUint32(4, totalLength - 8, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataLength, true);
+
+  // Interleave and write samples
+  let offset = 44;
+  for (let i = 0; i < buffer.length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
 }
 
 /** Play a pre-recorded audio URL (base64 data URL or blob URL). */

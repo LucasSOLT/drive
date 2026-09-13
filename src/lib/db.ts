@@ -547,46 +547,55 @@ export interface AdminMetrics {
 }
 
 export async function fetchAdminMetrics(): Promise<AdminMetrics> {
-  const [storiesRes, likesRes] = await Promise.all([
-    supabase.from('user_stories').select('status, read_count, genre'),
-    supabase.from('story_likes').select('id', { count: 'exact', head: true }),
-  ]);
+  const defaultMetrics: AdminMetrics = { pendingCount: 0, approvedCount: 0, deniedCount: 0, totalReads: 0, totalLikes: 0, topGenre: 'N/A' };
+  try {
+    const timeoutMs = 8000;
+    const fetchAll = Promise.all([
+      supabase.from('user_stories').select('status, read_count, genre'),
+      supabase.from('story_likes').select('id', { count: 'exact', head: true }),
+    ]);
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Metrics timeout')), timeoutMs));
+    const [storiesRes, likesRes] = await Promise.race([fetchAll, timeout]);
 
-  const stories = storiesRes.data || [];
-  let pendingCount = 0;
-  let approvedCount = 0;
-  let deniedCount = 0;
-  let totalReads = 0;
-  const genreCounts: Record<string, number> = {};
+    const stories = storiesRes.data || [];
+    let pendingCount = 0;
+    let approvedCount = 0;
+    let deniedCount = 0;
+    let totalReads = 0;
+    const genreCounts: Record<string, number> = {};
 
-  for (const s of stories) {
-    if (s.status === 'under-review') pendingCount++;
-    else if (s.status === 'published') approvedCount++;
-    else if (s.status === 'denied') deniedCount++;
+    for (const s of stories) {
+      if (s.status === 'under-review') pendingCount++;
+      else if (s.status === 'published') approvedCount++;
+      else if (s.status === 'denied') deniedCount++;
 
-    totalReads += s.read_count || 0;
-    if (s.genre) {
-      genreCounts[s.genre] = (genreCounts[s.genre] || 0) + 1;
+      totalReads += s.read_count || 0;
+      if (s.genre) {
+        genreCounts[s.genre] = (genreCounts[s.genre] || 0) + 1;
+      }
     }
-  }
 
-  let topGenre = 'N/A';
-  let maxCount = 0;
-  for (const [g, count] of Object.entries(genreCounts)) {
-    if (count > maxCount) {
-      maxCount = count;
-      topGenre = g;
+    let topGenre = 'N/A';
+    let maxCount = 0;
+    for (const [g, count] of Object.entries(genreCounts)) {
+      if (count > maxCount) {
+        maxCount = count;
+        topGenre = g;
+      }
     }
-  }
 
-  return {
-    pendingCount,
-    approvedCount,
-    deniedCount,
-    totalReads,
-    totalLikes: likesRes.count || 0,
-    topGenre,
-  };
+    return {
+      pendingCount,
+      approvedCount,
+      deniedCount,
+      totalReads,
+      totalLikes: likesRes.count || 0,
+      topGenre,
+    };
+  } catch (err) {
+    console.warn('[DB] fetchAdminMetrics failed/timed out, returning defaults:', err);
+    return defaultMetrics;
+  }
 }
 
 export async function fetchAdminStories(
@@ -798,31 +807,83 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
   };
 }
 
-/** Fetch all official stories sorted by sort_order ASC, then created_at DESC */
+/** Fetch all official stories sorted by sort_order ASC, then created_at DESC.
+ *  Includes an 8-second timeout so the Admin Dashboard never freezes on Loading... */
 export async function fetchOfficialStories(): Promise<Story[]> {
-  const { data, error } = await supabase
-    .from('official_stories')
-    .select('*')
-    .order('sort_order', { ascending: true })
-    .order('created_at', { ascending: false });
+  try {
+    const fetchPromise = supabase
+      .from('official_stories')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    console.warn('[DB] Error fetching official stories from Supabase (fallback to static):', error);
-    // Fallback to static stories from stories.ts if table not yet migrated or offline
-    return [];
+    const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
+      setTimeout(() => resolve({ data: null, error: { message: 'Fetch timed out after 8s' } }), 8000)
+    );
+
+    const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
+    if (error) {
+      console.warn('[DB] Error/timeout fetching official stories (fallback to local):', error);
+      return getLocalDraftStories();
+    }
+
+    const stories = (data || []).map((s: any) => mapOfficialStoryRecord(s));
+    // Merge any local drafts not yet synced
+    const localDrafts = getLocalDraftStories();
+    const cloudIds = new Set(stories.map((s: Story) => s.id));
+    for (const draft of localDrafts) {
+      if (!cloudIds.has(draft.id)) stories.push(draft);
+    }
+    return stories;
+  } catch (err) {
+    console.warn('[DB] fetchOfficialStories exception, returning local drafts:', err);
+    return getLocalDraftStories();
   }
+}
 
-  return (data || []).map((s: any) => mapOfficialStoryRecord(s));
+/** Get locally cached draft stories from localStorage. */
+function getLocalDraftStories(): Story[] {
+  try {
+    const raw = localStorage.getItem('drive_official_drafts');
+    if (!raw) return [];
+    const drafts = JSON.parse(raw);
+    return Array.isArray(drafts) ? drafts : [];
+  } catch { return []; }
+}
+
+/** Save a draft story to localStorage as backup. */
+function saveLocalDraft(story: Partial<Story> & { id: string }): void {
+  try {
+    const drafts = getLocalDraftStories();
+    const idx = drafts.findIndex((d: Story) => d.id === story.id);
+    if (idx >= 0) drafts[idx] = story as Story;
+    else drafts.push(story as Story);
+    localStorage.setItem('drive_official_drafts', JSON.stringify(drafts));
+  } catch (err) { console.warn('[DB] Failed to save local draft:', err); }
+}
+
+/** Remove a local draft after successful cloud save. */
+function removeLocalDraft(storyId: string): void {
+  try {
+    const drafts = getLocalDraftStories();
+    const filtered = drafts.filter((d: Story) => d.id !== storyId);
+    localStorage.setItem('drive_official_drafts', JSON.stringify(filtered));
+  } catch {}
 }
 
 /** Create or update an official story */
 export async function saveOfficialStory(story: Partial<Story> & { id: string }): Promise<void> {
-  const userId = getUserId();
+  // Validate and fix UUID for story.id
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const storyId = uuidRegex.test(story.id) ? story.id : crypto.randomUUID();
+  const storyGroupId = story.storyGroupId && uuidRegex.test(story.storyGroupId)
+    ? story.storyGroupId : storyId;
 
-  // Build the full payload with ALL desired columns
+  // Build the full payload with ALL desired columns (no created_by — column removed)
   const payload: Record<string, any> = {
-    id: story.id,
-    title: story.title,
+    id: storyId,
+    title: story.title || 'Untitled Draft',
     author: story.author || 'DRiVE Studios',
     genre: story.genre || 'Drama',
     format: story.format || 'book',
@@ -840,13 +901,15 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     page_dialogue: story.pageDialogue || {},
     content_rating: story.contentRating || 'All Ages',
     status: story.officialStatus || 'draft',
-    created_by: userId,
     updated_at: new Date().toISOString(),
-    story_group_id: story.storyGroupId || story.id,
+    story_group_id: storyGroupId,
     episode_number: story.episodeNumber || 1,
   };
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);
+
+  // Save local backup before cloud save
+  saveLocalDraft({ ...story, id: storyId });
 
   // Retry loop: attempt upsert, strip unknown columns on failure, retry
   let attempts = 0;
@@ -859,6 +922,7 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
 
     if (!error) {
       console.log('[DB] Official story saved successfully:', payload.id);
+      removeLocalDraft(storyId);
       return;
     }
 

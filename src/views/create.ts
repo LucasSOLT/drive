@@ -4,7 +4,6 @@ import { addUserStory, getUserStories, isLibraryUnlocked, canCreateStory, getTok
 import { navigate, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence } from '../lib/tts.ts';
-import { cleanUpText } from '../lib/groq.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { uploadMedia, uploadAudioData } from '../lib/storage.ts';
 import { VOICE_OPTIONS } from '../lib/settings.ts';
@@ -1025,19 +1024,6 @@ function renderBookCanvas(): string {
 
 
 
-      <!-- Pre-record Audio -->
-      <div class="prerecord-row">
-        <button class="prerecord-btn ${page.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-book="${i}" type="button">
-          ${page.audioUrl
-            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg> <span>Pre-recorded</span>`
-            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg> <span>Pre-record</span>`}
-        </button>
-        ${page.audioUrl ? `
-          <button class="prerecord-play-btn" data-prerecord-play-book="${i}" type="button" title="Preview audio">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          </button>
-        ` : ''}
-      </div>
 
       <!-- Deeper Dive -->
       <div class="book-tile__deeper-dive">
@@ -1049,16 +1035,6 @@ function renderBookCanvas(): string {
           <textarea class="book-tile__dd-textarea" data-tile-dd-content="${i}"
             placeholder="Capture your deeper dive content here..."
             rows="5">${page.deeperDiveContent || ''}</textarea>
-          <div class="book-tile__dd-actions">
-            <button class="book-tile__dd-voice-btn" data-tile-dd-voice="${i}" type="button">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-              <span>Voice Note</span>
-            </button>
-            <button class="book-tile__dd-cleanup-btn" data-tile-dd-cleanup="${i}" type="button">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
-              <span>Clean Up</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -1153,16 +1129,6 @@ function openPageFullscreen(pageIndex: number): void {
           <textarea class="book-tile__dd-textarea" id="fs-dd-content"
             placeholder="Capture your deeper dive content here..."
             rows="7">${page.deeperDiveContent || ''}</textarea>
-          <div class="book-tile__dd-actions">
-            <button class="book-tile__dd-voice-btn" id="fs-dd-voice">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-              <span>Voice Note</span>
-            </button>
-            <button class="book-tile__dd-cleanup-btn" id="fs-dd-cleanup">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
-              <span>Clean Up</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -1247,15 +1213,6 @@ function openPageFullscreen(pageIndex: number): void {
   fsDd?.addEventListener('input', updateFsDd);
   fsDd?.addEventListener('paste', () => setTimeout(updateFsDd, 0));
 
-  // Fullscreen Voice Note
-  document.getElementById('fs-dd-voice')?.addEventListener('click', () => {
-    handleVoiceNote(pageIndex, document.getElementById('fs-dd-content') as HTMLTextAreaElement, document.getElementById('fs-dd-voice')!);
-  });
-
-  // Fullscreen Clean Up
-  document.getElementById('fs-dd-cleanup')?.addEventListener('click', () => {
-    handleCleanUp(pageIndex, document.getElementById('fs-dd-content') as HTMLTextAreaElement, document.getElementById('fs-dd-cleanup')!);
-  });
 }
 
 function closePageFullscreen(overlay: HTMLElement): void {
@@ -1577,95 +1534,6 @@ function openStoryboard(): void {
   });
 }
 
-// ─── Voice Note (Speech-to-Text) ───
-let activeRecognition: any = null;
-function handleVoiceNote(pageIndex: number, textarea: HTMLTextAreaElement | null, btn: HTMLElement): void {
-  if (!textarea) return;
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert('Speech recognition is not supported in this browser.');
-    return;
-  }
-
-  // If already recording, stop
-  if (activeRecognition) {
-    activeRecognition.stop();
-    activeRecognition = null;
-    btn.classList.remove('book-tile__dd-voice-btn--active');
-    const span = btn.querySelector('span');
-    if (span) span.textContent = 'Voice Note';
-    return;
-  }
-
-  const recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-
-  const existingText = textarea.value;
-  let finalTranscript = '';
-
-  recognition.onresult = (event: any) => {
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      if (event.results[i].isFinal) {
-        finalTranscript += event.results[i][0].transcript + ' ';
-      } else {
-        interim += event.results[i][0].transcript;
-      }
-    }
-    textarea.value = existingText + (existingText ? '\n' : '') + finalTranscript + interim;
-    bookPages[pageIndex].deeperDiveContent = textarea.value;
-  };
-
-  recognition.onend = () => {
-    activeRecognition = null;
-    btn.classList.remove('book-tile__dd-voice-btn--active');
-    const span = btn.querySelector('span');
-    if (span) span.textContent = 'Voice Note';
-  };
-
-  recognition.onerror = (event: any) => {
-    console.error('Speech recognition error:', event.error);
-    activeRecognition = null;
-    btn.classList.remove('book-tile__dd-voice-btn--active');
-    const span = btn.querySelector('span');
-    if (span) span.textContent = 'Voice Note';
-  };
-
-  recognition.start();
-  activeRecognition = recognition;
-  btn.classList.add('book-tile__dd-voice-btn--active');
-  const span = btn.querySelector('span');
-  if (span) span.textContent = 'Listening...';
-}
-
-// ─── Clean Up (Groq AI) ───
-async function handleCleanUp(pageIndex: number, textarea: HTMLTextAreaElement | null, btn: HTMLElement): Promise<void> {
-  if (!textarea) return;
-  const rawText = textarea.value.trim();
-  if (!rawText) {
-    alert('Write or dictate some text first, then clean it up.');
-    return;
-  }
-
-  const span = btn.querySelector('span');
-  const originalText = span?.textContent || 'Clean Up';
-  btn.setAttribute('disabled', 'true');
-  if (span) span.textContent = 'Cleaning...';
-
-  try {
-    const cleaned = await cleanUpText(rawText);
-    textarea.value = cleaned;
-    bookPages[pageIndex].deeperDiveContent = cleaned;
-  } catch (err: any) {
-    console.error('Clean up failed:', err);
-    alert('Clean up failed: ' + (err.message || 'Unknown error'));
-  } finally {
-    btn.removeAttribute('disabled');
-    if (span) span.textContent = originalText;
-  }
-}
 
 let attachListenersGlobal: () => void = () => {};
 
@@ -3291,15 +3159,6 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       tileDd?.addEventListener('input', handleTileDd);
       tileDd?.addEventListener('paste', () => setTimeout(handleTileDd, 0));
 
-      // Voice Note
-      wizard.querySelector(`[data-tile-dd-voice="${i}"]`)?.addEventListener('click', () => {
-        handleVoiceNote(i, wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement, wizard.querySelector(`[data-tile-dd-voice="${i}"]`)!);
-      });
-
-      // Clean Up
-      wizard.querySelector(`[data-tile-dd-cleanup="${i}"]`)?.addEventListener('click', () => {
-        handleCleanUp(i, wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement, wizard.querySelector(`[data-tile-dd-cleanup="${i}"]`)!);
-      });
 
       // Maximize
       wizard.querySelector(`[data-tile-maximize="${i}"]`)?.addEventListener('click', (e) => {
