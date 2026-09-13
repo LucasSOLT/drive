@@ -112,12 +112,12 @@ export async function speakText(text: string): Promise<void> {
  * Returns a base64 data URL (audio/mpeg) that can be stored and played later.
  * Uses the user's selected voice and the given stability setting.
  */
-export async function preRecordAudio(text: string, stability = 0.5): Promise<string> {
+export async function preRecordAudio(text: string, stability = 0.5, customVoiceId?: string): Promise<string> {
   if (!text || !text.trim()) {
     throw new Error('No text provided to record.');
   }
 
-  const voiceId = getSelectedVoiceId();
+  const voiceId = customVoiceId || getSelectedVoiceId();
 
   console.log('[TTS Pre-record] Calling ElevenLabs proxy with voice:', voiceId, 'stability:', stability, 'text length:', text.length);
 
@@ -191,4 +191,98 @@ export function playAudioUrl(url: string): void {
     console.warn('[TTS] Failed to play pre-recorded audio:', err);
     stopSpeaking();
   });
+}
+
+/**
+ * Play a short audition snippet for a voice so creators can hear it before assigning.
+ */
+export async function previewVoice(voiceId: string, sampleText = 'Hi, I\'m ready to bring your characters to life.'): Promise<void> {
+  stopSpeaking();
+  try {
+    const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
+      body: {
+        endpoint: `/v1/text-to-speech/${voiceId}`,
+        method: 'POST',
+        body: {
+          text: sampleText,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        }
+      }
+    });
+    if (error || data?.error || !data?.audio_base64) {
+      console.warn('[TTS] Voice preview failed, using browser TTS');
+      return;
+    }
+    const binaryStr = atob(data.audio_base64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+    const blob = new Blob([bytes], { type: data.content_type || 'audio/mpeg' });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    currentAudio = audio;
+    currentObjectURL = url;
+    audio.addEventListener('ended', () => { if (currentAudio === audio) stopSpeaking(); });
+    await audio.play();
+  } catch (err) {
+    console.warn('[TTS] Voice preview error:', err);
+  }
+}
+
+/**
+ * Play an array of audio URLs sequentially. Returns a controller to stop playback.
+ * Calls onLineChange(index) before each line starts playing.
+ */
+export function playAudioSequence(
+  urls: (string | null | undefined)[],
+  onLineChange?: (index: number) => void
+): { stop: () => void } {
+  let stopped = false;
+  let idx = 0;
+
+  const playNext = () => {
+    if (stopped || idx >= urls.length) {
+      stopSpeaking();
+      return;
+    }
+    const url = urls[idx];
+    if (!url) {
+      idx++;
+      playNext();
+      return;
+    }
+    onLineChange?.(idx);
+    stopSpeaking();
+    const audio = new Audio(url);
+    currentAudio = audio;
+    currentObjectURL = null;
+
+    audio.addEventListener('ended', () => {
+      if (stopped) return;
+      idx++;
+      playNext();
+    });
+
+    audio.addEventListener('error', () => {
+      console.warn('[TTS] Sequence playback error on line', idx);
+      if (stopped) return;
+      idx++;
+      playNext();
+    });
+
+    audio.play().catch(() => {
+      if (stopped) return;
+      idx++;
+      playNext();
+    });
+  };
+
+  playNext();
+
+  return {
+    stop: () => {
+      stopped = true;
+      stopSpeaking();
+    }
+  };
 }

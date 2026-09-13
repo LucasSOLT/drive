@@ -1,10 +1,13 @@
-import type { StoryFormat, Genre, UserStory } from '../types.ts';
+import type { StoryFormat, Genre, UserStory, StoryCharacter, DialogueLine } from '../types.ts';
 import { genres } from '../data/stories.ts';
 import { addUserStory, getUserStories, isLibraryUnlocked, canCreateStory, getTokensRemaining, getUserPlan, consumeToken } from '../state.ts';
 import { navigate, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence } from '../lib/tts.ts';
 import { cleanUpText } from '../lib/groq.ts';
+import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
+import { uploadMedia, uploadAudioData } from '../lib/storage.ts';
+import { VOICE_OPTIONS } from '../lib/settings.ts';
 
 
 
@@ -76,23 +79,22 @@ interface BookPage {
   audioUrl: string | null;  // pre-recorded ElevenLabs audio
   dialogText: string;
   dialogAudioUrl: string | null;
+  dialogueLines?: DialogueLine[];
 }
-const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null });
+const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [] });
 let bookPages: BookPage[] = [
   defaultBookPage(), defaultBookPage(), defaultBookPage(),
   defaultBookPage(), defaultBookPage(),
 ];
+
+// Story Characters for multi-voice dialogue
+const CHAR_COLORS = ['#8a63d2','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#f97316','#6366f1','#14b8a6'];
+let storyCharacters: StoryCharacter[] = [];
 let currentPage = 0;
 let activeDraftId: string | null = null;
 let _coverThumbnail: string | null = null;
 let storyCoverVideo: string = '';
 
-function isVideoMedia(url?: string | null, vidUrl?: string | null): boolean {
-  const target = vidUrl || url;
-  if (!target) return false;
-  if (target.startsWith('data:video/')) return true;
-  return /\.(mp4|webm|mov|ogg|m4v)($|\?)/i.test(target);
-}
 
 // ─── SVG Icons ───
 const ICON = {
@@ -116,6 +118,12 @@ const ICON = {
 };
 
 // ─── Helpers ───
+
+function escapeHtml(str: string): string {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -178,6 +186,7 @@ interface DraftEntry {
   bookPages: BookPage[];
   currentPage: number;
   updatedAt: string;
+  storyCharacters?: StoryCharacter[];
 }
 
 function getAllDrafts(): DraftEntry[] {
@@ -228,6 +237,7 @@ function saveDraft() {
     bookPages,
     currentPage,
     updatedAt: new Date().toISOString(),
+    storyCharacters
   };
   const drafts = getAllDrafts();
   const idx = drafts.findIndex(d => d.id === activeDraftId);
@@ -273,7 +283,10 @@ function loadDraft(draftId: string): boolean {
     scriptText = draft.scriptText || '';
     studioOpen = draft.studioOpen || false;
     bookPages = draft.bookPages || Array.from({ length: 5 }, () => defaultBookPage());
+    // Ensure dialogueLines exists on each page (backward compat)
+    bookPages.forEach(p => { if (!p.dialogueLines) p.dialogueLines = []; });
     currentPage = draft.currentPage || 0;
+    storyCharacters = draft.storyCharacters || [];
     return true;
   } catch (e) {
     return false;
@@ -323,14 +336,15 @@ function renderFormatSelection(): string {
 
   const formats = [
     {
-      id: 'scroll', title: 'Waterfall Storyboard', subtitle: 'Upload & generate panels',
-      desc: 'Create vertical panel stories with AI and character continuity.',
-      icon: ICON.scroll, accent: 'var(--color-blue)',
-    },
-    {
       id: 'book', title: 'Illustrated Book', subtitle: 'AI-powered pages',
       desc: 'Generate illustrations with AI for each page. Add story text below each image.',
       icon: ICON.book, accent: 'var(--color-purple)',
+    },
+    {
+      id: 'scroll', title: 'Waterfall Storyboard', subtitle: 'Upload & generate panels (Archived Artifact)',
+      desc: 'Vertical scrolling panel format. (Currently inactive as artifact).',
+      icon: ICON.scroll, accent: 'var(--color-blue)',
+      disabled: true,
     }
   ];
 
@@ -483,7 +497,12 @@ function renderCanvasToolbar(formatLabel: string): string {
         </button>
       </div>
       <span class="canvas-toolbar__title">${formatLabel}</span>
-      <div class="canvas-toolbar__right" style="position:relative;">
+      <div class="canvas-toolbar__right" style="position:relative; display:flex; align-items:center; gap:8px;">
+        ${isBook ? `
+          <button class="canvas-toolbar__btn-storyboard" id="btn-toolbar-switch-storyboard" type="button" title="Switch to Content Storyboard desktop view">
+            🖥️ Storyboard View
+          </button>
+        ` : ''}
         <button class="canvas-toolbar__btn" id="btn-toolbar-menu" title="Menu">
           ${ICON.dots}
         </button>
@@ -660,6 +679,273 @@ function renderScrollCanvas(): string {
 //  ILLUSTRATED BOOK CANVAS (AI Powered)
 // ═══════════════════════════════════════
 
+/** Render multi-character dialogue lines UI for a page (used in both mobile + storyboard views) */
+function renderDialogueLines(pageIdx: number, lines: DialogueLine[], prefix: string): string {
+  const charOptions = storyCharacters.map(ch =>
+    `<option value="${ch.id}">${ch.name}</option>`
+  ).join('') + '<option value="__new__">+ Add New Character...</option>';
+
+  const linesHtml = lines.map((line, li) => {
+    const charColor = storyCharacters.find(c => c.id === line.characterId)?.color || CHAR_COLORS[li % CHAR_COLORS.length];
+    const hasAudio = !!line.audioUrl;
+    return `
+    <div class="sb-dialog-line" data-${prefix}-line="${pageIdx}-${li}">
+      <div class="sb-dialog-line__top">
+        <select class="sb-dialog-line__char-select" data-${prefix}-line-char="${pageIdx}-${li}" style="border-left: 3px solid ${charColor};">
+          ${storyCharacters.map(ch =>
+            `<option value="${ch.id}" ${ch.id === line.characterId ? 'selected' : ''}>${ch.name}</option>`
+          ).join('')}
+          <option value="__new__">+ Add New...</option>
+        </select>
+        <div class="sb-dialog-line__actions">
+          <button class="sb-dialog-line__btn ${hasAudio ? 'sb-dialog-line__btn--done' : ''}" data-${prefix}-line-rec="${pageIdx}-${li}" type="button">${hasAudio ? '✅ Recorded' : '🎙️ Record'}</button>
+          ${hasAudio ? `<button class="sb-dialog-line__btn" data-${prefix}-line-play="${pageIdx}-${li}" type="button">▶</button>` : ''}
+          <button class="sb-dialog-line__btn sb-dialog-line__btn--delete" data-${prefix}-line-del="${pageIdx}-${li}" type="button">✕</button>
+        </div>
+      </div>
+      <textarea class="sb-dialog-line__text" data-${prefix}-line-text="${pageIdx}-${li}" rows="2" placeholder="Write dialogue..." maxlength="500">${line.text}</textarea>
+    </div>`;
+  }).join('');
+
+  const hasAnyAudio = lines.some(l => !!l.audioUrl);
+
+  return `
+  <div class="sb-dialog-lines" data-${prefix}-lines="${pageIdx}">
+    ${linesHtml}
+    <button class="sb-dialog-add-line" data-${prefix}-add-line="${pageIdx}" type="button">+ Add Dialogue Line</button>
+    ${lines.length > 0 ? `
+      <button class="sb-dialog-batch-btn" data-${prefix}-batch-rec="${pageIdx}" type="button">🎙️ Pre-record Page Dialogue</button>
+      ${hasAnyAudio ? `<button class="sb-dialog-play-all" data-${prefix}-play-all="${pageIdx}" type="button">▶ Play All Dialogue</button>` : ''}
+    ` : ''}
+  </div>`;
+}
+
+/** Show quick-add character modal and return the new character (or null if cancelled) */
+function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => void): void {
+  const voiceOptionsHtml = VOICE_OPTIONS.map(v =>
+    `<option value="${v.voiceId}">${v.name} — ${v.description}</option>`
+  ).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'char-quick-add-modal';
+  overlay.innerHTML = `
+    <div class="char-quick-add-modal__card">
+      <div class="char-quick-add-modal__title">Add New Character</div>
+      <div class="char-quick-add-modal__field">
+        <label class="char-quick-add-modal__label">Character Name</label>
+        <input class="char-quick-add-modal__input" id="qa-char-name" placeholder="e.g. Sarah, Detective Vance..." maxlength="30" />
+      </div>
+      <div class="char-quick-add-modal__field">
+        <label class="char-quick-add-modal__label">Voice</label>
+        <select class="char-quick-add-modal__select" id="qa-char-voice">${voiceOptionsHtml}</select>
+      </div>
+      <div class="char-quick-add-modal__actions">
+        <button class="char-quick-add-modal__btn char-quick-add-modal__btn--cancel" id="qa-cancel" type="button">Cancel</button>
+        <button class="char-quick-add-modal__btn char-quick-add-modal__btn--save" id="qa-save" type="button">Add Character</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById('qa-cancel')?.addEventListener('click', () => { overlay.remove(); callback(null); });
+  document.getElementById('qa-save')?.addEventListener('click', () => {
+    const name = (document.getElementById('qa-char-name') as HTMLInputElement)?.value.trim();
+    const voiceId = (document.getElementById('qa-char-voice') as HTMLSelectElement)?.value;
+    if (!name) { (document.getElementById('qa-char-name') as HTMLInputElement)?.focus(); return; }
+    const ch: StoryCharacter = {
+      id: 'char_' + Date.now(),
+      name,
+      voiceId: voiceId || VOICE_OPTIONS[0].voiceId,
+      color: CHAR_COLORS[storyCharacters.length % CHAR_COLORS.length],
+    };
+    storyCharacters.push(ch);
+    saveDraft();
+    overlay.remove();
+    callback(ch);
+  });
+
+  setTimeout(() => (document.getElementById('qa-char-name') as HTMLInputElement)?.focus(), 100);
+}
+
+/** Wire event handlers for multi-character dialogue lines on a given container.
+ *  prefix: 'mob' for mobile canvas, 'sbd' for storyboard overlay */
+function wireDialogueLineEvents(container: HTMLElement | Document, prefix: string, refreshView: () => void): void {
+  // Add dialogue line
+  container.querySelectorAll(`[data-${prefix}-add-line]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-add-line`) || '0');
+      if (!bookPages[pageIdx].dialogueLines) bookPages[pageIdx].dialogueLines = [];
+
+      // Default to first character, or prompt to create one
+      if (storyCharacters.length === 0) {
+        showQuickAddCharacterModal((ch) => {
+          if (ch) {
+            bookPages[pageIdx].dialogueLines!.push({
+              id: 'line_' + Date.now(),
+              characterId: ch.id,
+              characterName: ch.name,
+              text: '',
+            });
+            saveDraft();
+            refreshView();
+          }
+        });
+        return;
+      }
+
+      const defaultChar = storyCharacters[0];
+      bookPages[pageIdx].dialogueLines!.push({
+        id: 'line_' + Date.now(),
+        characterId: defaultChar.id,
+        characterName: defaultChar.name,
+        text: '',
+      });
+      saveDraft();
+      refreshView();
+    });
+  });
+
+  // Delete line
+  container.querySelectorAll(`[data-${prefix}-line-del]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [pStr, lStr] = ((btn as HTMLElement).getAttribute(`data-${prefix}-line-del`) || '0-0').split('-');
+      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
+      bookPages[pageIdx].dialogueLines?.splice(lineIdx, 1);
+      // Sync dialogText for backward compat
+      syncDialogText(pageIdx);
+      saveDraft();
+      refreshView();
+    });
+  });
+
+  // Text input
+  container.querySelectorAll(`[data-${prefix}-line-text]`).forEach(ta => {
+    ta.addEventListener('input', () => {
+      const [pStr, lStr] = ((ta as HTMLElement).getAttribute(`data-${prefix}-line-text`) || '0-0').split('-');
+      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
+      if (bookPages[pageIdx].dialogueLines?.[lineIdx]) {
+        bookPages[pageIdx].dialogueLines![lineIdx].text = (ta as HTMLTextAreaElement).value;
+        syncDialogText(pageIdx);
+        saveDraft();
+      }
+    });
+  });
+
+  // Character change
+  container.querySelectorAll(`[data-${prefix}-line-char]`).forEach(sel => {
+    sel.addEventListener('change', () => {
+      const [pStr, lStr] = ((sel as HTMLElement).getAttribute(`data-${prefix}-line-char`) || '0-0').split('-');
+      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
+      const val = (sel as HTMLSelectElement).value;
+      if (val === '__new__') {
+        showQuickAddCharacterModal((ch) => {
+          if (ch && bookPages[pageIdx].dialogueLines?.[lineIdx]) {
+            bookPages[pageIdx].dialogueLines![lineIdx].characterId = ch.id;
+            bookPages[pageIdx].dialogueLines![lineIdx].characterName = ch.name;
+            syncDialogText(pageIdx);
+            saveDraft();
+          }
+          refreshView();
+        });
+        return;
+      }
+      const ch = storyCharacters.find(c => c.id === val);
+      if (ch && bookPages[pageIdx].dialogueLines?.[lineIdx]) {
+        bookPages[pageIdx].dialogueLines![lineIdx].characterId = ch.id;
+        bookPages[pageIdx].dialogueLines![lineIdx].characterName = ch.name;
+        syncDialogText(pageIdx);
+        saveDraft();
+      }
+    });
+  });
+
+  // Per-line record
+  container.querySelectorAll(`[data-${prefix}-line-rec]`).forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const [pStr, lStr] = ((btn as HTMLElement).getAttribute(`data-${prefix}-line-rec`) || '0-0').split('-');
+      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
+      const line = bookPages[pageIdx].dialogueLines?.[lineIdx];
+      if (!line || !line.text.trim()) {
+        showModal({ title: 'No Text', content: '<p>Write some dialogue text first.</p>', confirmText: 'OK' });
+        return;
+      }
+      const ch = storyCharacters.find(c => c.id === line.characterId);
+      const voiceId = ch?.voiceId;
+      const b = btn as HTMLButtonElement;
+      b.disabled = true;
+      b.textContent = '⏳ Recording...';
+      try {
+        const audioData = await preRecordAudio(line.text, 0.5, voiceId);
+        const storyId = activeDraftId || 'draft';
+        const cdnUrl = await uploadAudioData(audioData, storyId, line.id);
+        line.audioUrl = cdnUrl;
+        saveDraft();
+      } catch (err: any) {
+        showModal({ title: 'Record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
+      }
+      refreshView();
+    });
+  });
+
+  // Per-line play
+  container.querySelectorAll(`[data-${prefix}-line-play]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [pStr, lStr] = ((btn as HTMLElement).getAttribute(`data-${prefix}-line-play`) || '0-0').split('-');
+      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
+      const url = bookPages[pageIdx].dialogueLines?.[lineIdx]?.audioUrl;
+      if (url) {
+        if (isSpeaking()) { stopSpeaking(); } else { playAudioUrl(url); }
+      }
+    });
+  });
+
+  // Batch pre-record all lines on page
+  container.querySelectorAll(`[data-${prefix}-batch-rec]`).forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-batch-rec`) || '0');
+      const lines = bookPages[pageIdx].dialogueLines || [];
+      if (lines.length === 0) return;
+      const b = btn as HTMLButtonElement;
+      b.disabled = true;
+      b.classList.add('sb-dialog-batch-btn--recording');
+      for (let li = 0; li < lines.length; li++) {
+        const line = lines[li];
+        if (!line.text.trim()) continue;
+        b.textContent = `🎙️ Recording line ${li + 1} of ${lines.length} (${line.characterName})...`;
+        const ch = storyCharacters.find(c => c.id === line.characterId);
+        try {
+          const audioData = await preRecordAudio(line.text, 0.5, ch?.voiceId);
+          const storyId = activeDraftId || 'draft';
+          line.audioUrl = await uploadAudioData(audioData, storyId, line.id);
+        } catch (err: any) {
+          console.warn(`[Batch] Failed line ${li}:`, err);
+        }
+      }
+      b.textContent = `✅ All ${lines.length} lines recorded!`;
+      b.classList.remove('sb-dialog-batch-btn--recording');
+      saveDraft();
+      setTimeout(() => refreshView(), 1500);
+    });
+  });
+
+  // Play all dialogue
+  container.querySelectorAll(`[data-${prefix}-play-all]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-play-all`) || '0');
+      const lines = bookPages[pageIdx].dialogueLines || [];
+      const urls = lines.map(l => l.audioUrl || null);
+      if (isSpeaking()) { stopSpeaking(); return; }
+      playAudioSequence(urls);
+    });
+  });
+}
+
+/** Sync dialogueLines back to legacy dialogText for backward compatibility */
+function syncDialogText(pageIdx: number): void {
+  const lines = bookPages[pageIdx].dialogueLines || [];
+  bookPages[pageIdx].dialogText = lines.map(l => `[${l.characterName}]: ${l.text}`).join('\n');
+}
+
 function renderBookCanvas(): string {
   // Clamp currentPage
   if (currentPage < 0) currentPage = 0;
@@ -707,11 +993,9 @@ function renderBookCanvas(): string {
 
       <!-- Dialogue -->
       <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
-        <span>DIALOGUE</span>
+        <span>CHARACTER DIALOGUE</span>
       </div>
-      <textarea class="book-tile__textarea" data-tile-dialog="${i}"
-        placeholder="Write dialogue for this page..."
-        rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
+      ${renderDialogueLines(i, page.dialogueLines || [], 'mob')}
 
 
 
@@ -957,7 +1241,36 @@ function closePageFullscreen(overlay: HTMLElement): void {
 //  STORYBOARD — Wide Desktop View
 // ═══════════════════════════════════════
 
+const isDesktopScreen = (): boolean => window.innerWidth >= 1024;
+let activeEditorMode: 'storyboard' | 'mobile' = isDesktopScreen() ? 'storyboard' : 'mobile';
+let openStorySettingsGlobal: (() => void) | null = null;
+
+function showDesktopRequiredModal(): void {
+  showModal({
+    title: '🖥️ Computer Screen Required',
+    content: `
+      <div style="text-align:center; padding: 12px 0;">
+        <div style="font-size: 3rem; margin-bottom: 12px;">💻</div>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--color-text-primary); margin-bottom: 8px;">
+          <strong>The multi-card Content Storyboard requires a computer display</strong> (minimum 1024px screen width).
+        </p>
+        <p style="font-size: 0.85rem; line-height: 1.5; color: var(--color-text-muted);">
+          Please open DRiVE on your desktop or laptop computer to use Storyboard View, or continue editing your pages in the Mobile View right here!
+        </p>
+      </div>
+    `,
+    confirmText: 'Continue in Mobile View',
+    cancelText: '',
+    onConfirm: () => hideModal(),
+  });
+}
+
 function openStoryboard(): void {
+  if (!isDesktopScreen()) {
+    showDesktopRequiredModal();
+    return;
+  }
+
   // Remove existing storyboard if open
   document.querySelector('.storyboard-overlay')?.remove();
 
@@ -980,11 +1293,27 @@ function openStoryboard(): void {
       </div>
 
       <div class="sb-card__media">
-        <div class="sb-card__media-label">MEDIA</div>
-        ${page.image
-          ? `<img class="sb-card__img" src="${page.image}" alt="Page ${i + 1}">`
-          : `<div class="sb-card__no-img"><span>No image</span></div>`
-        }
+        <div class="sb-card__media-header">
+          <span class="sb-card__media-label">MEDIA</span>
+          ${page.image ? `<span class="sb-card__media-badge">${isVideoMedia(page.image) ? '🎬 VIDEO' : '🖼️ IMAGE'}</span>` : ''}
+        </div>
+        <div class="sb-card__media-wrap">
+          ${page.image
+            ? `${isVideoMedia(page.image)
+                ? `<video class="sb-card__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline></video>`
+                : `<img class="sb-card__img" src="${page.image}" alt="Page ${i + 1}">`
+              }
+              <div class="sb-card__media-actions">
+                <button type="button" class="sb-card__media-btn sb-card__media-btn--change" data-sb-change="${i}" title="Change media">Change</button>
+                <button type="button" class="sb-card__media-btn sb-card__media-btn--remove" data-sb-remove="${i}" title="Remove media">✕</button>
+              </div>`
+            : `<div class="sb-card__no-img" data-sb-upload="${i}">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <span>Upload Image or Video</span>
+              </div>`
+          }
+          <input type="file" data-sb-file="${i}" accept="image/*,video/*" style="display:none;" />
+        </div>
       </div>
 
       <div class="sb-card__section">
@@ -993,14 +1322,9 @@ function openStoryboard(): void {
       </div>
 
       <div class="sb-card__section">
-        <div class="sb-card__section-label">DIALOG</div>
-        <textarea class="sb-card__dialog-textarea" data-sb-dialog="${i}" rows="3" placeholder="Write dialog for this page..." maxlength="1000">${page.dialogText || ''}</textarea>
-        <div class="sb-card__prerecord-row">
-          <button class="sb-card__record-btn" data-sb-record="${i}" type="button">🎙️ Record</button>
-          <button class="sb-card__play-btn" data-sb-play="${i}" type="button" ${page.dialogAudioUrl ? '' : 'disabled'}>▶ Play</button>
-        </div>
+        <div class="sb-card__section-label">CHARACTER DIALOGUE</div>
+        ${renderDialogueLines(i, page.dialogueLines || [], 'sbd')}
       </div>
-
 
 
       <details class="sb-card__deeper-dive">
@@ -1017,14 +1341,23 @@ function openStoryboard(): void {
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-purple)" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </div>
         <div>
-          <div class="sb-topbar__title">Content Storyboard</div>
-          <div class="sb-topbar__subtitle">CREATOR VIEW</div>
+          <div class="sb-topbar__title">${escapeHtml(storyTitle || 'Illustrated Book')}</div>
+          <div class="sb-topbar__subtitle">CONTENT STORYBOARD • CREATOR VIEW</div>
         </div>
       </div>
       <div class="sb-topbar__right">
         <span class="sb-topbar__counter">${bookPages.length} Pages</span>
-        <button class="sb-topbar__add-btn" id="sb-add-page">+ Add Page</button>
-        <button class="sb-topbar__close" id="sb-close">
+        <button class="sb-topbar__btn-switch" id="sb-switch-mobile" type="button" title="Switch to mobile phone preview">
+          📱 Mobile View
+        </button>
+        <button class="sb-topbar__btn-action" id="sb-story-settings" type="button" title="Edit story title, cover, and metadata">
+          ⚙️ Settings
+        </button>
+        <button class="sb-topbar__btn-action" id="sb-save-draft" type="button" title="Save story draft">
+          💾 Save Draft
+        </button>
+        <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
+        <button class="sb-topbar__close" id="sb-close" type="button" title="Close and return to mobile editor">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -1035,21 +1368,99 @@ function openStoryboard(): void {
   `;
 
   document.body.appendChild(overlay);
+  ensureVideoPlayback(overlay);
 
   // --- Wire up events ---
-  document.getElementById('sb-close')?.addEventListener('click', () => {
+  const switchToMobileView = () => {
+    activeEditorMode = 'mobile';
     overlay.classList.add('closing');
     overlay.addEventListener('animationend', () => {
       overlay.remove();
       const wizard = document.getElementById('create-wizard');
       if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }
     }, { once: true });
+  };
+
+  document.getElementById('sb-switch-mobile')?.addEventListener('click', switchToMobileView);
+  document.getElementById('sb-close')?.addEventListener('click', switchToMobileView);
+
+  document.getElementById('sb-story-settings')?.addEventListener('click', () => {
+    overlay.remove();
+    openStorySettingsGlobal?.();
+  });
+
+  document.getElementById('sb-save-draft')?.addEventListener('click', () => {
+    saveDraft();
+    const btn = document.getElementById('sb-save-draft');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✅ Saved!';
+      setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1800);
+    }
   });
 
   document.getElementById('sb-add-page')?.addEventListener('click', () => {
     bookPages.push(defaultBookPage());
+    saveDraft();
     overlay.remove();
     openStoryboard();
+    setTimeout(() => {
+      const trk = document.getElementById('sb-track');
+      if (trk) trk.scrollLeft = trk.scrollWidth;
+    }, 60);
+  });
+
+  // Media in-card triggers
+  overlay.querySelectorAll('[data-sb-upload]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = btn.getAttribute('data-sb-upload');
+      const input = overlay.querySelector(`[data-sb-file="${idx}"]`) as HTMLInputElement;
+      input?.click();
+    });
+  });
+
+  overlay.querySelectorAll('[data-sb-change]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = btn.getAttribute('data-sb-change');
+      const input = overlay.querySelector(`[data-sb-file="${idx}"]`) as HTMLInputElement;
+      input?.click();
+    });
+  });
+
+  overlay.querySelectorAll('[data-sb-remove]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-sb-remove') || '0');
+      bookPages[idx].image = null as any;
+      saveDraft();
+      overlay.remove();
+      openStoryboard();
+    });
+  });
+
+  overlay.querySelectorAll('[data-sb-file]').forEach(input => {
+    input.addEventListener('change', async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const idx = parseInt(input.getAttribute('data-sb-file') || '0');
+
+      // Visual feedback: show uploading spinner on the active card
+      const card = overlay.querySelector(`[data-sb-card="${idx}"]`);
+      const mediaWrap = card?.querySelector('.sb-card__media-wrap');
+      if (mediaWrap) {
+        const spin = document.createElement('div');
+        spin.className = 'sb-card__uploading-overlay';
+        spin.innerHTML = `<div class="sb-card__upload-spinner"></div><span>Uploading to Cloud...</span>`;
+        mediaWrap.appendChild(spin);
+      }
+
+      const res = await uploadMedia(file, 'stories');
+      bookPages[idx].image = res.url;
+      saveDraft();
+      overlay.remove();
+      openStoryboard();
+    });
   });
 
   // Text editing
@@ -1089,15 +1500,10 @@ function openStoryboard(): void {
     });
   });
 
-  // Dialog text editing
-  overlay.querySelectorAll('[data-sb-dialog]').forEach(ta => {
-    const handleInput = () => {
-      const idx = parseInt(ta.getAttribute('data-sb-dialog') || '0');
-      bookPages[idx].dialogText = (ta as HTMLTextAreaElement).value;
-      saveDraft();
-    };
-    ta.addEventListener('input', handleInput);
-    ta.addEventListener('paste', () => setTimeout(handleInput, 0));
+  // Wire multi-character dialogue line events for storyboard
+  wireDialogueLineEvents(overlay, 'sbd', () => {
+    overlay.remove();
+    openStoryboard();
   });
 
   // --- Drag and Drop reordering ---
@@ -1142,75 +1548,6 @@ function openStoryboard(): void {
       (card as HTMLElement).classList.remove('sb-card--dragging');
       cards.forEach(c => (c as HTMLElement).classList.remove('sb-card--drag-over'));
       dragSrcIdx = null;
-    });
-  });
-
-  // --- Dialog audio recording (MediaRecorder) ---
-  const activeRecorders: Map<number, MediaRecorder> = new Map();
-  const audioBlobs: Map<number, Blob> = new Map();
-
-  overlay.querySelectorAll('[data-sb-record]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const idx = parseInt((btn as HTMLElement).getAttribute('data-sb-record') || '0');
-      const recBtn = btn as HTMLElement;
-
-      // If already recording, stop
-      if (activeRecorders.has(idx)) {
-        activeRecorders.get(idx)!.stop();
-        return;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const recorder = new MediaRecorder(stream);
-        const chunks: Blob[] = [];
-
-        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-
-        recorder.onstop = () => {
-          stream.getTracks().forEach(t => t.stop());
-          activeRecorders.delete(idx);
-          recBtn.classList.remove('sb-card__record-btn--active');
-          recBtn.innerHTML = '🎙️ Record';
-
-          const blob = new Blob(chunks, { type: 'audio/webm' });
-          audioBlobs.set(idx, blob);
-          const url = URL.createObjectURL(blob);
-          bookPages[idx].dialogAudioUrl = url;
-
-          // Enable the play button
-          const playBtn = overlay.querySelector(`[data-sb-play="${idx}"]`) as HTMLButtonElement;
-          if (playBtn) playBtn.disabled = false;
-        };
-
-        recorder.start();
-        activeRecorders.set(idx, recorder);
-        recBtn.classList.add('sb-card__record-btn--active');
-        recBtn.innerHTML = '⏹ Stop';
-
-        // Auto-stop after 60 seconds
-        setTimeout(() => {
-          if (activeRecorders.has(idx)) activeRecorders.get(idx)!.stop();
-        }, 60000);
-      } catch (err) {
-        console.error('Microphone access denied:', err);
-        alert('Microphone access is required to record dialog.');
-      }
-    });
-  });
-
-  // Play recorded dialog audio
-  overlay.querySelectorAll('[data-sb-play]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt((btn as HTMLElement).getAttribute('data-sb-play') || '0');
-      const url = bookPages[idx].dialogAudioUrl;
-      if (url) {
-        const audio = new Audio(url);
-        const playBtn = btn as HTMLButtonElement;
-        playBtn.innerHTML = '⏸ Playing';
-        audio.play();
-        audio.onended = () => { playBtn.innerHTML = '▶ Play'; };
-      }
     });
   });
 }
@@ -1580,6 +1917,15 @@ function buildStory(status: 'draft' | 'under-review' | 'live'): UserStory {
   const pages = selectedFormat === 'book'
     ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent, dialogText: p.dialogText }))
     : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
+  const page0 = pages[0]?.image || '';
+  const coverVideo = storyCoverVideo
+    || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined)
+    || (isVideoMedia(page0) ? page0 : undefined);
+
+  const coverImage = (!isVideoMedia(_coverThumbnail) && _coverThumbnail)
+    || (!isVideoMedia(page0) && page0)
+    || '';
+
   return {
     id: activeDraftId || 'us-' + Date.now(),
     title: storyTitle,
@@ -1590,8 +1936,8 @@ function buildStory(status: 'draft' | 'under-review' | 'live'): UserStory {
     status: status === 'live' ? 'published' : status,
     createdAt: new Date().toISOString(),
     pages,
-    coverImage: _coverThumbnail || pages[0]?.image || '',
-    coverVideo: storyCoverVideo || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined),
+    coverImage,
+    coverVideo,
     contentRating: storyContentRating as any,
   };
 }
@@ -1617,11 +1963,24 @@ export function init(): void {
     wizard.innerHTML = renderPhase();
     attachListeners();
     saveDraft();
+    if (phase === 'canvas' && selectedFormat === 'book' && isDesktopScreen() && activeEditorMode === 'storyboard') {
+      openStoryboard();
+    }
   };
 
   attachListenersGlobal = () => attachListeners();
 
+  window.addEventListener('resize', () => {
+    if (!isDesktopScreen() && document.querySelector('.storyboard-overlay')) {
+      document.querySelector('.storyboard-overlay')?.remove();
+      activeEditorMode = 'mobile';
+      updateView();
+      showDesktopRequiredModal();
+    }
+  });
+
   function openStorySettings(): void {
+    openStorySettingsGlobal = openStorySettings;
     // Save current state before opening settings
     const wizard = document.getElementById('create-wizard');
     if (!wizard) return;
@@ -1783,22 +2142,24 @@ export function init(): void {
         if (file) {
           try {
             const isVid = file.type.startsWith('video/');
+            const res = await uploadMedia(file, 'covers');
+            const mediaUrl = res.url;
+
             if (isVid) {
-              const dataUrl = await fileToDataUrl(file);
-              storyCoverVideo = dataUrl;
-              _coverThumbnail = dataUrl;
+              storyCoverVideo = mediaUrl;
+              _coverThumbnail = mediaUrl;
               if (modalThumbVideoPreview && modalThumbPreview && modalThumbPlaceholder) {
-                modalThumbVideoPreview.src = dataUrl;
+                modalThumbVideoPreview.src = mediaUrl;
                 modalThumbVideoPreview.style.display = 'block';
                 modalThumbPreview.style.display = 'none';
                 modalThumbPlaceholder.style.display = 'none';
+                ensureVideoPlayback(modalThumbVideoPreview);
               }
             } else {
-              const dataUrl = await fileToDataUrl(file);
-              _coverThumbnail = await compressImage(dataUrl);
+              _coverThumbnail = mediaUrl;
               storyCoverVideo = '';
               if (modalThumbPreview && modalThumbVideoPreview && modalThumbPlaceholder) {
-                modalThumbPreview.src = _coverThumbnail;
+                modalThumbPreview.src = mediaUrl;
                 modalThumbPreview.style.display = 'block';
                 modalThumbVideoPreview.style.display = 'none';
                 modalThumbPlaceholder.style.display = 'none';
@@ -2766,9 +3127,16 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         currentPage = bookPages.length - 1;
         updateView();
       });
-      document.getElementById('btn-dd-storyboard')?.addEventListener('click', () => {
-        openStoryboard();
-      });
+      const handleOpenStoryboard = () => {
+        if (isDesktopScreen()) {
+          activeEditorMode = 'storyboard';
+          openStoryboard();
+        } else {
+          showDesktopRequiredModal();
+        }
+      };
+      document.getElementById('btn-toolbar-switch-storyboard')?.addEventListener('click', handleOpenStoryboard);
+      document.getElementById('btn-dd-storyboard')?.addEventListener('click', handleOpenStoryboard);
 
       // Arrow navigation
       document.getElementById('btn-book-prev')?.addEventListener('click', () => {
@@ -2799,7 +3167,8 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       fileInput?.addEventListener('change', async () => {
         const file = fileInput.files?.[0];
         if (file) {
-          bookPages[i].image = await fileToDataUrl(file);
+          const res = await uploadMedia(file, 'stories');
+          bookPages[i].image = res.url;
           updateView();
         }
       });
@@ -2820,14 +3189,8 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       tileText?.addEventListener('input', handleTileText);
       tileText?.addEventListener('paste', () => setTimeout(handleTileText, 0));
 
-      // Save dialogue text
-      const tileDialog = wizard.querySelector(`[data-tile-dialog="${i}"]`) as HTMLTextAreaElement | null;
-      const handleTileDialog = () => {
-        if (tileDialog) bookPages[i].dialogText = tileDialog.value;
-        saveDraft();
-      };
-      tileDialog?.addEventListener('input', handleTileDialog);
-      tileDialog?.addEventListener('paste', () => setTimeout(handleTileDialog, 0));
+      // Wire multi-character dialogue line events for mobile canvas
+      wireDialogueLineEvents(wizard, 'mob', () => updateView());
 
 
       // Pre-record Audio for book page

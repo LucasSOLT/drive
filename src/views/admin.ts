@@ -23,6 +23,7 @@ import {
 } from '../lib/db.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { navigate } from '../router.ts';
+import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { setContentManagementMode } from '../state.ts';
 
 // ─── SVG Icons ───
@@ -390,7 +391,8 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
   }
 
   document.getElementById('btn-add-original')?.addEventListener('click', () => {
-    openFormatPopup();
+    // Standardized on Illustrated Book format (Waterfall Storyboard soft-deleted as inactive artifact)
+    navigate('admin-create?format=book');
   });
   if (storyGroups.length > 0) {
     attachOfficialCardListeners();
@@ -438,13 +440,21 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
              filter: brightness(${isFirst ? '1' : '0.78'});
            ">
         <div style="position: relative; aspect-ratio: 16/10; background: var(--color-bg); overflow: hidden;">
-          ${story.coverVideo
-            ? `<video src="${story.coverVideo}" poster="${coverSrc || ''}" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>`
-            : (coverSrc
-              ? `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" />`
-              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`
-            )
-          }
+          ${(() => {
+            const rawVid = (story.coverVideo && isVideoMedia(story.coverVideo))
+              ? story.coverVideo
+              : (coverSrc && isVideoMedia(coverSrc))
+                ? coverSrc
+                : null;
+            const posterImg = (!isVideoMedia(coverSrc) && coverSrc) || (!isVideoMedia(story.coverImage) && story.coverImage) || '';
+            if (rawVid) {
+              return `<video src="${rawVid}"${posterImg ? ` poster="${posterImg}"` : ''} autoplay loop muted playsinline webkit-playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>`;
+            }
+            if (coverSrc) {
+              return `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" />`;
+            }
+            return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`;
+          })()}
           <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
             <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; text-transform: uppercase;">${statusLabel}</span>
             <span style="background: rgba(139,92,246,0.9); color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">EP ${epNum}</span>
@@ -786,12 +796,16 @@ function editorFileToDataUrl(file: File): Promise<string> {
 
 function renderUploadBox(id: string, currentImage: string, label: string, height: string = '140px'): string {
   if (currentImage) {
+    const isVid = isVideoMedia(currentImage);
+    const mediaHtml = isVid
+      ? `<video src="${currentImage}" autoplay loop muted playsinline webkit-playsinline style="width: 100%; height: ${height}; object-fit: cover; border-radius: 10px; border: 1px solid var(--color-border); background: #000;"></video>`
+      : `<img src="${currentImage}" style="width: 100%; height: ${height}; object-fit: cover; border-radius: 10px; border: 1px solid var(--color-border);" />`;
     return `
       <div style="position: relative;">
-        <img src="${currentImage}" style="width: 100%; height: ${height}; object-fit: cover; border-radius: 10px; border: 1px solid var(--color-border);" />
+        ${mediaHtml}
         <button data-clear-upload="${id}" style="position: absolute; top: 6px; right: 6px; background: rgba(239,68,68,0.9); color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; justify-content: center;">✕</button>
         <button data-change-upload="${id}" style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 0.7rem;">Change</button>
-        <input type="file" accept="image/*" data-file-input="${id}" style="display: none;" />
+        <input type="file" accept="image/*,video/*" data-file-input="${id}" style="display: none;" />
       </div>
     `;
   }

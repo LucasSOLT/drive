@@ -104,6 +104,7 @@ export const stories: Story[] = [
 
 import { getUserStoryById } from '../state.ts';
 import { fetchLiveOfficialStories } from '../lib/db.ts';
+import { isVideoMedia } from '../lib/media.ts';
 
 let liveOfficialStories: Story[] = [];
 
@@ -113,6 +114,16 @@ fetchLiveOfficialStories()
     liveOfficialStories = res;
   })
   .catch(console.error);
+
+export async function refreshLiveStories(): Promise<Story[]> {
+  try {
+    liveOfficialStories = await fetchLiveOfficialStories();
+    return liveOfficialStories;
+  } catch (err) {
+    console.warn('[Stories] Failed to refresh live stories:', err);
+    return liveOfficialStories;
+  }
+}
 
 export function getStoryById(id: string): Story | undefined {
   // 1. Check live official stories from Supabase
@@ -127,6 +138,29 @@ export function getStoryById(id: string): Story | undefined {
   const userStory = getUserStoryById(id);
   if (userStory) {
     const pages = userStory.live_pages || userStory.pages || [];
+    const pageVideos: Record<number, string> = {};
+    pages.forEach((p: any, idx: number) => {
+      if (p && isVideoMedia(p.image)) {
+        pageVideos[idx] = p.image;
+      }
+    });
+
+    const rawCoverVideo = userStory.coverVideo || undefined;
+    const rawCoverImage = userStory.coverImage || '';
+    const firstPageImage = pages[0]?.image || '';
+
+    const coverVideo = (rawCoverVideo && isVideoMedia(rawCoverVideo))
+      ? rawCoverVideo
+      : isVideoMedia(rawCoverImage)
+        ? rawCoverImage
+        : isVideoMedia(firstPageImage)
+          ? firstPageImage
+          : undefined;
+
+    const coverImage = (!isVideoMedia(rawCoverImage) && rawCoverImage)
+      || (!isVideoMedia(firstPageImage) && firstPageImage)
+      || '';
+
     return {
       id: userStory.id,
       title: userStory.title,
@@ -134,11 +168,13 @@ export function getStoryById(id: string): Story | undefined {
       genre: userStory.genre,
       format: userStory.format,
       synopsis: userStory.synopsis || '',
-      coverImage: pages[0]?.image || '',
+      coverImage,
+      coverVideo,
       readCount: userStory.readCount || 0,
       isFeatured: userStory.isFeatured || false,
       isEditorPick: userStory.isEditorsPick || false,
       panels: pages.map((p: any) => p.image).filter(Boolean),
+      pageVideos,
       pageAudio: userStory.page_audio || {},
     };
   }

@@ -4,6 +4,7 @@ import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteU
 import { navigate } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory } from '../lib/db.ts';
+import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -23,15 +24,28 @@ function renderUserStoryCard(story: UserStory): string {
   const isDraft = story.status === 'draft';
   const canView = story.status === 'under-review' || story.status === 'published';
   const isDenied = story.status === 'denied';
-  const coverImage = story.coverImage || story.pages?.[0]?.image || story.live_pages?.[0]?.image;
+  const rawVideo = (story.coverVideo && isVideoMedia(story.coverVideo))
+    ? story.coverVideo
+    : (story.coverImage && isVideoMedia(story.coverImage))
+      ? story.coverImage
+      : (story.pages?.[0]?.image && isVideoMedia(story.pages[0].image))
+        ? story.pages[0].image
+        : (story.live_pages?.[0]?.image && isVideoMedia(story.live_pages[0].image))
+          ? story.live_pages[0].image
+          : null;
+
+  const rawImage = (!isVideoMedia(story.coverImage) && story.coverImage)
+    || (!isVideoMedia(story.pages?.[0]?.image) && story.pages?.[0]?.image)
+    || (!isVideoMedia(story.live_pages?.[0]?.image) && story.live_pages?.[0]?.image)
+    || '';
 
   return `
     <div class="lib-card slide-up" data-story-id="${story.id}">
       <div class="lib-card__cover">
-        ${story.coverVideo
-          ? `<video class="lib-card__cover-img" src="${story.coverVideo}" poster="${coverImage || ''}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
-          : coverImage
-            ? `<img class="lib-card__cover-img" src="${coverImage}" alt="${story.title}">`
+        ${rawVideo
+          ? `<video class="lib-card__cover-img" src="${rawVideo}"${rawImage ? ` poster="${rawImage}"` : ''} autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          : rawImage
+            ? `<img class="lib-card__cover-img" src="${rawImage}" alt="${story.title}">`
             : `<div class="lib-card__cover-empty">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
                   <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
@@ -67,14 +81,25 @@ function renderUserStoryCard(story: UserStory): string {
 }
 
 function renderAdminDraftCard(story: Story): string {
-  const coverImage = story.coverImage || story.panels?.[0];
+  const rawVideo = (story.coverVideo && isVideoMedia(story.coverVideo))
+    ? story.coverVideo
+    : (story.coverImage && isVideoMedia(story.coverImage))
+      ? story.coverImage
+      : (story.panels?.[0] && isVideoMedia(story.panels[0]))
+        ? story.panels[0]
+        : null;
+
+  const rawImage = (!isVideoMedia(story.coverImage) && story.coverImage)
+    || (!isVideoMedia(story.panels?.[0]) && story.panels?.[0])
+    || '';
+
   return `
     <div class="lib-card slide-up" data-admin-story-id="${story.id}">
       <div class="lib-card__cover">
-        ${story.coverVideo
-          ? `<video class="lib-card__cover-img" src="${story.coverVideo}" poster="${coverImage || ''}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
-          : coverImage
-            ? `<img class="lib-card__cover-img" src="${coverImage}" alt="${story.title}">`
+        ${rawVideo
+          ? `<video class="lib-card__cover-img" src="${rawVideo}"${rawImage ? ` poster="${rawImage}"` : ''} autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          : rawImage
+            ? `<img class="lib-card__cover-img" src="${rawImage}" alt="${story.title}">`
             : `<div class="lib-card__cover-empty">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
                   <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
@@ -179,15 +204,21 @@ function renderTrackedReadingCard(story: TrackedStory): string {
   };
 
   const statusInfo = statusLabels[story.status] || statusLabels['episode-1-access'];
-  const cover = story.storyCoverImage;
+  const rawVideo = (story.storyCoverVideo && isVideoMedia(story.storyCoverVideo))
+    ? story.storyCoverVideo
+    : (story.storyCoverImage && isVideoMedia(story.storyCoverImage))
+      ? story.storyCoverImage
+      : null;
+
+  const rawImage = (!isVideoMedia(story.storyCoverImage) && story.storyCoverImage) || '';
 
   return `
     <div class="lib-card reading-journey-card slide-up" data-tracked-story-id="${story.storyId}">
       <div class="lib-card__cover">
-        ${story.storyCoverVideo
-          ? `<video class="lib-card__cover-img" src="${story.storyCoverVideo}" poster="${cover || ''}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
-          : cover
-            ? `<img class="lib-card__cover-img" src="${cover}" alt="${story.storyTitle}">`
+        ${rawVideo
+          ? `<video class="lib-card__cover-img" src="${rawVideo}"${rawImage ? ` poster="${rawImage}"` : ''} autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
+          : rawImage
+            ? `<img class="lib-card__cover-img" src="${rawImage}" alt="${story.storyTitle}">`
             : `<div class="lib-card__cover-empty">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
                   <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
@@ -866,5 +897,10 @@ export function init(): void {
         },
       });
     });
+  });
+
+  // Ensure playback for all video covers in library
+  container.querySelectorAll<HTMLVideoElement>('video.lib-card__cover-img').forEach(v => {
+    ensureVideoPlayback(v);
   });
 }

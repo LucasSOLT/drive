@@ -1,6 +1,7 @@
 import { supabase } from './supabase.ts';
 import { getUser, isAuthenticated, getUserId } from './auth.ts';
 import type { Story, UserStory, UserSubscription, UserPlan } from '../types.ts';
+import { isVideoMedia } from './media.ts';
 
 // ═══════════════════════════════════════════════════════════
 // DRiVE Database Service Layer
@@ -324,6 +325,8 @@ export async function saveUserStory(story: UserStory): Promise<void> {
         status: story.status || 'draft',
         pages: story.pages || [],
         cover_image: story.coverImage || '',
+        characters: story.characters || [],
+        page_dialogue: story.page_dialogue || {},
       })
       .select('id')
       .single();
@@ -627,6 +630,8 @@ export async function fetchAdminStories(
     coverImage: s.cover_image || '',
     live_pages: s.live_pages || undefined,
     rejectionReason: s.rejection_reason || undefined,
+    characters: s.characters || [],
+    page_dialogue: s.page_dialogue || {},
     contentRating: s.content_rating || 'All Ages',
     isFeatured: s.is_featured || false,
     isEditorsPick: s.is_editors_pick || false,
@@ -721,6 +726,8 @@ export async function fetchPublishedExploreStories(): Promise<UserStory[]> {
     pages: s.live_pages || s.pages || [],
     coverImage: s.cover_image || '',
     page_audio: s.page_audio || {},
+    characters: s.characters || [],
+    page_dialogue: s.page_dialogue || {},
     contentRating: s.content_rating || 'All Ages',
     isFeatured: s.is_featured || false,
     isEditorsPick: s.is_editors_pick || false,
@@ -737,6 +744,60 @@ export async function fetchFeaturedStories(): Promise<Story[]> {
 // OFFICIAL STORIES (DRiVE ORIGINALS) SERVICES
 // ═══════════════════════════════════════════════
 
+function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story {
+  const panels = Array.isArray(s.panels) ? s.panels : [];
+  const pageVideos: Record<number, string> = { ...(s.page_videos || {}) };
+
+  // Auto-detect video panels if not already in page_videos
+  panels.forEach((p: string, idx: number) => {
+    if (!pageVideos[idx] && isVideoMedia(p)) {
+      pageVideos[idx] = p;
+    }
+  });
+
+  const rawCoverVideo = s.cover_video || undefined;
+  const rawCoverImage = s.cover_image || '';
+  const firstPanel = panels[0] || '';
+
+  const coverVideo = (rawCoverVideo && isVideoMedia(rawCoverVideo))
+    ? rawCoverVideo
+    : isVideoMedia(rawCoverImage)
+      ? rawCoverImage
+      : isVideoMedia(firstPanel)
+        ? firstPanel
+        : undefined;
+
+  const coverImage = (!isVideoMedia(rawCoverImage) && rawCoverImage)
+    || (!isVideoMedia(firstPanel) && firstPanel)
+    || '';
+
+  return {
+    id: s.id,
+    title: s.title,
+    author: s.author || 'DRiVE Studios',
+    genre: s.genre,
+    format: s.format,
+    synopsis: s.synopsis || '',
+    coverImage,
+    coverVideo,
+    readCount: s.read_count || 0,
+    isFeatured: s.is_featured || false,
+    isEditorPick: s.is_editor_pick || false,
+    sortOrder: s.sort_order || 0,
+    panels,
+    pageVideos,
+    pageScripts: s.page_scripts || {},
+    pageAudio: s.page_audio || {},
+    characters: s.characters || [],
+    pageDialogue: s.page_dialogue || {},
+    contentRating: s.content_rating || 'All Ages',
+    isOfficial: true,
+    officialStatus: forcedStatus || s.status || 'draft',
+    storyGroupId: s.story_group_id || s.id,
+    episodeNumber: s.episode_number || 1,
+  };
+}
+
 /** Fetch all official stories sorted by sort_order ASC, then created_at DESC */
 export async function fetchOfficialStories(): Promise<Story[]> {
   const { data, error } = await supabase
@@ -751,29 +812,7 @@ export async function fetchOfficialStories(): Promise<Story[]> {
     return [];
   }
 
-  return (data || []).map((s: any) => ({
-    id: s.id,
-    title: s.title,
-    author: s.author || 'DRiVE Studios',
-    genre: s.genre,
-    format: s.format,
-    synopsis: s.synopsis || '',
-    coverImage: s.cover_image || (Array.isArray(s.panels) && s.panels[0]) || '',
-    coverVideo: s.cover_video || undefined,
-    readCount: s.read_count || 0,
-    isFeatured: s.is_featured || false,
-    isEditorPick: s.is_editor_pick || false,
-    sortOrder: s.sort_order || 0,
-    panels: Array.isArray(s.panels) ? s.panels : [],
-    pageVideos: s.page_videos || {},
-    pageScripts: s.page_scripts || {},
-    pageAudio: s.page_audio || {},
-    contentRating: s.content_rating || 'All Ages',
-    isOfficial: true,
-    officialStatus: s.status || 'draft',
-    storyGroupId: s.story_group_id || s.id,
-    episodeNumber: s.episode_number || 1,
-  }));
+  return (data || []).map((s: any) => mapOfficialStoryRecord(s));
 }
 
 /** Create or update an official story */
@@ -797,6 +836,8 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     page_videos: story.pageVideos || {},
     page_scripts: story.pageScripts || {},
     page_audio: story.pageAudio || {},
+    characters: story.characters || [],
+    page_dialogue: story.pageDialogue || {},
     content_rating: story.contentRating || 'All Ages',
     status: story.officialStatus || 'draft',
     created_by: userId,
@@ -882,29 +923,7 @@ export async function fetchLiveOfficialStories(): Promise<Story[]> {
     return [];
   }
 
-  return (data || []).map((s: any) => ({
-    id: s.id,
-    title: s.title,
-    author: s.author || 'DRiVE Studios',
-    genre: s.genre,
-    format: s.format,
-    synopsis: s.synopsis || '',
-    coverImage: s.cover_image || (Array.isArray(s.panels) && s.panels[0]) || '',
-    coverVideo: s.cover_video || undefined,
-    readCount: s.read_count || 0,
-    isFeatured: s.is_featured || false,
-    isEditorPick: s.is_editor_pick || false,
-    sortOrder: s.sort_order || 0,
-    panels: Array.isArray(s.panels) ? s.panels : [],
-    pageVideos: s.page_videos || {},
-    pageScripts: s.page_scripts || {},
-    pageAudio: s.page_audio || {},
-    contentRating: s.content_rating || 'All Ages',
-    isOfficial: true,
-    officialStatus: 'live' as const,
-    storyGroupId: s.story_group_id || s.id,
-    episodeNumber: s.episode_number || 1,
-  }));
+  return (data || []).map((s: any) => mapOfficialStoryRecord(s, 'live'));
 }
 
 /** Set an official story to LIVE */
@@ -1004,6 +1023,29 @@ export async function fetchUnifiedExploreStories(options?: {
     const reads = us.readCount || 0;
     const popularityScore = (likes * 3) + reads;
 
+    const pageVideos: Record<number, string> = {};
+    pages.forEach((p: any, idx: number) => {
+      if (p && isVideoMedia(p.image)) {
+        pageVideos[idx] = p.image;
+      }
+    });
+
+    const rawCoverVideo = us.coverVideo || undefined;
+    const rawCoverImage = us.coverImage || '';
+    const firstPageImage = pages[0]?.image || '';
+
+    const coverVideo = (rawCoverVideo && isVideoMedia(rawCoverVideo))
+      ? rawCoverVideo
+      : isVideoMedia(rawCoverImage)
+        ? rawCoverImage
+        : isVideoMedia(firstPageImage)
+          ? firstPageImage
+          : undefined;
+
+    const coverImage = (!isVideoMedia(rawCoverImage) && rawCoverImage)
+      || (!isVideoMedia(firstPageImage) && firstPageImage)
+      || '';
+
     return {
       id: us.id,
       title: us.title,
@@ -1011,13 +1053,17 @@ export async function fetchUnifiedExploreStories(options?: {
       genre: us.genre,
       format: us.format,
       synopsis: us.synopsis || '',
-      coverImage: pages[0]?.image || '',
+      coverImage,
+      coverVideo,
       readCount: reads,
       isFeatured: us.isFeatured || false,
       isEditorPick: us.isEditorsPick || false,
       sortOrder: us.sortOrder || 999,
       panels: pages.map((p: any) => p.image).filter(Boolean),
+      pageVideos,
       pageAudio: us.page_audio || {},
+      pageDialogue: us.page_dialogue || {},
+      characters: us.characters || [],
       contentRating: us.contentRating || 'All Ages',
       isOfficial: false,
     };

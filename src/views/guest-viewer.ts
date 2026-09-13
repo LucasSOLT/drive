@@ -1,6 +1,7 @@
 import { getRouteParam } from '../router.ts';
 import { getUserStoryById } from '../state.ts';
 import { speakText, stopSpeaking, isSpeaking } from '../lib/tts.ts';
+import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 
 // ─── Types ───
 interface StoryPage {
@@ -31,6 +32,9 @@ function getStory(): UserStoryWithPages | null {
 
 function renderPageImage(page: StoryPage, pageIndex: number): string {
   if (page.image) {
+    if (isVideoMedia(page.image)) {
+      return `<video class="guest-viewer__image guest-viewer__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:contain;"></video>`;
+    }
     return `<img class="guest-viewer__image" src="${page.image}" alt="Page ${pageIndex + 1}">`;
   }
   return `
@@ -136,6 +140,9 @@ export function init(): void {
 
     body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking);
     wirePageControls();
+
+    const vidEl = body.querySelector('.guest-viewer__video') as HTMLVideoElement | null;
+    if (vidEl) ensureVideoPlayback(vidEl);
   }
 
   // ─── Wire up interactive controls on the current page ───
@@ -185,4 +192,7 @@ export function init(): void {
 
   // Initial wiring
   wirePageControls();
+
+  const initialVid = viewer.querySelector('.guest-viewer__video') as HTMLVideoElement | null;
+  if (initialVid) ensureVideoPlayback(initialVid);
 }

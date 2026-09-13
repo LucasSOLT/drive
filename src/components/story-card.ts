@@ -1,4 +1,5 @@
 import type { Story } from '../types.ts';
+import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 
 const FORMAT_ICONS: Record<string, string> = {
   'scroll': '📜 Waterfall Storyboard',
@@ -6,13 +7,31 @@ const FORMAT_ICONS: Record<string, string> = {
 };
 
 function renderCover(story: Story, cssClass: string = 'story-card__cover'): string {
-  if (story.coverVideo) {
-    const posterAttr = story.coverImage ? ` poster="${story.coverImage}"` : '';
-    return `<video class="${cssClass} story-card__video" src="${story.coverVideo}"${posterAttr} muted loop playsinline preload="auto" style="width:100%;height:100%;object-fit:cover;"></video>`;
+  // Determine if there is a cover video: explicit coverVideo, or coverImage is video, or panels[0] is video
+  const videoSrc = (story.coverVideo && isVideoMedia(story.coverVideo))
+    ? story.coverVideo
+    : (story.coverImage && isVideoMedia(story.coverImage))
+      ? story.coverImage
+      : (story.panels && story.panels[0] && isVideoMedia(story.panels[0]))
+        ? story.panels[0]
+        : null;
+
+  if (videoSrc) {
+    const poster = (story.coverImage && !isVideoMedia(story.coverImage)) ? story.coverImage : '';
+    const posterAttr = poster ? ` poster="${poster}"` : '';
+    return `<video class="${cssClass} story-card__video" src="${videoSrc}"${posterAttr} autoplay loop muted playsinline webkit-playsinline preload="auto" style="width:100%;height:100%;object-fit:cover;"></video>`;
   }
-  if (story.coverImage) {
-    return `<img class="${cssClass}" src="${story.coverImage}" alt="${story.title}" loading="lazy" />`;
+
+  const imgSrc = (story.coverImage && !isVideoMedia(story.coverImage))
+    ? story.coverImage
+    : (story.panels && story.panels[0] && !isVideoMedia(story.panels[0]))
+      ? story.panels[0]
+      : null;
+
+  if (imgSrc) {
+    return `<img class="${cssClass}" src="${imgSrc}" alt="${story.title}" loading="lazy" />`;
   }
+
   // No cover — show a gradient placeholder
   return `<div class="${cssClass}" style="width:100%;height:100%;background:linear-gradient(135deg,#1a1a2e,#16213e);"></div>`;
 }
@@ -73,16 +92,43 @@ export function renderStoryCard(story: Story, variant: 'full' | 'compact' | 'her
   `;
 }
 
-/** Attach hover-to-play for all video story cards inside a container */
+let videoObserver: IntersectionObserver | null = null;
+
+function getVideoObserver(): IntersectionObserver | null {
+  if (typeof IntersectionObserver === 'undefined') return null;
+  if (!videoObserver) {
+    videoObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const videoEl = entry.target as HTMLVideoElement;
+        if (entry.isIntersecting) {
+          ensureVideoPlayback(videoEl);
+        } else {
+          videoEl.pause();
+        }
+      });
+    }, { threshold: 0.15 });
+  }
+  return videoObserver;
+}
+
+/** Attach auto-play in view and hover-to-play for all video story cards inside a container */
 export function initVideoCovers(container: HTMLElement): void {
+  const observer = getVideoObserver();
+
   container.querySelectorAll('.story-card__video').forEach(video => {
     const videoEl = video as HTMLVideoElement;
+    ensureVideoPlayback(videoEl);
+
+    if (observer) {
+      observer.observe(videoEl);
+    }
+
     const card = videoEl.closest('.story-card');
     if (!card) return;
 
     card.addEventListener('mouseenter', () => {
       videoEl.currentTime = 0;
-      videoEl.play().catch(() => {});
+      ensureVideoPlayback(videoEl);
     });
     card.addEventListener('mouseleave', () => {
       videoEl.pause();

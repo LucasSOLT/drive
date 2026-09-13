@@ -1,7 +1,9 @@
 import { getRouteParam, navigate } from '../router.ts';
 import { getUserStories } from '../state.ts';
-import { speakText, stopSpeaking, isSpeaking, playAudioUrl } from '../lib/tts.ts';
+import { speakText, stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence } from '../lib/tts.ts';
 import { getSettings } from '../lib/settings.ts';
+import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
+import type { DialogueLine } from '../types.ts';
 
 // ─── Types ───
 interface StoryPage {
@@ -35,6 +37,9 @@ function getStory(): UserStoryWithPages | null {
 
 function renderPageImage(page: StoryPage, pageIndex: number): string {
   if (page.image) {
+    if (isVideoMedia(page.image)) {
+      return `<video class="book-viewer__image book-viewer__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:contain;"></video>`;
+    }
     return `<img class="book-viewer__image" src="${page.image}" alt="Page ${pageIndex + 1}">`;
   }
   return `
@@ -163,10 +168,24 @@ export function init(): void {
     body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking, hasAudio, textCollapsed);
     wirePageControls();
 
+    const vidEl = body.querySelector('.book-viewer__video') as HTMLVideoElement | null;
+    if (vidEl) ensureVideoPlayback(vidEl);
+
     // Autoplay if setting is on and page has pre-recorded audio
     if (getSettings().autoPlay && hasAudio && !speaking) {
       speaking = true;
-      playAudioUrl(pageAudio[currentPage]);
+      const dialogueLines = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage];
+      if (dialogueLines && dialogueLines.length > 0) {
+        const audioUrls = dialogueLines.map((l: DialogueLine) => l.audioUrl || null);
+        const hasDialogueAudio = audioUrls.some((u: string | null) => !!u);
+        if (hasDialogueAudio) {
+          playAudioSequence(audioUrls);
+        } else {
+          playAudioUrl(pageAudio[currentPage]);
+        }
+      } else {
+        playAudioUrl(pageAudio[currentPage]);
+      }
       // Update UI to show speaking state
       const audioBtn = document.getElementById('bv-audio-toggle');
       if (audioBtn) {
@@ -207,7 +226,18 @@ export function init(): void {
         const audioUrl = pageAudio[currentPage];
         if (audioUrl) {
           speaking = true;
-          playAudioUrl(audioUrl);
+          const dialogueLines = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage];
+          if (dialogueLines && dialogueLines.length > 0) {
+            const audioUrls = dialogueLines.map((l: DialogueLine) => l.audioUrl || null);
+            const hasDialogueAudio = audioUrls.some((u: string | null) => !!u);
+            if (hasDialogueAudio) {
+              playAudioSequence(audioUrls);
+            } else {
+              playAudioUrl(audioUrl);
+            }
+          } else {
+            playAudioUrl(audioUrl);
+          }
           updatePage();
         }
       }
@@ -244,4 +274,7 @@ export function init(): void {
 
   // Initial wiring
   wirePageControls();
+
+  const initialVid = viewer.querySelector('.book-viewer__video') as HTMLVideoElement | null;
+  if (initialVid) ensureVideoPlayback(initialVid);
 }
