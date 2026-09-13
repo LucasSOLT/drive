@@ -1,5 +1,6 @@
 import { getRouteParam, navigate } from '../router.ts';
 import { getUserStories } from '../state.ts';
+import { getStoryById } from '../data/stories.ts';
 import { speakText, stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence } from '../lib/tts.ts';
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
@@ -16,6 +17,8 @@ interface UserStoryWithPages {
   title: string;
   pages?: StoryPage[];
   page_audio?: Record<number, string>;
+  characters?: any[];
+  page_dialogue?: Record<number, DialogueLine[]>;
 }
 
 // ─── SVG Icons ───
@@ -32,7 +35,25 @@ function getStory(): UserStoryWithPages | null {
   const storyId = getRouteParam();
   if (!storyId) return null;
   const stories = getUserStories() as UserStoryWithPages[];
-  return stories.find(s => s.id === storyId) || null;
+  const found = stories.find(s => s.id === storyId);
+  if (found) return found;
+
+  const official = getStoryById(storyId);
+  if (official) {
+    return {
+      id: official.id,
+      title: official.title,
+      pages: official.panels.map((img, i) => ({
+        image: img,
+        text: official.pageScripts?.[i] || ''
+      })),
+      page_audio: official.pageAudio,
+      characters: official.characters,
+      page_dialogue: official.pageDialogue,
+    } as UserStoryWithPages;
+  }
+
+  return null;
 }
 
 function renderPageImage(page: StoryPage, pageIndex: number): string {
@@ -117,12 +138,28 @@ export function render(): string {
   const story = getStory();
 
   if (!story) {
-    return `<div class="book-viewer book-viewer--error"><p>Story not found.</p></div>`;
+    return `
+      <div class="book-viewer book-viewer--error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100dvh; gap:16px; padding:20px; text-align:center;">
+        <button class="book-viewer__back" onclick="window.history.length > 1 ? window.history.back() : window.location.hash='home'" aria-label="Go back" style="position:absolute; top:16px; left:16px;">
+          ${ICON.back}
+        </button>
+        <p style="color:var(--color-text-secondary); font-size:1.05rem;">Story not found.</p>
+        <button class="btn btn--secondary" onclick="window.history.length > 1 ? window.history.back() : window.location.hash='home'" style="padding:8px 20px;">← Go Back</button>
+      </div>
+    `;
   }
 
   const pages = story.pages || [];
   if (pages.length === 0) {
-    return `<div class="book-viewer book-viewer--error"><p>This story has no pages yet.</p></div>`;
+    return `
+      <div class="book-viewer book-viewer--error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100dvh; gap:16px; padding:20px; text-align:center;">
+        <button class="book-viewer__back" onclick="window.history.length > 1 ? window.history.back() : window.location.hash='home'" aria-label="Go back" style="position:absolute; top:16px; left:16px;">
+          ${ICON.back}
+        </button>
+        <p style="color:var(--color-text-secondary); font-size:1.05rem;">This story has no pages yet.</p>
+        <button class="btn btn--secondary" onclick="window.history.length > 1 ? window.history.back() : window.location.hash='home'" style="padding:8px 20px;">← Go Back</button>
+      </div>
+    `;
   }
 
   return `

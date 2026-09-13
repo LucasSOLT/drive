@@ -1358,3 +1358,65 @@ export function setCachedFriendCode(code: string): void {
     (_profile as any).friend_code = code;
   }
 }
+
+/** Fetch a story by its ID from either official_stories or user_stories */
+export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
+  // 1. Check official_stories
+  try {
+    const { data: offData, error: offErr } = await supabase
+      .from('official_stories')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!offErr && offData) {
+      return mapOfficialStoryRecord(offData);
+    }
+  } catch (e) {
+    console.warn('[DB] Error querying official_stories by id:', e);
+  }
+
+  // 2. Check user_stories
+  try {
+    const { data: uData, error: uErr } = await supabase
+      .from('user_stories')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!uErr && uData) {
+      const pages = uData.live_pages || uData.pages || [];
+      const panels = pages.map((p: any) => p?.image).filter(Boolean);
+      const pageScripts: Record<number, string> = {};
+      const pageVideos: Record<number, string> = {};
+      pages.forEach((p: any, idx: number) => {
+        if (p?.text) pageScripts[idx] = p.text;
+        if (p?.image && isVideoMedia(p.image)) pageVideos[idx] = p.image;
+      });
+
+      return {
+        id: uData.id,
+        title: uData.title,
+        author: uData.author_name || 'DRiVE Author',
+        genre: uData.genre,
+        format: uData.format || 'book',
+        synopsis: uData.synopsis || '',
+        coverImage: uData.cover_image || panels[0] || '',
+        readCount: uData.read_count || 0,
+        isFeatured: uData.is_featured || false,
+        isEditorPick: uData.is_editors_pick || false,
+        panels,
+        pageVideos,
+        pageScripts,
+        pageAudio: uData.page_audio || {},
+        characters: uData.characters || [],
+        pageDialogue: uData.page_dialogue || {},
+      };
+    }
+  } catch (e) {
+    console.warn('[DB] Error querying user_stories by id:', e);
+  }
+
+  return null;
+}
+

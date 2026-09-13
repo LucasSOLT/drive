@@ -19,7 +19,7 @@ function renderCover(story: Story, cssClass: string = 'story-card__cover'): stri
   if (videoSrc) {
     const poster = (story.coverImage && !isVideoMedia(story.coverImage)) ? story.coverImage : '';
     const posterAttr = poster ? ` poster="${poster}"` : '';
-    return `<video class="${cssClass} story-card__video" src="${videoSrc}"${posterAttr} autoplay loop muted playsinline webkit-playsinline preload="auto" style="width:100%;height:100%;object-fit:cover;"></video>`;
+    return `<video class="${cssClass} story-card__video" src="${videoSrc}"${posterAttr} loop muted playsinline webkit-playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>`;
   }
 
   const imgSrc = (story.coverImage && !isVideoMedia(story.coverImage))
@@ -29,7 +29,7 @@ function renderCover(story: Story, cssClass: string = 'story-card__cover'): stri
       : null;
 
   if (imgSrc) {
-    return `<img class="${cssClass}" src="${imgSrc}" alt="${story.title}" loading="lazy" />`;
+    return `<img class="${cssClass}" src="${imgSrc}" alt="${story.title}" loading="lazy" decoding="async" />`;
   }
 
   // No cover — show a gradient placeholder
@@ -117,10 +117,11 @@ export function initVideoCovers(container: HTMLElement): void {
 
   container.querySelectorAll('.story-card__video').forEach(video => {
     const videoEl = video as HTMLVideoElement;
-    ensureVideoPlayback(videoEl);
 
     if (observer) {
       observer.observe(videoEl);
+    } else {
+      ensureVideoPlayback(videoEl);
     }
 
     const card = videoEl.closest('.story-card');

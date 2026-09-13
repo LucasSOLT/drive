@@ -355,3 +355,35 @@ export function setContentManagementMode(active: boolean): void {
     }
   } catch {}
 }
+
+// ─── Slot Overrides (Content Management Mode) ───
+const SLOT_OVERRIDES_KEY = 'drive_slot_overrides';
+
+export function getSlotOverrides(): Record<string, string | null> {
+  try {
+    const raw = localStorage.getItem(SLOT_OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function getSlotOverride(slotType: string, slotIndex: number): string | null | undefined {
+  const overrides = getSlotOverrides();
+  const key = `${slotType}_${slotIndex}`;
+  return overrides[key];
+}
+
+export function setSlotOverride(slotType: string, slotIndex: number, storyId: string | null): void {
+  try {
+    const overrides = getSlotOverrides();
+    const key = `${slotType}_${slotIndex}`;
+    if (storyId === undefined) {
+      delete overrides[key];
+    } else {
+      overrides[key] = storyId;
+    }
+    localStorage.setItem(SLOT_OVERRIDES_KEY, JSON.stringify(overrides));
+  } catch {}
+}
+

@@ -960,8 +960,22 @@ function renderDialogueLines(pageIdx: number, lines: DialogueLine[], prefix: str
 
   return `
   <div class="sb-dialog-lines" data-${prefix}-lines="${pageIdx}">
+    ${storyCharacters.length === 0 ? `
+      <div style="background:rgba(138,99,210,0.08); border:1.5px dashed var(--color-purple); border-radius:10px; padding:12px; margin-bottom:8px; font-size:0.75rem; color:var(--color-text-secondary); text-align:center;">
+        <div style="font-weight:700; color:var(--color-purple); font-size:0.85rem; margin-bottom:4px;">🎭 Characters & Cast Voices</div>
+        <div>Define named characters and give each their own voice from 26 ElevenLabs options.</div>
+        <div style="margin-top:8px;">
+          <button data-open-char-settings="true" type="button" style="background:var(--color-purple); color:white; border:none; border-radius:8px; padding:6px 14px; font-size:0.75rem; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(138,99,210,0.3);">
+            Open Cast Voices Manager
+          </button>
+        </div>
+      </div>
+    ` : ''}
     ${linesHtml}
-    <button class="sb-dialog-add-line" data-${prefix}-add-line="${pageIdx}" type="button">+ Add Dialogue Line</button>
+    <div style="display:flex; gap:6px; margin-top:4px;">
+      <button class="sb-dialog-add-line" data-${prefix}-add-line="${pageIdx}" type="button" style="flex:1;">+ Add Dialogue Line</button>
+      <button class="sb-dialog-line__btn" data-open-char-settings="true" type="button" title="Manage character voices in Story Settings" style="white-space:nowrap; padding:6px 10px; font-size:0.72rem; font-weight:700;">🎭 Cast & Voices</button>
+    </div>
     ${lines.length > 0 ? `
       <button class="sb-dialog-batch-btn" data-${prefix}-batch-rec="${pageIdx}" type="button">🎙️ Pre-record Page Dialogue</button>
       ${hasAnyAudio ? `<button class="sb-dialog-play-all" data-${prefix}-play-all="${pageIdx}" type="button">▶ Play All Dialogue</button>` : ''}
@@ -998,15 +1012,14 @@ function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => voi
 
   document.getElementById('qa-cancel')?.addEventListener('click', () => { overlay.remove(); callback(null); });
   document.getElementById('qa-save')?.addEventListener('click', () => {
-    const name = (document.getElementById('qa-char-name') as HTMLInputElement)?.value.trim();
-    const voiceId = (document.getElementById('qa-char-voice') as HTMLSelectElement)?.value;
-    if (!name) { (document.getElementById('qa-char-name') as HTMLInputElement)?.focus(); return; }
-    const ch: StoryCharacter = {
-      id: 'char_' + Date.now(),
-      name,
-      voiceId: voiceId || VOICE_OPTIONS[0].voiceId,
-      color: CHAR_COLORS[storyCharacters.length % CHAR_COLORS.length],
-    };
+    const nameInput = document.getElementById('qa-char-name') as HTMLInputElement | null;
+    const voiceSelect = document.getElementById('qa-char-voice') as HTMLSelectElement | null;
+    const name = nameInput?.value.trim();
+    if (!name) return;
+
+    const voiceId = voiceSelect?.value || VOICE_OPTIONS[0]?.voiceId || '';
+    const color = CHAR_COLORS[storyCharacters.length % CHAR_COLORS.length];
+    const ch: StoryCharacter = { id: 'char_' + Date.now(), name, voiceId, color };
     storyCharacters.push(ch);
     saveDraft();
     overlay.remove();
@@ -1019,6 +1032,17 @@ function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => voi
 /** Wire event handlers for multi-character dialogue lines on a given container.
  *  prefix: 'mob' for mobile canvas, 'sbd' for storyboard overlay */
 function wireDialogueLineEvents(container: HTMLElement | Document, prefix: string, refreshView: () => void): void {
+  // Open Story Settings for characters
+  container.querySelectorAll('[data-open-char-settings]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openStorySettings();
+      setTimeout(() => {
+        const card = document.querySelector('.ss-characters-card');
+        if (card) card.scrollIntoView({ behavior: 'smooth' });
+      }, 150);
+    });
+  });
+
   // Add dialogue line
   container.querySelectorAll(`[data-${prefix}-add-line]`).forEach(btn => {
     btn.addEventListener('click', () => {

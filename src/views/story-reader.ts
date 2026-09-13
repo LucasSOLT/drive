@@ -1,7 +1,8 @@
 import { openSquadGateModal } from '../components/squad-gate-modal.ts';
 import { trackStoryReading, updateTrackedStoryStatus } from '../lib/reading-tracker.ts';
 import { getRouteParam, navigate } from '../router.ts';
-import { getStoryById } from '../data/stories.ts';
+import { getStoryById, registerStory } from '../data/stories.ts';
+import { fetchStoryByIdFromDb } from '../lib/db.ts';
 import {
   getStoryLikes, hasUserLiked, toggleStoryLike,
   isBookmarked, toggleBookmark
@@ -89,10 +90,32 @@ function renderEpisode1InfoPage(format: 'book' | 'scroll'): string {
 
 export function render(): string {
   const storyId = getRouteParam();
-  if (!storyId) return '<div class="reader-error">No story ID provided.</div>';
+  if (!storyId) {
+    return `
+      <div class="reader-error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100dvh; gap:16px; text-align:center; padding:20px;">
+        <p style="font-size:1.1rem; color:var(--color-text-secondary);">No story ID provided.</p>
+        <button class="btn btn--secondary" onclick="window.history.back()" style="padding:8px 20px;">← Go Back</button>
+      </div>
+    `;
+  }
 
   const story = getStoryById(storyId);
-  if (!story) return '<div class="reader-error">Story not found.</div>';
+  if (!story) {
+    return `
+      <div class="reader reader--loading" id="reader-container" data-story-id="${storyId}">
+        <header class="reader__header" style="display:flex;">
+          <button class="reader__header-btn reader__header-btn--back" id="reader-back" aria-label="Go back" onclick="window.history.back()">
+            ${ICON.back}
+          </button>
+        </header>
+        <div class="reader__content" id="reader-content" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:calc(100dvh - 60px); gap:16px;">
+          <div style="width:36px; height:36px; border:3px solid rgba(255,255,255,0.15); border-top-color:var(--color-purple); border-radius:50%; animation:spin 1s linear infinite;"></div>
+          <p style="color:var(--color-text-secondary); font-size:0.95rem;">Loading story...</p>
+          <button class="btn btn--secondary" onclick="window.history.back()" style="margin-top:12px; font-size:0.85rem; padding:8px 16px;">← Back to Stories</button>
+        </div>
+      </div>
+    `;
+  }
 
   const liked = hasUserLiked(storyId);
   const likeCount = getStoryLikes(storyId);
@@ -130,8 +153,8 @@ export function render(): string {
     const scriptText = story.pageScripts && story.pageScripts[0] ? story.pageScripts[0] : '';
     const hasAudio = !!story.pageAudio?.[0];
     const firstPageMedia = isVideoPage
-      ? `<video id="book-video" src="${page0Media}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:auto;border-radius:8px;"></video>`
-      : `<img id="book-img" src="${story.panels?.[0] || ''}" alt="Page 1">`;
+      ? `<video id="book-video" src="${page0Media}" autoplay loop muted playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"></video>`
+      : `<img id="book-img" src="${story.panels?.[0] || ''}" alt="Page 1" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">`;
 
     contentHtml = `
       <div class="reader__book-content">
@@ -238,8 +261,28 @@ export function init(): void {
   if (!container) return;
 
   const storyId = container.dataset.storyId || '';
-  const story = getStoryById(storyId);
-  if (!story) return;
+  let story = getStoryById(storyId);
+  if (!story) {
+    fetchStoryByIdFromDb(storyId).then(fetched => {
+      if (fetched) {
+        registerStory(fetched);
+        const viewContainer = document.getElementById('view-container');
+        if (viewContainer) {
+          viewContainer.innerHTML = render();
+          init();
+        }
+      } else {
+        const content = container.querySelector('#reader-content') || container;
+        content.innerHTML = `
+          <div class="reader-error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:80dvh; gap:16px; text-align:center; padding:20px;">
+            <p style="font-size:1.1rem; color:var(--color-text-secondary);">Story not found or unavailable.</p>
+            <button class="btn btn--secondary" onclick="window.history.length > 1 ? window.history.back() : window.location.hash = 'explore'" style="padding:8px 20px;">← Back to Stories</button>
+          </div>
+        `;
+      }
+    });
+    return;
+  }
 
   // Auto-track reading session in My Stories library
   trackStoryReading({
@@ -266,7 +309,13 @@ export function init(): void {
   const header = document.getElementById('reader-header');
 
   // ─── Back button ───
-  document.getElementById('reader-back')?.addEventListener('click', () => navigate('home'));
+  document.getElementById('reader-back')?.addEventListener('click', () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      navigate('home');
+    }
+  });
 
   // ─── Auto-hide header on scroll ───
   let lastScroll = 0;
@@ -428,11 +477,11 @@ export function init(): void {
           const isVideo = isVideoMedia(currentMedia) || !!(story.pageVideos && story.pageVideos[currentPage]);
           const hasAudio = !!story.pageAudio?.[currentPage];
           if (isVideo) {
-            pageContainer.innerHTML = `<video id="book-video" src="${currentMedia}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:auto;border-radius:8px;"></video>`;
+            pageContainer.innerHTML = `<video id="book-video" src="${currentMedia}" autoplay loop muted playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"></video>`;
             const bv = pageContainer.querySelector('#book-video') as HTMLVideoElement | null;
             if (bv) ensureVideoPlayback(bv);
           } else {
-            pageContainer.innerHTML = `<img id="book-img" src="${story.panels?.[currentPage] || ''}" alt="Page ${currentPage + 1}">`;
+            pageContainer.innerHTML = `<img id="book-img" src="${story.panels?.[currentPage] || ''}" alt="Page ${currentPage + 1}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">`;
           }
           // Add audio play button if page has audio
           if (hasAudio) {

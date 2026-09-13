@@ -174,12 +174,39 @@ export function getStoryById(id: string): Story | undefined {
       isFeatured: userStory.isFeatured || false,
       isEditorPick: userStory.isEditorsPick || false,
       panels: pages.map((p: any) => p.image).filter(Boolean),
-      pageVideos,
       pageAudio: userStory.page_audio || {},
+      characters: userStory.characters || [],
+      pageDialogue: userStory.page_dialogue || {},
     };
   }
 
+  // 4. Fallback to registered stories (e.g. from explore or admin)
+  const regFound = registeredStories.find(s => s.id === id);
+  if (regFound) return regFound;
+
   return undefined;
+}
+
+const registeredStories: Story[] = [];
+
+export function registerStories(list: Story[]): void {
+  list.forEach(s => {
+    const idx = registeredStories.findIndex(e => e.id === s.id);
+    if (idx >= 0) {
+      registeredStories[idx] = s;
+    } else {
+      registeredStories.push(s);
+    }
+  });
+}
+
+export function registerStory(s: Story): void {
+  const idx = registeredStories.findIndex(e => e.id === s.id);
+  if (idx >= 0) {
+    registeredStories[idx] = s;
+  } else {
+    registeredStories.push(s);
+  }
 }
 
 export function getStoriesByGenre(genre: Genre): Story[] {

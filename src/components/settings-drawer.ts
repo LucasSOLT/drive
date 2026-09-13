@@ -222,8 +222,12 @@ function renderSettingsDrawer(): string {
 
           <!-- VOICE -->
           <div class="settings-section">
-            <h3 class="settings-section__title">Narrator Voice</h3>
-            <p class="settings-section__subtitle">Tap a card to select · press ▶ to preview</p>
+            <h3 class="settings-section__title">Default Narrator Voice</h3>
+            <p class="settings-section__subtitle">Global default voice · Tap to select · Press ▶ to preview</p>
+            <div style="background: rgba(138,99,210,0.09); border: 1px dashed rgba(138,99,210,0.35); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 0.74rem; color: var(--color-text-secondary); line-height: 1.45;">
+              <span style="font-weight: 700; color: var(--color-purple); display: block; margin-bottom: 2px;">🎭 Looking for Character & Cast Voices?</span>
+              Character voices are configured per-story! Open any story in <strong>Creator</strong> and tap <strong>⚙️ Story Settings → Characters & Cast Voices</strong> or the <strong>🎭 Cast & Voices</strong> button in the dialogue editor.
+            </div>
             <div class="settings-voice-grid" id="settings-voice-grid">
               ${voiceCards}
             </div>

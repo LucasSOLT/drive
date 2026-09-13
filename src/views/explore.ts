@@ -1,5 +1,5 @@
 import type { Story, UserStory } from '../types.ts';
-import { stories as staticStories, genres } from '../data/stories.ts';
+import { stories as staticStories, genres, registerStories } from '../data/stories.ts';
 import { renderStoryCard, initVideoCovers } from '../components/story-card.ts';
 import { navigate } from '../router.ts';
 import { isContentManagementMode } from '../state.ts';
@@ -74,15 +74,7 @@ export async function init(): Promise<void> {
     viewTitle.style.letterSpacing = '0.5px';
   }
 
-  // Combine static stories with live published stories from Supabase
   let allStories: Story[] = [...staticStories];
-  try {
-    const unifiedStories = await fetchUnifiedExploreStories();
-    allStories = [...unifiedStories, ...staticStories];
-  } catch (err) {
-    console.error('Failed to fetch explore stories:', err);
-  }
-
   let currentSearch = '';
   let currentGenre = 'All';
 
@@ -105,8 +97,7 @@ export async function init(): Promise<void> {
     initVideoCovers(gridContainer);
   };
 
-  updateGrid();
-
+  // Wire events immediately so UI is responsive
   searchInput.addEventListener('input', (e) => {
     currentSearch = (e.target as HTMLInputElement).value;
     updateGrid();
@@ -147,5 +138,16 @@ export async function init(): Promise<void> {
         }
       }
     }
+  });
+
+  // Fetch live published stories in background and update grid
+  fetchUnifiedExploreStories().then(unifiedStories => {
+    if (unifiedStories && unifiedStories.length > 0) {
+      registerStories(unifiedStories);
+      allStories = [...unifiedStories, ...staticStories];
+      updateGrid();
+    }
+  }).catch(err => {
+    console.error('Failed to fetch explore stories:', err);
   });
 }

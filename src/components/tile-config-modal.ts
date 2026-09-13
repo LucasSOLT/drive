@@ -1,5 +1,7 @@
 import { fetchOfficialStories } from '../lib/db.ts';
 import type { Story } from '../types.ts';
+import { setSlotOverride } from '../state.ts';
+import { renderStoryCard } from './story-card.ts';
 
 let currentSlotStoryId: string | null = null;
 let currentSlotType: string = '';
@@ -121,12 +123,22 @@ export function openTileConfigModal(options: {
 
   // Remove story button
   document.getElementById('tile-config-remove-btn')?.addEventListener('click', () => {
+    setSlotOverride(currentSlotType, currentSlotIndex, null);
     const currentEl = document.getElementById('tile-config-current');
     if (currentEl) {
-      currentEl.innerHTML = `<div class="tile-config-current-empty">No story assigned to this slot</div>`;
+      currentEl.innerHTML = `
+        <div class="tile-config-current-empty" style="color:#ef4444; font-weight:700;">
+          ✕ Removed — Slot is now empty
+        </div>
+      `;
     }
     currentSlotStoryId = null;
+    updateGridSlotInView(currentSlotType, currentSlotIndex, null);
     console.log(`[CM] Removed story from slot ${currentSlotType}[${currentSlotIndex}]`);
+
+    setTimeout(() => {
+      document.getElementById('tile-config-modal')?.remove();
+    }, 600);
   });
 
   // Search input (live filtering)
@@ -213,12 +225,15 @@ function handleStoryInserted(storyId: string): void {
   const story = allStories.find(s => s.id === storyId);
   if (!story) return;
 
+  setSlotOverride(currentSlotType, currentSlotIndex, storyId);
+  currentSlotStoryId = storyId;
+
   const currentEl = document.getElementById('tile-config-current');
   if (currentEl) {
     currentEl.innerHTML = `
       <div class="tile-config-current-info">
-        <span class="tile-config-current-title">${escapeHtml(story.title)}</span>
-        <span class="tile-config-current-id" style="font-size:0.7rem; color:var(--color-text-muted);">ID: ${story.id}</span>
+        <span class="tile-config-current-title" style="color:var(--color-purple);">✓ ${escapeHtml(story.title)}</span>
+        <span class="tile-config-current-id" style="font-size:0.7rem; color:var(--color-text-muted);">Assigned to slot</span>
       </div>
     `;
   }
@@ -227,7 +242,51 @@ function handleStoryInserted(storyId: string): void {
   if (drawer) drawer.style.display = 'none';
   isInsertDrawerOpen = false;
 
+  updateGridSlotInView(currentSlotType, currentSlotIndex, story);
   console.log(`[CM] Inserted story "${story.title}" (${story.id}) into slot ${currentSlotType}[${currentSlotIndex}]`);
+
+  setTimeout(() => {
+    document.getElementById('tile-config-modal')?.remove();
+  }, 600);
+}
+
+function updateGridSlotInView(slotType: string, slotIndex: number, story: Story | null): void {
+  let containerId = '';
+  if (slotType === 'home-bestselling') containerId = 'home-bestselling-grid';
+  else if (slotType === 'home-featured') containerId = 'home-featured-grid';
+  else if (slotType === 'explore-grid') containerId = 'explore-grid';
+  else if (slotType === 'featured-hero') containerId = 'featured-hero-container';
+  else if (slotType === 'featured-rising') containerId = 'rising-stars-grid';
+
+  const container = containerId ? document.getElementById(containerId) : null;
+  if (!container) return;
+
+  const cards = Array.from(container.querySelectorAll('.story-card'));
+  const targetCard = cards[slotIndex];
+  if (!targetCard) return;
+
+  if (!story) {
+    // Replace with empty dashed slot
+    const placeholder = document.createElement('div');
+    placeholder.className = 'story-card fade-in';
+    placeholder.style.cssText = 'display:flex; justify-content:center; align-items:center; background:var(--color-surface); border:2px dashed var(--color-border); cursor:pointer; min-height:160px; border-radius:var(--radius-lg);';
+    placeholder.innerHTML = `
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.6;">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    `;
+    placeholder.setAttribute('data-story-id', `placeholder-${slotIndex}`);
+    targetCard.replaceWith(placeholder);
+  } else {
+    // Replace with rendered card
+    const div = document.createElement('div');
+    div.innerHTML = renderStoryCard(story, 'full');
+    const newCard = div.firstElementChild;
+    if (newCard) {
+      targetCard.replaceWith(newCard);
+    }
+  }
 }
 
 function formatSlotLabel(slotType: string, index: number): string {
@@ -247,3 +306,4 @@ function escapeHtml(str: string): string {
   div.textContent = str;
   return div.innerHTML;
 }
+
