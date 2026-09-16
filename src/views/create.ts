@@ -1,4 +1,4 @@
-import type { StoryFormat, Genre, UserStory, StoryCharacter, DialogueLine } from '../types.ts';
+import type { StoryFormat, Genre, UserStory, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
 import { genres } from '../data/stories.ts';
 import { addUserStory, getUserStories, isLibraryUnlocked, canCreateStory, getTokensRemaining, getUserPlan, consumeToken } from '../state.ts';
 import { navigate, getRouteParam } from '../router.ts';
@@ -89,6 +89,8 @@ let bookPages: BookPage[] = [
 // Story Characters for multi-voice dialogue
 const CHAR_COLORS = ['#8a63d2','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#f97316','#6366f1','#14b8a6'];
 let storyCharacters: StoryCharacter[] = [];
+let storyAudioMode: StoryAudioMode = 'make_audio';
+let storyNarratorVoiceId: string = '21m00Tcm4TlvDq8ikWAM'; // Rachel (default narrator)
 let openStorySettingsGlobal: (() => void) | null = null;
 let currentPage = 0;
 let activeDraftId: string | null = null;
@@ -686,12 +688,14 @@ function renderDialogueLines(pageIdx: number, lines: DialogueLine[], prefix: str
   ).join('') + '<option value="__new__">+ Add New Character...</option>';
 
   const linesHtml = lines.map((line, li) => {
-    const charColor = storyCharacters.find(c => c.id === line.characterId)?.color || CHAR_COLORS[li % CHAR_COLORS.length];
+    const isNarrator = line.characterId === 'narrator';
+    const charColor = isNarrator ? '#f59e0b' : (storyCharacters.find(c => c.id === line.characterId)?.color || CHAR_COLORS[li % CHAR_COLORS.length]);
     const hasAudio = !!line.audioUrl;
     return `
     <div class="sb-dialog-line" data-${prefix}-line="${pageIdx}-${li}">
       <div class="sb-dialog-line__top">
         <select class="sb-dialog-line__char-select" data-${prefix}-line-char="${pageIdx}-${li}" style="border-left: 3px solid ${charColor};">
+          <option value="narrator" ${isNarrator ? 'selected' : ''}>🎙️ Narrator</option>
           ${storyCharacters.map(ch =>
             `<option value="${ch.id}" ${ch.id === line.characterId ? 'selected' : ''}>${ch.name}</option>`
           ).join('')}
@@ -801,28 +805,12 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
       const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-add-line`) || '0');
       if (!bookPages[pageIdx].dialogueLines) bookPages[pageIdx].dialogueLines = [];
 
-      // Default to first character, or prompt to create one
-      if (storyCharacters.length === 0) {
-        showQuickAddCharacterModal((ch) => {
-          if (ch) {
-            bookPages[pageIdx].dialogueLines!.push({
-              id: 'line_' + Date.now(),
-              characterId: ch.id,
-              characterName: ch.name,
-              text: '',
-            });
-            saveDraft();
-            refreshView();
-          }
-        });
-        return;
-      }
-
-      const defaultChar = storyCharacters[0];
+      const defaultCharId = storyCharacters.length > 0 ? storyCharacters[0].id : 'narrator';
+      const defaultCharName = storyCharacters.length > 0 ? storyCharacters[0].name : '🎙️ Narrator';
       bookPages[pageIdx].dialogueLines!.push({
         id: 'line_' + Date.now(),
-        characterId: defaultChar.id,
-        characterName: defaultChar.name,
+        characterId: defaultCharId,
+        characterName: defaultCharName,
         text: '',
       });
       saveDraft();
@@ -862,6 +850,16 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
       const [pStr, lStr] = ((sel as HTMLElement).getAttribute(`data-${prefix}-line-char`) || '0-0').split('-');
       const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
       const val = (sel as HTMLSelectElement).value;
+      if (val === 'narrator') {
+        if (bookPages[pageIdx].dialogueLines?.[lineIdx]) {
+          bookPages[pageIdx].dialogueLines![lineIdx].characterId = 'narrator';
+          bookPages[pageIdx].dialogueLines![lineIdx].characterName = '🎙️ Narrator';
+          syncDialogText(pageIdx);
+          saveDraft();
+          refreshView();
+        }
+        return;
+      }
       if (val === '__new__') {
         showQuickAddCharacterModal((ch) => {
           if (ch && bookPages[pageIdx].dialogueLines?.[lineIdx]) {
@@ -894,8 +892,9 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         showModal({ title: 'No Text', content: '<p>Write some dialogue text first.</p>', confirmText: 'OK' });
         return;
       }
-      const ch = storyCharacters.find(c => c.id === line.characterId);
-      const voiceId = ch?.voiceId;
+      const isNarrator = line.characterId === 'narrator';
+      const ch = isNarrator ? null : storyCharacters.find(c => c.id === line.characterId);
+      const voiceId = isNarrator ? storyNarratorVoiceId : ch?.voiceId;
       const b = btn as HTMLButtonElement;
       b.disabled = true;
       b.textContent = '⏳ Recording...';
@@ -937,9 +936,11 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         const line = lines[li];
         if (!line.text.trim()) continue;
         b.textContent = `🎙️ Recording line ${li + 1} of ${lines.length} (${line.characterName})...`;
-        const ch = storyCharacters.find(c => c.id === line.characterId);
+        const isNarrator = line.characterId === 'narrator';
+        const ch = isNarrator ? null : storyCharacters.find(c => c.id === line.characterId);
+        const voiceId = isNarrator ? storyNarratorVoiceId : ch?.voiceId;
         try {
-          const audioData = await preRecordAudio(line.text, 0.5, ch?.voiceId);
+          const audioData = await preRecordAudio(line.text, 0.5, voiceId);
           const storyId = activeDraftId || 'draft';
           line.audioUrl = await uploadAudioData(audioData, storyId, line.id);
         } catch (err: any) {

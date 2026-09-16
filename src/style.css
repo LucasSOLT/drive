@@ -12588,3 +12588,249 @@ body.content-management-mode .story-card:hover {
     font-size: 0.82rem;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   AUDIO MODE SELECTOR (Story Settings)
+   ═══════════════════════════════════════════════ */
+.ss-audio-mode-selector {
+  display: flex;
+  gap: 8px;
+}
+.ss-audio-mode-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px;
+  border-radius: 14px;
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  text-align: center;
+}
+.ss-audio-mode-btn:active {
+  transform: scale(0.97);
+}
+.ss-audio-mode-btn--active {
+  border-color: var(--color-purple);
+  background: rgba(139, 92, 246, 0.08);
+  color: var(--color-text-primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+.ss-audio-mode-icon {
+  font-size: 1.5rem;
+}
+.ss-audio-mode-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: var(--font-heading);
+}
+.ss-audio-mode-desc {
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+.ss-audio-mode-btn--active .ss-audio-mode-desc {
+  color: var(--color-text-secondary);
+}
+
+/* ═══════════════════════════════════════════════
+   AUDIO UPLOAD ZONE (Simple Upload Mode)
+   ═══════════════════════════════════════════════ */
+.audio-upload-zone {
+  margin-bottom: 8px;
+}
+.audio-upload-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 12px;
+  border-radius: 12px;
+  border: 2px dashed var(--color-purple);
+  background: rgba(139, 92, 246, 0.06);
+  color: var(--color-purple);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+  min-height: 56px;
+}
+.audio-upload-btn:hover {
+  background: rgba(139, 92, 246, 0.12);
+}
+.audio-upload-btn:active {
+  transform: scale(0.98);
+}
+.audio-upload-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.06);
+}
+.audio-upload-preview__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #10b981;
+}
+.audio-upload-preview__icon {
+  font-size: 1.1rem;
+}
+.audio-upload-actions {
+  display: flex;
+  gap: 4px;
+}
+.audio-upload-actions__btn {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 30px;
+}
+.audio-upload-actions__btn:active {
+  transform: scale(0.95);
+}
+.audio-upload-actions__btn--delete {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ═══════════════════════════════════════════════
+   READER CC BUTTON & CAPTIONS DRAWER
+   ═══════════════════════════════════════════════ */
+.book-viewer__circle-btn--cc {
+  font-size: 0.65rem;
+  font-weight: 800;
+  font-family: var(--font-heading);
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+.book-viewer__circle-btn--cc-active {
+  background: var(--color-purple) !important;
+  color: #fff !important;
+  border-color: var(--color-purple) !important;
+}
+.reader__cc-icon {
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-family: var(--font-heading);
+  letter-spacing: 0.5px;
+}
+
+/* Captions overlay card */
+.book-viewer__captions-card {
+  background: rgba(15, 10, 30, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 16px;
+  padding: 12px 14px;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.bv-captions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-purple);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.bv-captions-close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.bv-captions-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+.bv-caption-line {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.bv-caption-line:last-child {
+  border-bottom: none;
+}
+.bv-caption-speaker {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #60a5fa;
+  margin-right: 6px;
+  background: rgba(96, 165, 250, 0.12);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.bv-caption-text {
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  line-height: 1.45;
+}
+
+/* CC toast */
+.book-viewer__cc-toast {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(30, 20, 50, 0.95);
+  color: #fff;
+  border: 1px solid var(--color-purple);
+  padding: 10px 20px;
+  border-radius: 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  z-index: 10000;
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.35);
+  text-align: center;
+  max-width: 90%;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+}
+.book-viewer__cc-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@media (max-width: 480px) {
+  .ss-audio-mode-selector {
+    flex-direction: column;
+  }
+  .ss-audio-mode-btn {
+    padding: 12px 10px;
+  }
+  .audio-upload-btn {
+    font-size: 0.75rem;
+    padding: 12px 10px;
+  }
+  .book-viewer__captions-card {
+    max-height: 160px;
+    padding: 10px 12px;
+  }
+}

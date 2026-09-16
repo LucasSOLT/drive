@@ -327,6 +327,7 @@ export async function saveUserStory(story: UserStory): Promise<void> {
         cover_image: story.coverImage || '',
         characters: story.characters || [],
         page_dialogue: story.page_dialogue || {},
+        audio_mode: story.audioMode || 'make_audio',
       })
       .select('id')
       .single();
@@ -804,6 +805,8 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     officialStatus: forcedStatus || s.status || 'draft',
     storyGroupId: s.story_group_id || s.id,
     episodeNumber: s.episode_number || 1,
+    audioMode: (s.audio_mode || 'make_audio') as any,
+    narratorVoiceId: s.narrator_voice_id || undefined,
   };
 }
 
@@ -904,6 +907,7 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     updated_at: new Date().toISOString(),
     story_group_id: storyGroupId,
     episode_number: story.episodeNumber || 1,
+    audio_mode: story.audioMode || 'make_audio',
   };
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);

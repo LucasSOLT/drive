@@ -70,7 +70,7 @@ function renderPageImage(page: StoryPage, pageIndex: number): string {
   `;
 }
 
-function renderPageContent(page: StoryPage, pageIndex: number, totalPages: number, speaking: boolean, hasAudio: boolean, textCollapsed: boolean): string {
+function renderPageContent(page: StoryPage, pageIndex: number, totalPages: number, speaking: boolean, hasAudio: boolean, textCollapsed: boolean, captionsOpen: boolean = false, dialogueLines: DialogueLine[] = [], manualCaptions: string = ''): string {
   return `
     <div class="book-viewer__image-area" id="bv-image-area">
       ${renderPageImage(page, pageIndex)}
@@ -114,6 +114,13 @@ function renderPageContent(page: StoryPage, pageIndex: number, totalPages: numbe
           </button>
         `}
         <button
+          class="book-viewer__circle-btn book-viewer__circle-btn--cc ${captionsOpen ? 'book-viewer__circle-btn--cc-active' : ''}"
+          id="bv-cc-toggle"
+          aria-label="Toggle captions"
+        >
+          CC
+        </button>
+        <button
           class="book-viewer__circle-btn book-viewer__circle-btn--next"
           id="bv-next"
           aria-label="Next page"
@@ -130,6 +137,37 @@ function renderPageContent(page: StoryPage, pageIndex: number, totalPages: numbe
         <div class="book-viewer__page-indicator">${pageIndex + 1} / ${totalPages}</div>
       </div>
     `}
+    ${captionsOpen ? (() => {
+      // Check if dialogue lines or manual captions exist
+      if (dialogueLines.length > 0) {
+        const captionLines = dialogueLines.map((line: DialogueLine) => {
+          const isNarrator = line.characterId === 'narrator';
+          const speakerName = isNarrator ? '🎙️ Narrator' : (line.characterName || 'Speaker');
+          return `<div class="bv-caption-line">
+            <span class="bv-caption-speaker">${speakerName}</span>
+            <span class="bv-caption-text">${line.text}</span>
+          </div>`;
+        }).join('');
+        return `<div class="book-viewer__captions-card" id="bv-captions">
+          <div class="bv-captions-header">
+            <span>Dialogue Captions</span>
+            <button class="bv-captions-close" id="bv-cc-close" aria-label="Close captions">✕</button>
+          </div>
+          ${captionLines}
+        </div>`;
+      } else if (manualCaptions) {
+        return `<div class="book-viewer__captions-card" id="bv-captions">
+          <div class="bv-captions-header">
+            <span>Dialogue Captions</span>
+            <button class="bv-captions-close" id="bv-cc-close" aria-label="Close captions">✕</button>
+          </div>
+          <div class="bv-caption-line">
+            <span class="bv-caption-text">${manualCaptions}</span>
+          </div>
+        </div>`;
+      }
+      return '';
+    })() : ''}
   `;
 }
 
@@ -169,7 +207,7 @@ export function render(): string {
       </button>
 
       <div class="book-viewer__body" id="bv-body">
-        ${renderPageContent(pages[0], 0, pages.length, false, !!(story as any).page_audio?.[0], true)}
+        ${renderPageContent(pages[0], 0, pages.length, false, !!(story as any).page_audio?.[0], true, false, [], '')}
       </div>
     </div>
   `;
@@ -188,6 +226,7 @@ export function init(): void {
   let currentPage = 0;
   let speaking = false;
   let textCollapsed = true;
+  let captionsOpen = false;
   const pageAudio = story.page_audio || {};
 
   // ─── Back button ───
@@ -202,7 +241,10 @@ export function init(): void {
     if (!body) return;
 
     const hasAudio = !!pageAudio[currentPage];
-    body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking, hasAudio, textCollapsed);
+    const dialogueLines = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage] || [];
+    const pageScripts = (story as any).pageScripts || (story as any).page_scripts || {};
+    const manualCaptions = pageScripts[currentPage] || '';
+    body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking, hasAudio, textCollapsed, captionsOpen, dialogueLines, manualCaptions);
     wirePageControls();
 
     const vidEl = body.querySelector('.book-viewer__video') as HTMLVideoElement | null;
@@ -305,6 +347,37 @@ export function init(): void {
     // Text collapse toggle
     document.getElementById('bv-text-toggle')?.addEventListener('click', () => {
       textCollapsed = !textCollapsed;
+      updatePage();
+    });
+
+    // Captions (CC) toggle
+    document.getElementById('bv-cc-toggle')?.addEventListener('click', () => {
+      const dialogueLines = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage] || [];
+      const pageScripts = (story as any).pageScripts || (story as any).page_scripts || {};
+      const manualCaptions = pageScripts[currentPage] || '';
+      const hasAnyCaptions = dialogueLines.length > 0 || !!manualCaptions;
+
+      if (!hasAnyCaptions) {
+        // Show toast: captions unavailable
+        const existing = document.getElementById('bv-cc-toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.id = 'bv-cc-toast';
+        toast.className = 'book-viewer__cc-toast show';
+        toast.textContent = 'Captions are unavailable for this story';
+        document.getElementById('book-viewer')?.appendChild(toast);
+        setTimeout(() => toast.classList.remove('show'), 2500);
+        setTimeout(() => toast.remove(), 3000);
+        return;
+      }
+
+      captionsOpen = !captionsOpen;
+      updatePage();
+    });
+
+    // Captions close button
+    document.getElementById('bv-cc-close')?.addEventListener('click', () => {
+      captionsOpen = false;
       updatePage();
     });
   }

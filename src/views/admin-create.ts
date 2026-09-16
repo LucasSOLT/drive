@@ -1,4 +1,4 @@
-import type { StoryFormat, Genre, Story, StoryCharacter, DialogueLine } from '../types.ts';
+import type { StoryFormat, Genre, Story, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
 import { genres } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
@@ -95,6 +95,8 @@ let editStoryId: string | null = null;
 let episodeStoryGroupId: string | null = null;  // Links this episode to a story group
 let episodeNumber: number = 1;                  // Which episode number in the group
 let episodeParentTitle: string | null = null;    // Parent story title for context display
+let storyAudioMode: StoryAudioMode = 'make_audio';
+let storyNarratorVoiceId: string = '21m00Tcm4TlvDq8ikWAM'; // Rachel (default narrator)
 let updateView: () => void;
 // â”€â”€â”€ SVG Icons â”€â”€â”€
 const ICON = {
@@ -354,6 +356,8 @@ function buildStory(status: 'draft' | 'live'): Story {
     episodeNumber: episodeNumber,
     characters: storyCharacters.length > 0 ? storyCharacters : undefined,
     pageDialogue: Object.keys(pageDialogue).length > 0 ? pageDialogue : undefined,
+    audioMode: storyAudioMode,
+    narratorVoiceId: storyNarratorVoiceId,
   };
 }
 
@@ -438,6 +442,35 @@ function openStorySettings(): void {
         </div>
 
         <div class="ss-section">
+          <div class="ss-section__label">Audio Experience Mode</div>
+          <div class="ss-audio-mode-selector" id="ss-audio-mode-selector">
+            <button class="ss-audio-mode-btn ${storyAudioMode === 'make_audio' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="make_audio" type="button">
+              <span class="ss-audio-mode-icon">🎙️</span>
+              <span class="ss-audio-mode-title">Make audio as you go</span>
+              <span class="ss-audio-mode-desc">Multi-character AI voice dialogue & narration with punctuation expression</span>
+            </button>
+            <button class="ss-audio-mode-btn ${storyAudioMode === 'simple_upload' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="simple_upload" type="button">
+              <span class="ss-audio-mode-icon">📁</span>
+              <span class="ss-audio-mode-title">Simple audio upload</span>
+              <span class="ss-audio-mode-desc">Upload your own audio files per page with optional manual captions</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="ss-section" id="ss-narrator-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
+          <div class="ss-section__label">🎙️ Narrator Voice</div>
+          <div class="ss-field" style="display:flex; gap:8px; align-items:center;">
+            <select id="ss-narrator-voice" class="ss-field__select" style="flex:1;">
+              ${VOICE_OPTIONS.map(v =>
+                `<option value="${v.voiceId}" ${storyNarratorVoiceId === v.voiceId ? 'selected' : ''}>${v.name} — ${v.description}</option>`
+              ).join('')}
+            </select>
+            <button type="button" id="ss-narrator-audition" class="ss-char-audition-btn" style="white-space:nowrap;">🔊 Audition</button>
+          </div>
+          <div class="ss-field__hint" style="font-size:0.72rem; color:var(--color-text-muted); margin-top:4px;">Used for dialogue lines assigned to "🎙️ Narrator" in the page editor.</div>
+        </div>
+
+        <div class="ss-section" id="ss-characters-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
           <div class="ss-section__label">Characters & Cast Voices</div>
           <div class="ss-characters-card" id="ss-characters-card">
             ${storyCharacters.map((ch, ci) => {
@@ -539,6 +572,39 @@ function openStorySettings(): void {
   document.getElementById('ss-back')?.addEventListener('click', () => {
     getFormData();
     updateView();
+  });
+
+  // --- Audio Mode Switching ---
+  wizard.querySelectorAll('[data-audio-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = (btn as HTMLElement).getAttribute('data-audio-mode') as StoryAudioMode;
+      storyAudioMode = mode;
+      // Update active states
+      wizard.querySelectorAll('.ss-audio-mode-btn').forEach(b => b.classList.remove('ss-audio-mode-btn--active'));
+      (btn as HTMLElement).classList.add('ss-audio-mode-btn--active');
+      // Show/hide narrator + characters sections
+      const narratorSection = document.getElementById('ss-narrator-section');
+      const charsSection = document.getElementById('ss-characters-section');
+      if (narratorSection) narratorSection.style.display = mode === 'make_audio' ? '' : 'none';
+      if (charsSection) charsSection.style.display = mode === 'make_audio' ? '' : 'none';
+      saveDraft();
+    });
+  });
+
+  // --- Narrator Voice ---
+  document.getElementById('ss-narrator-voice')?.addEventListener('change', (e) => {
+    storyNarratorVoiceId = (e.target as HTMLSelectElement).value;
+    saveDraft();
+  });
+  document.getElementById('ss-narrator-audition')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ss-narrator-audition') as HTMLButtonElement;
+    if (!btn) return;
+    btn.textContent = '🔊 Playing...';
+    btn.disabled = true;
+    try {
+      await previewVoice(storyNarratorVoiceId, 'The journey begins here. Let me narrate your story.');
+    } catch {}
+    setTimeout(() => { btn.textContent = '🔊 Audition'; btn.disabled = false; }, 3000);
   });
 
   // --- Character Cast Management ---
@@ -935,12 +1001,14 @@ function renderDialogueLines(pageIdx: number, lines: DialogueLine[], prefix: str
   ).join('') + '<option value="__new__">+ Add New Character...</option>';
 
   const linesHtml = lines.map((line, li) => {
-    const charColor = storyCharacters.find(c => c.id === line.characterId)?.color || CHAR_COLORS[li % CHAR_COLORS.length];
+    const isNarrator = line.characterId === 'narrator';
+    const charColor = isNarrator ? '#f59e0b' : (storyCharacters.find(c => c.id === line.characterId)?.color || CHAR_COLORS[li % CHAR_COLORS.length]);
     const hasAudio = !!line.audioUrl;
     return `
     <div class="sb-dialog-line" data-${prefix}-line="${pageIdx}-${li}">
       <div class="sb-dialog-line__top">
         <select class="sb-dialog-line__char-select" data-${prefix}-line-char="${pageIdx}-${li}" style="border-left: 3px solid ${charColor};">
+          <option value="narrator" ${isNarrator ? 'selected' : ''}>🎙️ Narrator</option>
           ${storyCharacters.map(ch =>
             `<option value="${ch.id}" ${ch.id === line.characterId ? 'selected' : ''}>${ch.name}</option>`
           ).join('')}
@@ -1049,28 +1117,14 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
       const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-add-line`) || '0');
       if (!bookPages[pageIdx].dialogueLines) bookPages[pageIdx].dialogueLines = [];
 
-      // Default to first character, or prompt to create one
-      if (storyCharacters.length === 0) {
-        showQuickAddCharacterModal((ch) => {
-          if (ch) {
-            bookPages[pageIdx].dialogueLines!.push({
-              id: 'line_' + Date.now(),
-              characterId: ch.id,
-              characterName: ch.name,
-              text: '',
-            });
-            saveDraft();
-            refreshView();
-          }
-        });
-        return;
-      }
+      // Default to narrator (always available), or first character if any exist
+      const defaultCharId = storyCharacters.length > 0 ? storyCharacters[0].id : 'narrator';
+      const defaultCharName = storyCharacters.length > 0 ? storyCharacters[0].name : '🎙️ Narrator';
 
-      const defaultChar = storyCharacters[0];
       bookPages[pageIdx].dialogueLines!.push({
         id: 'line_' + Date.now(),
-        characterId: defaultChar.id,
-        characterName: defaultChar.name,
+        characterId: defaultCharId,
+        characterName: defaultCharName,
         text: '',
       });
       saveDraft();
@@ -1122,6 +1176,16 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         });
         return;
       }
+      if (val === 'narrator') {
+        if (bookPages[pageIdx].dialogueLines?.[lineIdx]) {
+          bookPages[pageIdx].dialogueLines![lineIdx].characterId = 'narrator';
+          bookPages[pageIdx].dialogueLines![lineIdx].characterName = '🎙️ Narrator';
+          syncDialogText(pageIdx);
+          saveDraft();
+          refreshView();
+        }
+        return;
+      }
       const ch = storyCharacters.find(c => c.id === val);
       if (ch && bookPages[pageIdx].dialogueLines?.[lineIdx]) {
         bookPages[pageIdx].dialogueLines![lineIdx].characterId = ch.id;
@@ -1142,8 +1206,9 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         showModal({ title: 'No Text', content: '<p>Write some dialogue text first.</p>', confirmText: 'OK' });
         return;
       }
-      const ch = storyCharacters.find(c => c.id === line.characterId);
-      const voiceId = ch?.voiceId;
+      const isNarrator = line.characterId === 'narrator';
+      const ch = isNarrator ? null : storyCharacters.find(c => c.id === line.characterId);
+      const voiceId = isNarrator ? storyNarratorVoiceId : ch?.voiceId;
       const b = btn as HTMLButtonElement;
       b.disabled = true;
       b.textContent = '⏳ Recording...';
@@ -1185,9 +1250,11 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         const line = lines[li];
         if (!line.text.trim()) continue;
         b.textContent = `🎙️ Recording line ${li + 1} of ${lines.length} (${line.characterName})...`;
-        const ch = storyCharacters.find(c => c.id === line.characterId);
+        const isNarrator = line.characterId === 'narrator';
+        const ch = isNarrator ? null : storyCharacters.find(c => c.id === line.characterId);
+        const voiceId = isNarrator ? storyNarratorVoiceId : ch?.voiceId;
         try {
-          const audioData = await preRecordAudio(line.text, 0.5, ch?.voiceId);
+          const audioData = await preRecordAudio(line.text, 0.5, voiceId);
           const storyId = editStoryId || activeDraftId || 'draft';
           line.audioUrl = await uploadAudioData(audioData, storyId, line.id);
         } catch (err: any) {
@@ -1264,11 +1331,44 @@ function renderBookCanvas(): string {
         placeholder="Write the story for this page..."
         rows="4" maxlength="1000">${page.text}</textarea>
 
-      <!-- Dialogue -->
-      <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
-        <span>CHARACTER DIALOGUE</span>
-      </div>
-      ${renderDialogueLines(i, page.dialogueLines || [], 'mob')}
+      <!-- Dialogue / Audio -->
+      ${storyAudioMode === 'simple_upload' ? `
+        <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
+          <span>📁 PAGE AUDIO</span>
+        </div>
+        <div class="audio-upload-zone" data-audio-upload-zone="${i}">
+          ${page.audioUrl ? `
+            <div class="audio-upload-preview">
+              <div class="audio-upload-preview__info">
+                <span class="audio-upload-preview__icon">🎵</span>
+                <span class="audio-upload-preview__name">Audio uploaded</span>
+              </div>
+              <div class="audio-upload-actions">
+                <button class="audio-upload-actions__btn" data-audio-play="${i}" type="button">▶ Play</button>
+                <button class="audio-upload-actions__btn" data-audio-replace="${i}" type="button">Replace</button>
+                <button class="audio-upload-actions__btn audio-upload-actions__btn--delete" data-audio-remove="${i}" type="button">✕</button>
+              </div>
+            </div>
+          ` : `
+            <button class="audio-upload-btn" data-audio-upload-trigger="${i}" type="button">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span>Click to Upload Page Audio (MP3, WAV, M4A)</span>
+            </button>
+          `}
+          <input type="file" class="audio-upload-file" data-audio-file="${i}" accept="audio/*" hidden>
+        </div>
+        <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
+          <span>📝 CAPTIONS (for hearing-impaired viewers)</span>
+        </div>
+        <textarea class="book-tile__textarea" data-simple-captions="${i}"
+          placeholder="Type dialogue and captions here for hearing-impaired viewers (optional)..."
+          rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
+      ` : `
+        <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
+          <span>CHARACTER DIALOGUE</span>
+        </div>
+        ${renderDialogueLines(i, page.dialogueLines || [], 'mob')}
+      `}
 
 
       <!-- Deeper Dive -->
@@ -2807,6 +2907,68 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       // Wire multi-character dialogue line events for mobile canvas
       wireDialogueLineEvents(wizard, 'mob', () => updateView());
 
+      // --- Simple Audio Upload handlers ---
+      // Upload trigger
+      wizard.querySelectorAll('[data-audio-upload-trigger]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-upload-trigger') || '0');
+          const fileInput = wizard.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+          fileInput?.click();
+        });
+      });
+      // Replace trigger
+      wizard.querySelectorAll('[data-audio-replace]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-replace') || '0');
+          const fileInput = wizard.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+          fileInput?.click();
+        });
+      });
+      // File input change
+      wizard.querySelectorAll('[data-audio-file]').forEach(input => {
+        input.addEventListener('change', async () => {
+          const idx = parseInt((input as HTMLElement).getAttribute('data-audio-file') || '0');
+          const file = (input as HTMLInputElement).files?.[0];
+          if (!file) return;
+          try {
+            const storyId = editStoryId || activeDraftId || 'draft';
+            const cdnUrl = await uploadAudioData(file, storyId, 'page_' + idx);
+            bookPages[idx].audioUrl = cdnUrl;
+            saveDraft();
+            updateView();
+          } catch (err: any) {
+            console.error('Audio upload failed:', err);
+            alert('Audio upload failed: ' + (err?.message || 'Unknown error'));
+          }
+        });
+      });
+      // Play
+      wizard.querySelectorAll('[data-audio-play]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-play') || '0');
+          const url = bookPages[idx].audioUrl;
+          if (url) { if (isSpeaking()) stopSpeaking(); else playAudioUrl(url); }
+        });
+      });
+      // Remove
+      wizard.querySelectorAll('[data-audio-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-remove') || '0');
+          bookPages[idx].audioUrl = null;
+          saveDraft();
+          updateView();
+        });
+      });
+      // Manual captions
+      wizard.querySelectorAll('[data-simple-captions]').forEach(ta => {
+        const handler = () => {
+          const idx = parseInt((ta as HTMLElement).getAttribute('data-simple-captions') || '0');
+          bookPages[idx].dialogText = (ta as HTMLTextAreaElement).value;
+          saveDraft();
+        };
+        ta.addEventListener('input', handler);
+        ta.addEventListener('paste', () => setTimeout(handler, 0));
+      });
 
       // Pre-record Audio for book page
       const doPrerecordBookPage = async (pageIdx: number) => {

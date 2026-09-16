@@ -235,6 +235,9 @@ export function render(): string {
           <button class="reader__action-btn" id="btn-comments" aria-label="Comments">
             <span class="reader__action-icon">${ICON.comment}</span>
           </button>
+          <button class="reader__action-btn" id="btn-cc" aria-label="Captions">
+            <span class="reader__action-icon reader__cc-icon">CC</span>
+          </button>
         </div>
       </header>
 
@@ -436,7 +439,7 @@ export function init(): void {
 
   // ─── Book format page navigation ───
   if (story.format === 'book') {
-    let currentPage = 0;
+    var currentPage = 0;
     let scriptVisible = false;
     const isEpisode1 = !story.episodeNumber || story.episodeNumber === 1;
     const totalPages = isEpisode1 ? story.panels.length + 1 : story.panels.length;
@@ -467,6 +470,7 @@ export function init(): void {
               onReplay: () => {
                 currentPage = 0;
                 updatePage();
+                if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
               },
             });
           });
@@ -582,13 +586,14 @@ export function init(): void {
     };
 
     document.getElementById('book-prev')?.addEventListener('click', () => {
-      if (currentPage > 0) { stopSpeaking(); currentPage--; updatePage(); }
+      if (currentPage > 0) { stopSpeaking(); currentPage--; updatePage(); if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage); }
     });
     document.getElementById('book-next')?.addEventListener('click', () => {
       if (currentPage < totalPages - 1) {
         stopSpeaking();
         currentPage++;
         updatePage();
+        if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
       } else {
         // Reached end of Illustrated Book (on info page) -> open Squad Gate
         stopSpeaking();
@@ -600,6 +605,7 @@ export function init(): void {
           onReplay: () => {
             currentPage = 0;
             updatePage();
+            if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
           },
         });
       }
@@ -631,6 +637,7 @@ export function init(): void {
         stopSpeaking();
         currentPage = parseInt(dot.dataset.page || '0', 10);
         updatePage();
+        if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
       }
     });
 
@@ -701,6 +708,80 @@ export function init(): void {
   commentBtn?.addEventListener('click', () => {
     openFullscreenComments(storyId, story);
   });
+
+  // ─── CC captions toggle ───
+  var captionsOpen = false;
+  document.getElementById('btn-cc')?.addEventListener('click', () => {
+    const story = getStoryById(storyId);
+    if (!story) return;
+    const pageDialogue = story.pageDialogue || {};
+    const pageScripts = story.pageScripts || {};
+    // Check if any page has dialogue or scripts
+    const hasAnyCaptions = Object.values(pageDialogue).some(lines => lines && lines.length > 0)
+      || Object.values(pageScripts).some(text => !!text);
+
+    if (!hasAnyCaptions) {
+      showActionToast('Captions are unavailable for this story');
+      return;
+    }
+
+    captionsOpen = !captionsOpen;
+    const ccBtn = document.getElementById('btn-cc');
+    if (ccBtn) ccBtn.classList.toggle('active', captionsOpen);
+
+    // Toggle captions overlay
+    const existingOverlay = document.getElementById('reader-captions-overlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+      if (!captionsOpen) return;
+    }
+
+    if (captionsOpen) {
+      renderCaptionsOverlay(story, currentPage);
+    }
+  });
+
+  function renderCaptionsOverlay(story: any, pageIdx: number) {
+    const existing = document.getElementById('reader-captions-overlay');
+    if (existing) existing.remove();
+    if (!captionsOpen) return;
+
+    const dialogueLines = story.pageDialogue?.[pageIdx] || [];
+    const scriptText = story.pageScripts?.[pageIdx] || '';
+
+    let content = '';
+    if (dialogueLines.length > 0) {
+      content = dialogueLines.map((line: any) => {
+        const isNarrator = line.characterId === 'narrator';
+        const name = isNarrator ? '🎙️ Narrator' : (line.characterName || 'Speaker');
+        return `<div class="bv-caption-line"><span class="bv-caption-speaker">${name}</span><span class="bv-caption-text">${line.text}</span></div>`;
+      }).join('');
+    } else if (scriptText) {
+      content = `<div class="bv-caption-line"><span class="bv-caption-text">${scriptText}</span></div>`;
+    }
+
+    if (!content) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'reader-captions-overlay';
+    overlay.className = 'book-viewer__captions-card';
+    overlay.innerHTML = `
+      <div class="bv-captions-header">
+        <span>Dialogue Captions</span>
+        <button class="bv-captions-close" id="reader-cc-close" aria-label="Close captions">✕</button>
+      </div>
+      ${content}
+    `;
+    overlay.style.cssText = 'position:fixed; bottom:80px; left:50%; transform:translateX(-50%); z-index:9999; width:90%; max-width:440px;';
+    document.body.appendChild(overlay);
+
+    document.getElementById('reader-cc-close')?.addEventListener('click', () => {
+      captionsOpen = false;
+      const ccBtn = document.getElementById('btn-cc');
+      if (ccBtn) ccBtn.classList.remove('active');
+      overlay.remove();
+    });
+  }
 }
 
 function openFullscreenComments(storyId: string, story: any): void {

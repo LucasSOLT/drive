@@ -4,6 +4,8 @@ export type Genre = 'Fantasy' | 'Sci-Fi' | 'Romance' | 'Horror' | 'Comedy' | 'Dr
 
 export type ContentRating = 'All Ages' | 'PG-13' | 'Mature';
 
+export type StoryAudioMode = 'make_audio' | 'simple_upload';
+
 export interface StoryCharacter {
   id: string;
   name: string;
@@ -43,6 +45,8 @@ export interface Story {
   episodeNumber?: number;                // 1-based episode number within the story group
   characters?: StoryCharacter[];
   pageDialogue?: Record<number, DialogueLine[]>;
+  audioMode?: StoryAudioMode;
+  narratorVoiceId?: string;
 }
 
 export interface UserStory {
@@ -72,6 +76,8 @@ export interface UserStory {
   popularityScore?: number;
   characters?: StoryCharacter[];
   page_dialogue?: Record<number, DialogueLine[]>;
+  audioMode?: StoryAudioMode;
+  narratorVoiceId?: string;
 }
 
 export type UserPlan = 'free' | 'starter' | 'creator';
