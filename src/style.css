@@ -1541,6 +1541,68 @@ p {
   color: var(--color-text-muted);
 }
 
+/* Mobile compact — ensure all menu items fit without scrolling */
+@media (max-height: 700px) {
+  .fullmenu {
+    padding: 28px var(--space-sm) var(--space-md);
+    justify-content: center;
+  }
+  .fullmenu__brand {
+    margin-bottom: var(--space-sm);
+  }
+  .fullmenu__logo {
+    font-size: 1.5rem;
+  }
+  .fullmenu__brand img {
+    width: 36px !important;
+    height: 36px !important;
+  }
+  .fullmenu__nav {
+    gap: 2px;
+    padding: 0 var(--space-sm);
+  }
+  .fullmenu__link {
+    padding: 8px 12px;
+    font-size: 0.95rem;
+    gap: var(--space-sm);
+  }
+  .fullmenu__link-icon {
+    width: 32px;
+    height: 32px;
+  }
+  .fullmenu__link-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+  .fullmenu__footer {
+    margin-top: var(--space-xs);
+    margin-bottom: var(--space-xs);
+  }
+  .fullmenu__shape--1 { width: 140px; height: 140px; }
+  .fullmenu__shape--2 { width: 100px; height: 100px; }
+  .fullmenu__shape--3 { width: 60px; height: 60px; }
+}
+@media (max-height: 580px) {
+  .fullmenu {
+    padding: 20px var(--space-xs) var(--space-sm);
+  }
+  .fullmenu__brand {
+    margin-bottom: 4px;
+  }
+  .fullmenu__link {
+    padding: 6px 10px;
+    font-size: 0.88rem;
+  }
+  .fullmenu__link-icon {
+    width: 28px;
+    height: 28px;
+  }
+  .fullmenu__footer {
+    margin-top: 4px;
+    margin-bottom: 2px;
+  }
+}
+
 /* LEGACY â€” hide old menu classes (remove once fully cleaned up) */
 .menu-backdrop,
 .menu-drawer {

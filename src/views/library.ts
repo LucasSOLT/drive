@@ -678,7 +678,7 @@ export function init(): void {
     const adminCreateBtn = document.getElementById('admin-create-new-btn');
 
     adminCreateBtn?.addEventListener('click', () => {
-      navigate('admin-create');
+      navigate('admin-create?format=book&new=true');
     });
 
     fetchOfficialStories().then(stories => {

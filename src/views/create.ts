@@ -1,6 +1,6 @@
 import type { StoryFormat, Genre, UserStory, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
 import { genres } from '../data/stories.ts';
-import { addUserStory, getUserStories, isLibraryUnlocked, canCreateStory, getTokensRemaining, getUserPlan, consumeToken } from '../state.ts';
+import { addUserStory, addUserStory as saveUserStory, getUserStories, isLibraryUnlocked, canCreateStory, getTokensRemaining, getUserPlan, consumeToken } from '../state.ts';
 import { navigate, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence } from '../lib/tts.ts';
@@ -1806,7 +1806,7 @@ function getFormData(): void {
   storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || storyCoverVideo || '';
 }
 
-function buildStory(status: 'draft' | 'under-review' | 'live'): UserStory {
+function buildStory(status: 'draft' | 'under-review' | 'live' = 'draft'): UserStory {
   getFormData();
   const pages = selectedFormat === 'book'
     ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent, dialogText: p.dialogText }))
@@ -2238,19 +2238,12 @@ export function init(): void {
   const attachListeners = () => {
     // ─── SHARED CANVAS TOOLBAR ───
     if (phase === 'canvas') {
-      // Quit without saving / with draft save
-      document.getElementById('btn-toolbar-quit')?.addEventListener('click', () => {
-        showModal({
-          title: 'Discard Changes?',
-          content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          extraText: 'Save, and Exit',
-          cancelText: '',
-          confirmText: 'Discard',
-          onConfirm: () => { clearDraft(); navigate('library'); },
-          onExtra: () => {
-            promptSaveStoryUser('draft');
-          },
-        });
+      // Auto-save and exit — no popup
+      document.getElementById('btn-toolbar-quit')?.addEventListener('click', async () => {
+        if (!storyTitle.trim()) storyTitle = 'Untitled';
+        saveDraft();
+        try { await saveUserStory(buildStory()); } catch {}
+        navigate('library');
       });
 
       document.getElementById('btn-toolbar-complete')?.addEventListener('click', () => {
@@ -2986,8 +2979,10 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Bottom action buttons
-      document.getElementById('btn-save-exit')?.addEventListener('click', () => {
+      document.getElementById('btn-save-exit')?.addEventListener('click', async () => {
+        if (!storyTitle.trim()) storyTitle = 'Untitled';
         saveDraft();
+        try { await saveUserStory(buildStory()); } catch {}
         navigate('library');
       });
       document.getElementById('btn-submit-review')?.addEventListener('click', () => {

@@ -225,7 +225,7 @@ export function init(): void {
 
   // Header Create New button
   document.getElementById('admin-header-create-btn')?.addEventListener('click', () => {
-    navigate('admin-create?format=book');
+    navigate('admin-create?format=book&new=true');
   });
 
   // Main Tab switching
@@ -418,7 +418,7 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
 
   document.getElementById('btn-add-original')?.addEventListener('click', () => {
     // Standardized on Illustrated Book format (Waterfall Storyboard soft-deleted as inactive artifact)
-    navigate('admin-create?format=book');
+    navigate('admin-create?format=book&new=true');
   });
   if (storyGroups.length > 0) {
     attachOfficialCardListeners();
@@ -474,10 +474,10 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
                 : null;
             const posterImg = (!isVideoMedia(coverSrc) && coverSrc) || (!isVideoMedia(story.coverImage) && story.coverImage) || '';
             if (rawVid) {
-              return `<video src="${rawVid}"${posterImg ? ` poster="${posterImg}"` : ''} autoplay loop muted playsinline webkit-playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>`;
+              return `<video src="${rawVid}"${posterImg ? ` poster="${posterImg}"` : ''} preload="auto" autoplay loop muted playsinline webkit-playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>`;
             }
             if (coverSrc) {
-              return `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" />`;
+              return `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" loading="eager" fetchpriority="high" />`;
             }
             return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`;
           })()}
@@ -913,11 +913,11 @@ function openFormatPopup(): void {
 
   document.getElementById('fmt-book')?.addEventListener('click', () => {
     hideModal();
-    navigate('admin-create?format=book');
+    navigate('admin-create?format=book&new=true');
   });
   document.getElementById('fmt-scroll')?.addEventListener('click', () => {
     hideModal();
-    navigate('admin-create?format=scroll');
+    navigate('admin-create?format=scroll&new=true');
   });
 }
 

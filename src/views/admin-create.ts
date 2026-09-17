@@ -2032,11 +2032,29 @@ export function init(): void {
         }];
       }
     } else {
-      const draft = getDraft();
-      if (draft && (!qFormat || draft.selectedFormat === qFormat)) {
-        loadDraft(draft);
-      } else {
+      const isNew = window.location.hash.includes('new=true') || window.location.hash.includes('new=1');
+      if (isNew) {
+        clearDraft();
+        editStoryId = null;
         selectedFormat = (qFormat as StoryFormat) || 'book';
+        storyTitle = '';
+        _coverThumbnail = '';
+        storyCoverVideo = '';
+        storySynopsis = '';
+        currentPage = 0;
+        storyCharacters = [];
+        if (selectedFormat === 'book') {
+          bookPages = Array.from({ length: 5 }, () => defaultBookPage());
+        } else {
+          scrollPanels = Array.from({ length: 5 }, () => ({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null }));
+        }
+      } else {
+        const draft = getDraft();
+        if (draft && (!qFormat || draft.selectedFormat === qFormat)) {
+          loadDraft(draft);
+        } else {
+          selectedFormat = (qFormat as StoryFormat) || 'book';
+        }
       }
     }
 
@@ -2135,18 +2153,12 @@ export function init(): void {
   attachListeners = () => {
     // ─── SHARED CANVAS TOOLBAR ───
     if (phase === 'canvas') {
-      // Quit without saving / with draft save
-      document.getElementById('btn-toolbar-quit')?.addEventListener('click', () => {
-        showModal({
-          title: 'Discard Changes?',
-          content: '<p style="line-height:1.6;">Your unsaved edits will be lost. Are you sure you want to quit?</p>',
-          extraText: 'Save, and Exit',
-          confirmText: 'Discard',
-          onConfirm: () => { clearDraft(); navigate('admin'); },
-          onExtra: () => {
-            promptSaveStoryAdmin('draft');
-          },
-        });
+      // Auto-save and exit — no popup
+      document.getElementById('btn-toolbar-quit')?.addEventListener('click', async () => {
+        if (!storyTitle.trim()) storyTitle = 'Untitled';
+        saveDraft();
+        try { await saveOfficialStory(buildStory('draft')); } catch {}
+        navigate('admin');
       });
 
       document.getElementById('btn-toolbar-complete')?.addEventListener('click', () => {
@@ -2807,8 +2819,10 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Bottom action buttons
-      document.getElementById('btn-save-exit')?.addEventListener('click', () => {
+      document.getElementById('btn-save-exit')?.addEventListener('click', async () => {
+        if (!storyTitle.trim()) storyTitle = 'Untitled';
         saveDraft();
+        try { await saveOfficialStory(buildStory('draft')); } catch {}
         navigate('admin');
       });
       document.getElementById('btn-submit-review')?.addEventListener('click', () => {

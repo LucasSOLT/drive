@@ -6,7 +6,7 @@ const FORMAT_ICONS: Record<string, string> = {
   'book': '📖 Book'
 };
 
-function renderCover(story: Story, cssClass: string = 'story-card__cover'): string {
+function renderCover(story: Story, cssClass: string = 'story-card__cover', eager: boolean = false): string {
   // Determine if there is a cover video: explicit coverVideo, or coverImage is video, or panels[0] is video
   const videoSrc = (story.coverVideo && isVideoMedia(story.coverVideo))
     ? story.coverVideo
@@ -19,7 +19,7 @@ function renderCover(story: Story, cssClass: string = 'story-card__cover'): stri
   if (videoSrc) {
     const poster = (story.coverImage && !isVideoMedia(story.coverImage)) ? story.coverImage : '';
     const posterAttr = poster ? ` poster="${poster}"` : '';
-    return `<video class="${cssClass} story-card__video" src="${videoSrc}"${posterAttr} loop muted playsinline webkit-playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>`;
+    return `<video class="${cssClass} story-card__video" src="${videoSrc}"${posterAttr} loop muted playsinline webkit-playsinline preload="${eager ? 'auto' : 'metadata'}"${eager ? ' fetchpriority="high"' : ''} style="width:100%;height:100%;object-fit:cover;"></video>`;
   }
 
   const imgSrc = (story.coverImage && !isVideoMedia(story.coverImage))
@@ -29,7 +29,7 @@ function renderCover(story: Story, cssClass: string = 'story-card__cover'): stri
       : null;
 
   if (imgSrc) {
-    return `<img class="${cssClass}" src="${imgSrc}" alt="${story.title}" loading="lazy" decoding="async" />`;
+    return `<img class="${cssClass}" src="${imgSrc}" alt="${story.title}" loading="${eager ? 'eager' : 'lazy'}"${eager ? ' fetchpriority="high"' : ''} decoding="async" />`;
   }
 
   // No cover — show a gradient placeholder
@@ -54,7 +54,7 @@ export function renderStoryCard(story: Story, variant: 'full' | 'compact' | 'her
   if (variant === 'hero') {
     return `
       <div class="story-card story-card--hero fade-in" data-story-id="${story.id}">
-        ${renderCover(story)}
+        ${renderCover(story, 'story-card__cover', true)}
         <div class="story-card__overlay"></div>
         <div class="story-card__info">
           <h2 class="story-title slide-up stagger-1">${story.title}</h2>
@@ -82,7 +82,7 @@ export function renderStoryCard(story: Story, variant: 'full' | 'compact' | 'her
   // full variant
   return `
     <div class="story-card story-card--full fade-in" data-story-id="${story.id}">
-      ${renderCover(story)}
+      ${renderCover(story, 'story-card__cover', true)}
       <div class="story-card__overlay"></div>
       <div class="story-card__info">
         <h3 class="story-title">${story.title}</h3>
