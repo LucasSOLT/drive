@@ -518,12 +518,14 @@ export function init(): void {
           const currentMedia = (story.pageVideos && story.pageVideos[currentPage]) || (story.panels && story.panels[currentPage]) || '';
           const isVideo = isVideoMedia(currentMedia) || !!(story.pageVideos && story.pageVideos[currentPage]);
           const hasAudio = !!story.pageAudio?.[currentPage];
+          const focalPos = story.pageFocalPositions?.[currentPage];
+          const objPosStyle = focalPos && focalPos !== 'center' ? `object-position:center ${focalPos};` : '';
           if (isVideo) {
-            pageContainer.innerHTML = `<video id="book-video" src="${currentMedia}" autoplay loop muted playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"></video>`;
+            pageContainer.innerHTML = `<video id="book-video" src="${currentMedia}" autoplay loop muted playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;"></video>`;
             const bv = pageContainer.querySelector('#book-video') as HTMLVideoElement | null;
             if (bv) ensureVideoPlayback(bv);
           } else {
-            pageContainer.innerHTML = `<img id="book-img" src="${story.panels?.[currentPage] || ''}" alt="Page ${currentPage + 1}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">`;
+            pageContainer.innerHTML = `<img id="book-img" src="${story.panels?.[currentPage] || ''}" alt="Page ${currentPage + 1}" style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;">`;
           }
           // Add audio play button if page has audio
           if (hasAudio) {

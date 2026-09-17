@@ -79,8 +79,9 @@ interface BookPage {
   dialogText: string;
   dialogAudioUrl: string | null;
   dialogueLines?: DialogueLine[];
+  focalPosition?: 'top' | 'center' | 'bottom';
 }
-const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, audioFileName: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [] });
+const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, audioFileName: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [], focalPosition: 'center' });
 let bookPages: BookPage[] = [
   defaultBookPage(), defaultBookPage(), defaultBookPage(),
   defaultBookPage(), defaultBookPage(),
@@ -273,8 +274,8 @@ function loadDraft(draft: DraftEntry) {
   scriptText = draft.scriptText || '';
   studioOpen = draft.studioOpen || false;
   bookPages = draft.bookPages || Array.from({ length: 5 }, () => defaultBookPage());
-  // Ensure dialogueLines exists on each page (backward compat)
-  bookPages.forEach(p => { if (!p.dialogueLines) p.dialogueLines = []; });
+  // Ensure dialogueLines and focalPosition exist on each page (backward compat)
+  bookPages.forEach(p => { if (!p.dialogueLines) p.dialogueLines = []; if (!p.focalPosition) p.focalPosition = 'center'; });
   currentPage = draft.currentPage || 0;
   _coverThumbnail = draft.coverThumbnail || null;
   editStoryId = draft.editStoryId || null;
@@ -342,6 +343,14 @@ function buildStory(status: 'draft' | 'live'): Story {
     });
   }
 
+  // Build pageFocalPositions from bookPages
+  const pageFocalPositions: Record<number, string> = {};
+  if (selectedFormat === 'book') {
+    bookPages.forEach((bp, i) => {
+      if (bp.focalPosition && bp.focalPosition !== 'center') pageFocalPositions[i] = bp.focalPosition;
+    });
+  }
+
   return {
     id: storyId,
     title: storyTitle,
@@ -369,6 +378,7 @@ function buildStory(status: 'draft' | 'live'): Story {
     narratorVoiceId: storyNarratorVoiceId,
     bgmUrl: storyBgmUrl || undefined,
     bgmVolume: storyBgmVolume,
+    pageFocalPositions: Object.keys(pageFocalPositions).length > 0 ? pageFocalPositions : undefined,
   };
 }
 
@@ -1444,8 +1454,8 @@ function renderBookCanvas(): string {
       <div class="book-tile__image" data-tile-upload="${i}">
         ${page.image
             ? `${isVideoMedia(page.image)
-                 ? `<video class="book-tile__img" src="${page.image}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover; border-radius:8px;"></video>`
-                 : `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}">`}
+                 ? `<video class="book-tile__img" src="${page.image}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;object-position:center ${page.focalPosition || 'center'}; border-radius:8px;"></video>`
+                 : `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}" style="object-position:center ${page.focalPosition || 'center'};">`}
                <button class="book-tile__remove-img" data-tile-remove-img="${i}">${ICON.close}</button>`
             : `<div class="book-tile__empty-img">
                 <div class="book-tile__upload-btn">${ICON.upload}</div>
@@ -1454,6 +1464,16 @@ function renderBookCanvas(): string {
         }
         <input type="file" class="book-tile__file" data-tile-file="${i}" accept="image/*,video/*" hidden>
       </div>
+
+      ${page.image ? `
+      <!-- Focal position selector -->
+      <div class="book-tile__focal-pill" data-focal-group="${i}">
+        <span class="book-tile__focal-label">Align:</span>
+        <button type="button" class="focal-btn ${(page.focalPosition || 'center') === 'top' ? 'focal-btn--active' : ''}" data-set-focal="${i}" data-focal-val="top" title="Align image to top">Top</button>
+        <button type="button" class="focal-btn ${(page.focalPosition || 'center') === 'center' ? 'focal-btn--active' : ''}" data-set-focal="${i}" data-focal-val="center" title="Align image to center">Center</button>
+        <button type="button" class="focal-btn ${(page.focalPosition || 'center') === 'bottom' ? 'focal-btn--active' : ''}" data-set-focal="${i}" data-focal-val="bottom" title="Align image to bottom">Bottom</button>
+      </div>
+      ` : ''}
 
       <!-- Story text -->
       <div class="book-tile__text-header">
@@ -2201,10 +2221,22 @@ export function init(): void {
         // Load episode metadata from existing story
         episodeStoryGroupId = storyToEdit.storyGroupId || storyToEdit.id;
         episodeNumber = storyToEdit.episodeNumber || 1;
+        // Load BGM fields (Audit Fix B)
+        storyBgmUrl = storyToEdit.bgmUrl || '';
+        storyBgmVolume = typeof storyToEdit.bgmVolume === 'number' ? storyToEdit.bgmVolume : 0.25;
+        // Load characters and audio mode
+        storyCharacters = storyToEdit.characters || [];
+        storyAudioMode = storyToEdit.audioMode || 'make_audio';
+        storyNarratorVoiceId = storyToEdit.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM';
 
         if (selectedFormat === 'book') {
            bookPages = storyToEdit.panels.map((p, i) => ({
-             image: p, text: storyToEdit.pageScripts?.[i] || '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null
+             image: p, text: storyToEdit.pageScripts?.[i] || '', stability: 0.5, deeperDiveContent: '',
+             audioUrl: storyToEdit.pageAudio?.[i] || null,
+             audioFileName: null,
+             dialogText: '', dialogAudioUrl: null,
+             dialogueLines: storyToEdit.pageDialogue?.[i] || [],
+             focalPosition: (storyToEdit.pageFocalPositions?.[i] as 'top' | 'center' | 'bottom') || 'center',
            }));
         } else {
            scrollPanels = storyToEdit.panels.map((p, i) => ({
@@ -3107,6 +3139,17 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         e.stopPropagation();
         bookPages[i].image = null;
         updateView();
+      });
+
+      // Focal position selector
+      wizard.querySelectorAll(`[data-set-focal="${i}"]`).forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const val = (btn as HTMLElement).getAttribute('data-focal-val') as 'top' | 'center' | 'bottom';
+          bookPages[i].focalPosition = val;
+          saveDraft();
+          updateView();
+        });
       });
 
       // Save story text

@@ -49,6 +49,7 @@ export interface Story {
   narratorVoiceId?: string;
   bgmUrl?: string;
   bgmVolume?: number;
+  pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
 }
 
 export interface UserStory {
@@ -82,6 +83,7 @@ export interface UserStory {
   narratorVoiceId?: string;
   bgmUrl?: string;
   bgmVolume?: number;
+  pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
 }
 
 export type UserPlan = 'free' | 'starter' | 'creator';

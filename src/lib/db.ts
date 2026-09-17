@@ -330,6 +330,7 @@ export async function saveUserStory(story: UserStory): Promise<void> {
         audio_mode: story.audioMode || 'make_audio',
         bgm_url: story.bgmUrl || null,
         bgm_volume: story.bgmVolume ?? 0.25,
+        page_focal_positions: story.pageFocalPositions || {},
       })
       .select('id')
       .single();
@@ -811,6 +812,7 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     narratorVoiceId: s.narrator_voice_id || undefined,
     bgmUrl: s.bgm_url || undefined,
     bgmVolume: typeof s.bgm_volume === 'number' ? s.bgm_volume : 0.25,
+    pageFocalPositions: s.page_focal_positions || undefined,
   };
 }
 
@@ -937,6 +939,7 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     audio_mode: story.audioMode || 'make_audio',
     bgm_url: story.bgmUrl || null,
     bgm_volume: story.bgmVolume ?? 0.25,
+    page_focal_positions: story.pageFocalPositions || {},
   };
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);
@@ -1512,6 +1515,9 @@ export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
         pageAudio: uData.page_audio || {},
         characters: uData.characters || [],
         pageDialogue: uData.page_dialogue || {},
+        bgmUrl: uData.bgm_url || undefined,
+        bgmVolume: typeof uData.bgm_volume === 'number' ? uData.bgm_volume : 0.25,
+        pageFocalPositions: uData.page_focal_positions || undefined,
       };
     }
   } catch (e) {

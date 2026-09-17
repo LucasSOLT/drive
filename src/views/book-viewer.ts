@@ -23,6 +23,8 @@ interface UserStoryWithPages {
   bgm_url?: string;
   bgmVolume?: number;
   bgm_volume?: number;
+  pageFocalPositions?: Record<number, string>;
+  page_focal_positions?: Record<number, string>;
 }
 
 // ─── SVG Icons ───
@@ -56,18 +58,20 @@ function getStory(): UserStoryWithPages | null {
       page_dialogue: official.pageDialogue,
       bgmUrl: official.bgmUrl,
       bgmVolume: official.bgmVolume,
+      pageFocalPositions: official.pageFocalPositions,
     } as UserStoryWithPages;
   }
 
   return null;
 }
 
-function renderPageImage(page: StoryPage, pageIndex: number): string {
+function renderPageImage(page: StoryPage, pageIndex: number, focalPosition?: string): string {
+  const objPos = focalPosition && focalPosition !== 'center' ? `object-position:center ${focalPosition};` : '';
   if (page.image) {
     if (isVideoMedia(page.image)) {
-      return `<video class="book-viewer__image book-viewer__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:contain;"></video>`;
+      return `<video class="book-viewer__image book-viewer__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:contain;${objPos}"></video>`;
     }
-    return `<img class="book-viewer__image" src="${page.image}" alt="Page ${pageIndex + 1}">`;
+    return `<img class="book-viewer__image" src="${page.image}" alt="Page ${pageIndex + 1}" style="${objPos}">`;
   }
   return `
     <div class="book-viewer__placeholder">
@@ -76,10 +80,10 @@ function renderPageImage(page: StoryPage, pageIndex: number): string {
   `;
 }
 
-function renderPageContent(page: StoryPage, pageIndex: number, totalPages: number, speaking: boolean, hasAudio: boolean, textCollapsed: boolean, captionsOpen: boolean = false, dialogueLines: DialogueLine[] = [], manualCaptions: string = ''): string {
+function renderPageContent(page: StoryPage, pageIndex: number, totalPages: number, speaking: boolean, hasAudio: boolean, textCollapsed: boolean, captionsOpen: boolean = false, dialogueLines: DialogueLine[] = [], manualCaptions: string = '', focalPosition?: string): string {
   return `
     <div class="book-viewer__image-area" id="bv-image-area">
-      ${renderPageImage(page, pageIndex)}
+      ${renderPageImage(page, pageIndex, focalPosition)}
       ${page.text ? `
         <button class="bv-text-toggle" id="bv-text-toggle" aria-label="${textCollapsed ? 'Show' : 'Hide'} text" title="${textCollapsed ? 'Show' : 'Hide'} story text">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -221,7 +225,7 @@ export function render(): string {
       </button>
 
       <div class="book-viewer__body" id="bv-body">
-        ${renderPageContent(pages[0], 0, pages.length, false, !!(story as any).page_audio?.[0], true, false, [], '')}
+        ${renderPageContent(pages[0], 0, pages.length, false, !!(story as any).page_audio?.[0], true, false, [], '', ((story as any).pageFocalPositions?.[0] || (story as any).page_focal_positions?.[0]) as string | undefined)}
       </div>
     </div>
   `;
@@ -328,7 +332,8 @@ export function init(): void {
     const dialogueLines = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage] || [];
     const pageScripts = (story as any).pageScripts || (story as any).page_scripts || {};
     const manualCaptions = pageScripts[currentPage] || '';
-    body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking, hasAudio, textCollapsed, captionsOpen, dialogueLines, manualCaptions);
+    const focalPos = ((story as any).pageFocalPositions?.[currentPage] || (story as any).page_focal_positions?.[currentPage]) as string | undefined;
+    body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking, hasAudio, textCollapsed, captionsOpen, dialogueLines, manualCaptions, focalPos);
     wirePageControls();
 
     const vidEl = body.querySelector('.book-viewer__video') as HTMLVideoElement | null;

@@ -5614,6 +5614,46 @@ button.profile-avatar {
   cursor: pointer; opacity: 0; transition: opacity var(--transition-fast);
 }
 .book-tile__image:hover .book-tile__redo-img { opacity: 1; }
+
+/* Focal position selector pill */
+.book-tile__focal-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--color-eggshell);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  margin: 4px var(--space-md) 0;
+}
+.book-tile__focal-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  margin-right: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.focal-btn {
+  padding: 2px 10px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.focal-btn:hover {
+  background: var(--color-bg-accent);
+  color: var(--color-text-primary);
+}
+.focal-btn--active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
 .book-tile__gen {
   display: flex; gap: 4px; padding: 6px var(--space-md);
 }
