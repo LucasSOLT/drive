@@ -497,6 +497,18 @@ export function init(): void {
               ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
               : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
             pageContainer.appendChild(audioBtn);
+            const onAudioFinished = () => {
+              audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+              audioBtn.title = 'Play audio';
+
+              // Hands-free auto-advance
+              if (getSettings().autoAdvance && currentPage < story.panels.length - 1) {
+                setTimeout(() => {
+                  document.getElementById('book-next')?.click();
+                }, 650);
+              }
+            };
+
             audioBtn.addEventListener('click', (e) => {
               e.stopPropagation();
               if (isSpeaking()) {
@@ -509,12 +521,12 @@ export function init(): void {
                   const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
                   const hasDialogueAudio = audioUrls.some((u: any) => !!u);
                   if (hasDialogueAudio) {
-                    playAudioSequence(audioUrls);
+                    playAudioSequence(audioUrls, undefined, onAudioFinished);
                   } else {
-                    playAudioUrl(story.pageAudio![currentPage]);
+                    playAudioUrl(story.pageAudio![currentPage], onAudioFinished);
                   }
                 } else {
-                  playAudioUrl(story.pageAudio![currentPage]);
+                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished);
                 }
                 audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
                 audioBtn.title = 'Pause audio';
@@ -528,12 +540,12 @@ export function init(): void {
                 const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
                 const hasDialogueAudio = audioUrls.some((u: any) => !!u);
                 if (hasDialogueAudio) {
-                  playAudioSequence(audioUrls);
+                  playAudioSequence(audioUrls, undefined, onAudioFinished);
                 } else {
-                  playAudioUrl(story.pageAudio![currentPage]);
+                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished);
                 }
               } else {
-                playAudioUrl(story.pageAudio![currentPage]);
+                playAudioUrl(story.pageAudio![currentPage], onAudioFinished);
               }
               audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
               audioBtn.title = 'Pause audio';

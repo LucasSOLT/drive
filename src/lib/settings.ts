@@ -51,6 +51,7 @@ export interface AppSettings {
   textSize: 'small' | 'medium' | 'large';
   language: string;
   autoPlay: boolean;
+  autoAdvance: boolean;
 }
 
 const SETTINGS_KEY = 'drive_app_settings';
@@ -64,6 +65,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   textSize: 'medium',
   language: 'English',
   autoPlay: false,
+  autoAdvance: false,
 };
 
 let _settings: AppSettings | null = null;

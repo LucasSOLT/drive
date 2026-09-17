@@ -255,6 +255,16 @@ function renderSettingsDrawer(): string {
                 <span class="settings-toggle__slider"></span>
               </label>
             </div>
+            <div class="settings-row">
+              <div class="settings-row__left">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
+                <span>Hands-Free Auto-Advance</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="settings-autoadvance" ${settings.autoAdvance ? 'checked' : ''}>
+                <span class="settings-toggle__slider"></span>
+              </label>
+            </div>
           </div>
 
           <!-- GENERAL -->
@@ -350,6 +360,11 @@ export function injectSettingsDrawer(): void {
   // Auto-Play toggle
   document.getElementById('settings-autoplay')?.addEventListener('change', (e) => {
     updateSettings({ autoPlay: (e.target as HTMLInputElement).checked });
+  });
+
+  // Hands-Free Auto-Advance toggle
+  document.getElementById('settings-autoadvance')?.addEventListener('change', (e) => {
+    updateSettings({ autoAdvance: (e.target as HTMLInputElement).checked });
   });
 
   // Reading Speed selector

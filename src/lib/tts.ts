@@ -376,7 +376,7 @@ export async function extractAudioFromMediaFile(file: File): Promise<{ blob: Blo
 }
 
 /** Play a pre-recorded audio URL (base64 data URL or blob URL). */
-export function playAudioUrl(url: string): void {
+export function playAudioUrl(url: string, onEnded?: () => void): void {
   stopSpeaking();
   const audio = new Audio(url);
   currentAudio = audio;
@@ -386,6 +386,7 @@ export function playAudioUrl(url: string): void {
   audio.addEventListener('ended', () => {
     if (currentAudio === audio) {
       stopSpeaking();
+      onEnded?.();
     }
   });
 
@@ -393,6 +394,7 @@ export function playAudioUrl(url: string): void {
     console.warn('[TTS] Pre-recorded audio playback error.');
     if (currentAudio === audio) {
       stopSpeaking();
+      onEnded?.();
     }
   });
 
@@ -444,7 +446,8 @@ export async function previewVoice(voiceId: string, sampleText = 'Hi, I\'m ready
  */
 export function playAudioSequence(
   urls: (string | null | undefined)[],
-  onLineChange?: (index: number) => void
+  onLineChange?: (index: number) => void,
+  onEnded?: () => void
 ): { stop: () => void } {
   let stopped = false;
   let idx = 0;
@@ -452,6 +455,7 @@ export function playAudioSequence(
   const playNext = () => {
     if (stopped || idx >= urls.length) {
       stopSpeaking();
+      if (!stopped) onEnded?.();
       return;
     }
     const url = urls[idx];

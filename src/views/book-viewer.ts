@@ -235,6 +235,23 @@ export function init(): void {
     navigate('library');
   });
 
+  // Handler for when page narration finishes (used by both autoplay & manual play)
+  const onAudioFinished = () => {
+    speaking = false;
+    const audioBtn = document.getElementById('bv-audio-toggle');
+    if (audioBtn) audioBtn.classList.remove('book-viewer__circle-btn--speaking');
+
+    // If hands-free auto-advance is enabled in settings, auto-turn to next page
+    if (getSettings().autoAdvance && currentPage < totalPages - 1) {
+      setTimeout(() => {
+        if (currentPage < totalPages - 1) {
+          currentPage++;
+          updatePage();
+        }
+      }, 650);
+    }
+  };
+
   // ─── Update page content without full re-render ───
   function updatePage() {
     const body = document.getElementById('bv-body');
@@ -258,12 +275,12 @@ export function init(): void {
         const audioUrls = dialogueLines.map((l: DialogueLine) => l.audioUrl || null);
         const hasDialogueAudio = audioUrls.some((u: string | null) => !!u);
         if (hasDialogueAudio) {
-          playAudioSequence(audioUrls);
+          playAudioSequence(audioUrls, undefined, onAudioFinished);
         } else {
-          playAudioUrl(pageAudio[currentPage]);
+          playAudioUrl(pageAudio[currentPage], onAudioFinished);
         }
       } else {
-        playAudioUrl(pageAudio[currentPage]);
+        playAudioUrl(pageAudio[currentPage], onAudioFinished);
       }
       // Update UI to show speaking state
       const audioBtn = document.getElementById('bv-audio-toggle');
@@ -310,12 +327,12 @@ export function init(): void {
             const audioUrls = dialogueLines.map((l: DialogueLine) => l.audioUrl || null);
             const hasDialogueAudio = audioUrls.some((u: string | null) => !!u);
             if (hasDialogueAudio) {
-              playAudioSequence(audioUrls);
+              playAudioSequence(audioUrls, undefined, onAudioFinished);
             } else {
-              playAudioUrl(audioUrl);
+              playAudioUrl(audioUrl, onAudioFinished);
             }
           } else {
-            playAudioUrl(audioUrl);
+            playAudioUrl(audioUrl, onAudioFinished);
           }
           updatePage();
         }
