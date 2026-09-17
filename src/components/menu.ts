@@ -1,5 +1,6 @@
 import { navigate, getCurrentRoute } from '../router.ts';
 import { hasAdminPrivileges, checkIsGameMaster } from '../lib/db.ts';
+import { showModal } from './modal.ts';
 
 export function renderMenu(): string {
   return `
@@ -103,9 +104,11 @@ export function renderMenu(): string {
         </a>
       </nav>
 
-
       <!-- Footer -->
       <div class="fullmenu__footer">
+        <button id="menu-pwa-install" class="fullmenu__install-btn" type="button" style="display:none; margin: 0 auto 10px; background: rgba(16,185,129,0.12); color: #10B981; border: 1px solid rgba(16,185,129,0.3); padding: 6px 14px; border-radius: 20px; font-size: 0.78rem; font-weight: 700; cursor: pointer; align-items: center; gap: 6px;">
+          📲 Add to Home Screen
+        </button>
         <p>&copy; ${new Date().getFullYear()} DRiVE Inc.</p>
       </div>
     </div>
@@ -200,6 +203,41 @@ export function initMenu(): void {
       closeMenu();
     }
   });
+
+  // ─── PWA Install Prompt Handling ───
+  let deferredPrompt: any = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+  });
+
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+  const pwaBtn = document.getElementById('menu-pwa-install');
+  if (pwaBtn && !isStandalone) {
+    pwaBtn.style.display = 'inline-flex';
+    pwaBtn.addEventListener('click', () => {
+      closeMenu();
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt = null;
+      } else {
+        showModal({
+          title: '📲 Add DRiVE to Home Screen',
+          content: `
+            <div style="line-height: 1.6; font-size: 0.88rem; color: var(--color-text-secondary);">
+              <p style="margin-bottom: 12px;">Get the full native app experience without browser navigation bars:</p>
+              <ol style="margin-left: 20px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px;">
+                <li>Tap the <strong>Share</strong> button (square with arrow) at the bottom of Safari.</li>
+                <li>Scroll down and tap <strong>'Add to Home Screen'</strong>.</li>
+                <li>Open <strong>DRiVE</strong> from your home screen for full-screen reading!</li>
+              </ol>
+            </div>
+          `,
+          confirmText: 'Got It',
+        });
+      }
+    });
+  }
 
 
 }
