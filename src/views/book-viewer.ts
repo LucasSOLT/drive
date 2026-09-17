@@ -19,6 +19,10 @@ interface UserStoryWithPages {
   page_audio?: Record<number, string>;
   characters?: any[];
   page_dialogue?: Record<number, DialogueLine[]>;
+  bgmUrl?: string;
+  bgm_url?: string;
+  bgmVolume?: number;
+  bgm_volume?: number;
 }
 
 // ─── SVG Icons ───
@@ -50,6 +54,8 @@ function getStory(): UserStoryWithPages | null {
       page_audio: official.pageAudio,
       characters: official.characters,
       page_dialogue: official.pageDialogue,
+      bgmUrl: official.bgmUrl,
+      bgmVolume: official.bgmVolume,
     } as UserStoryWithPages;
   }
 
@@ -229,11 +235,48 @@ export function init(): void {
   let captionsOpen = false;
   const pageAudio = story.page_audio || {};
 
+  // ─── Background Music (BGM) ───
+  const bgmUrl = story.bgmUrl || story.bgm_url;
+  const bgmVolume = typeof story.bgmVolume === 'number' ? story.bgmVolume : (typeof story.bgm_volume === 'number' ? story.bgm_volume : 0.25);
+  let bgmAudio: HTMLAudioElement | null = null;
+  if (bgmUrl) {
+    bgmAudio = new Audio(bgmUrl);
+    bgmAudio.loop = true;
+    bgmAudio.volume = bgmVolume;
+    const playBgmWithGestureFallback = () => {
+      if (bgmAudio && bgmAudio.paused) {
+        bgmAudio.play().catch(() => {
+          const onUserGesture = () => {
+            if (bgmAudio && bgmAudio.paused) bgmAudio.play().catch(() => {});
+            document.removeEventListener('click', onUserGesture);
+            document.removeEventListener('keydown', onUserGesture);
+            document.removeEventListener('touchstart', onUserGesture);
+          };
+          document.addEventListener('click', onUserGesture, { once: true });
+          document.addEventListener('keydown', onUserGesture, { once: true });
+          document.addEventListener('touchstart', onUserGesture, { once: true });
+        });
+      }
+    };
+    playBgmWithGestureFallback();
+  }
+
+  const stopBgm = () => {
+    if (bgmAudio) {
+      bgmAudio.pause();
+      bgmAudio = null;
+    }
+  };
+
   // ─── Back button ───
   document.getElementById('bv-back')?.addEventListener('click', () => {
+    stopBgm();
     stopSpeaking();
     navigate('library');
   });
+
+  window.addEventListener('hashchange', stopBgm, { once: true });
+  window.addEventListener('popstate', stopBgm, { once: true });
 
   // Handler for when page narration finishes (used by both autoplay & manual play)
   const onAudioFinished = () => {

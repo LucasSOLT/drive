@@ -311,14 +311,52 @@ export function init(): void {
   const progressBar = document.getElementById('reader-progress');
   const header = document.getElementById('reader-header');
 
+  // ─── Background Music (BGM) ───
+  const bgmUrl = story.bgmUrl || (story as any).bgm_url;
+  const bgmVolume = typeof story.bgmVolume === 'number' ? story.bgmVolume : (typeof (story as any).bgm_volume === 'number' ? (story as any).bgm_volume : 0.25);
+  let bgmAudio: HTMLAudioElement | null = null;
+  if (bgmUrl) {
+    bgmAudio = new Audio(bgmUrl);
+    bgmAudio.loop = true;
+    bgmAudio.volume = bgmVolume;
+    const playBgmWithGestureFallback = () => {
+      if (bgmAudio && bgmAudio.paused) {
+        bgmAudio.play().catch(() => {
+          const onUserGesture = () => {
+            if (bgmAudio && bgmAudio.paused) bgmAudio.play().catch(() => {});
+            document.removeEventListener('click', onUserGesture);
+            document.removeEventListener('keydown', onUserGesture);
+            document.removeEventListener('touchstart', onUserGesture);
+          };
+          document.addEventListener('click', onUserGesture, { once: true });
+          document.addEventListener('keydown', onUserGesture, { once: true });
+          document.addEventListener('touchstart', onUserGesture, { once: true });
+        });
+      }
+    };
+    playBgmWithGestureFallback();
+  }
+
+  const stopBgm = () => {
+    if (bgmAudio) {
+      bgmAudio.pause();
+      bgmAudio = null;
+    }
+  };
+
   // ─── Back button ───
   document.getElementById('reader-back')?.addEventListener('click', () => {
+    stopBgm();
+    stopSpeaking();
     if (window.history.length > 1) {
       window.history.back();
     } else {
       navigate('home');
     }
   });
+
+  window.addEventListener('hashchange', stopBgm, { once: true });
+  window.addEventListener('popstate', stopBgm, { once: true });
 
   // ─── Auto-hide header on scroll ───
   let lastScroll = 0;

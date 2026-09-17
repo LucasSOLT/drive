@@ -328,6 +328,8 @@ export async function saveUserStory(story: UserStory): Promise<void> {
         characters: story.characters || [],
         page_dialogue: story.page_dialogue || {},
         audio_mode: story.audioMode || 'make_audio',
+        bgm_url: story.bgmUrl || null,
+        bgm_volume: story.bgmVolume ?? 0.25,
       })
       .select('id')
       .single();
@@ -807,6 +809,8 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     episodeNumber: s.episode_number || 1,
     audioMode: (s.audio_mode || 'make_audio') as any,
     narratorVoiceId: s.narrator_voice_id || undefined,
+    bgmUrl: s.bgm_url || undefined,
+    bgmVolume: typeof s.bgm_volume === 'number' ? s.bgm_volume : 0.25,
   };
 }
 
@@ -931,6 +935,8 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     story_group_id: storyGroupId,
     episode_number: story.episodeNumber || 1,
     audio_mode: story.audioMode || 'make_audio',
+    bgm_url: story.bgmUrl || null,
+    bgm_volume: story.bgmVolume ?? 0.25,
   };
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);

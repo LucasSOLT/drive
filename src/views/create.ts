@@ -92,6 +92,8 @@ const CHAR_COLORS = ['#8a63d2','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899'
 let storyCharacters: StoryCharacter[] = [];
 let storyAudioMode: StoryAudioMode = 'make_audio';
 let storyNarratorVoiceId: string = '21m00Tcm4TlvDq8ikWAM'; // Rachel (default narrator)
+let storyBgmUrl: string = '';
+let storyBgmVolume: number = 0.25;
 let openStorySettingsGlobal: (() => void) | null = null;
 let currentPage = 0;
 let activeDraftId: string | null = null;
@@ -190,6 +192,8 @@ interface DraftEntry {
   currentPage: number;
   updatedAt: string;
   storyCharacters?: StoryCharacter[];
+  bgmUrl?: string;
+  bgmVolume?: number;
 }
 
 function getAllDrafts(): DraftEntry[] {
@@ -240,7 +244,9 @@ function saveDraft() {
     bookPages,
     currentPage,
     updatedAt: new Date().toISOString(),
-    storyCharacters
+    storyCharacters,
+    bgmUrl: storyBgmUrl,
+    bgmVolume: storyBgmVolume,
   };
   const drafts = getAllDrafts();
   const idx = drafts.findIndex(d => d.id === activeDraftId);
@@ -290,6 +296,8 @@ function loadDraft(draftId: string): boolean {
     bookPages.forEach(p => { if (!p.dialogueLines) p.dialogueLines = []; });
     currentPage = draft.currentPage || 0;
     storyCharacters = draft.storyCharacters || [];
+    storyBgmUrl = draft.bgmUrl || '';
+    storyBgmVolume = typeof draft.bgmVolume === 'number' ? draft.bgmVolume : 0.25;
     return true;
   } catch (e) {
     return false;
@@ -1858,6 +1866,13 @@ function buildStory(status: 'draft' | 'under-review' | 'live' = 'draft'): UserSt
     || (!isVideoMedia(page0) && page0)
     || '';
 
+  const pageDialogueMap: Record<number, DialogueLine[]> = {};
+  bookPages.forEach((p, idx) => {
+    if (p.dialogueLines && p.dialogueLines.length > 0) {
+      pageDialogueMap[idx] = p.dialogueLines;
+    }
+  });
+
   return {
     id: activeDraftId || 'us-' + Date.now(),
     title: storyTitle,
@@ -1871,6 +1886,11 @@ function buildStory(status: 'draft' | 'under-review' | 'live' = 'draft'): UserSt
     coverImage,
     coverVideo,
     contentRating: storyContentRating as any,
+    page_dialogue: Object.keys(pageDialogueMap).length > 0 ? pageDialogueMap : undefined,
+    audioMode: storyAudioMode,
+    narratorVoiceId: storyNarratorVoiceId,
+    bgmUrl: storyBgmUrl || undefined,
+    bgmVolume: storyBgmVolume,
   };
 }
 
@@ -2051,6 +2071,49 @@ export function init(): void {
             </div>
           </div>
 
+          <!-- Audio Experience Mode -->
+          <div class="ss-section">
+            <div class="ss-section__label">Audio Experience</div>
+            <div class="ss-audio-mode-selector" style="display:flex; gap:10px; margin-bottom:12px;">
+              <button type="button" class="ss-audio-mode-btn ${storyAudioMode === 'make_audio' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="make_audio" style="flex:1; padding:10px; border-radius:10px; border:2px solid ${storyAudioMode === 'make_audio' ? 'var(--color-purple)' : 'var(--color-border)'}; background:var(--color-surface); cursor:pointer; text-align:left;">
+                <div style="font-weight:700; font-size:0.85rem;">🎙️ Make audio as you go</div>
+                <div style="font-size:0.75rem; color:var(--color-text-muted); margin-top:2px;">Multi-character AI voice dialogue with custom voices.</div>
+              </button>
+              <button type="button" class="ss-audio-mode-btn ${storyAudioMode === 'simple_upload' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="simple_upload" style="flex:1; padding:10px; border-radius:10px; border:2px solid ${storyAudioMode === 'simple_upload' ? 'var(--color-purple)' : 'var(--color-border)'}; background:var(--color-surface); cursor:pointer; text-align:left;">
+                <div style="font-weight:700; font-size:0.85rem;">📁 Simple audio upload</div>
+                <div style="font-size:0.75rem; color:var(--color-text-muted); margin-top:2px;">Upload a single audio file per page directly.</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Background Music (BGM) -->
+          <div class="ss-section" id="ss-bgm-section">
+            <div class="ss-section__label">🎵 Background Music (BGM)</div>
+            <p style="font-size:0.78rem; color:var(--color-text-muted); margin: 0 0 10px 0;">Loops softly across all pages underneath dialogue.</p>
+            <div style="display:flex; flex-direction:column; gap:10px; background:var(--color-bg); padding:12px; border-radius:12px; border:1px solid var(--color-border);">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <span id="ss-bgm-name" style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                  ${storyBgmUrl ? '🎵 Music attached' : 'No music uploaded'}
+                </span>
+                <div style="display:flex; gap:6px;">
+                  <button id="ss-bgm-upload-btn" class="btn btn--sm btn--secondary" type="button">Upload BGM</button>
+                  ${storyBgmUrl ? `
+                    <button id="ss-bgm-play-btn" class="btn btn--sm btn--ghost" type="button">▶</button>
+                    <button id="ss-bgm-remove-btn" class="btn btn--sm btn--ghost" type="button" style="color:#ef4444;">✕</button>
+                  ` : ''}
+                </div>
+                <input type="file" id="ss-bgm-file-input" accept="audio/*,video/*" hidden>
+              </div>
+              ${storyBgmUrl ? `
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:0.75rem; color:var(--color-text-secondary); width:55px;">Volume:</span>
+                  <input type="range" id="ss-bgm-vol-slider" min="5" max="60" value="${Math.round(storyBgmVolume * 100)}" style="flex:1;">
+                  <span id="ss-bgm-vol-val" style="font-size:0.75rem; font-weight:700; color:var(--color-purple); width:32px;">${Math.round(storyBgmVolume * 100)}%</span>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
           <!-- Actions -->
           <div class="ss-actions">
             <button id="ss-save-draft" type="button" class="ss-action-btn ss-action-btn--secondary">Save as Draft</button>
@@ -2130,7 +2193,95 @@ export function init(): void {
       }
     });
 
+    // Audio Mode Switching
+    wizard.querySelectorAll('[data-audio-mode]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = (btn as HTMLElement).getAttribute('data-audio-mode') as StoryAudioMode;
+        storyAudioMode = mode;
+        wizard.querySelectorAll('.ss-audio-mode-btn').forEach(b => b.classList.remove('ss-audio-mode-btn--active'));
+        (btn as HTMLElement).classList.add('ss-audio-mode-btn--active');
+        saveDraft();
+      });
+    });
+
+    // Background Music (BGM) Wiring
+    let bgmAudioPreview: HTMLAudioElement | null = null;
+    const stopBgmAudioPreview = () => {
+      if (bgmAudioPreview) {
+        bgmAudioPreview.pause();
+        bgmAudioPreview = null;
+      }
+      const playBtn = document.getElementById('ss-bgm-play-btn') as HTMLButtonElement | null;
+      if (playBtn) playBtn.textContent = '▶';
+    };
+
+    const bgmUploadBtn = document.getElementById('ss-bgm-upload-btn') as HTMLButtonElement | null;
+    const bgmFileInput = document.getElementById('ss-bgm-file-input') as HTMLInputElement | null;
+    const bgmPlayBtn = document.getElementById('ss-bgm-play-btn') as HTMLButtonElement | null;
+    const bgmRemoveBtn = document.getElementById('ss-bgm-remove-btn');
+    const bgmVolSlider = document.getElementById('ss-bgm-vol-slider') as HTMLInputElement | null;
+    const bgmVolVal = document.getElementById('ss-bgm-vol-val');
+
+    bgmUploadBtn?.addEventListener('click', () => bgmFileInput?.click());
+
+    bgmFileInput?.addEventListener('change', async () => {
+      const file = bgmFileInput.files?.[0];
+      if (!file) return;
+      if (bgmUploadBtn) {
+        bgmUploadBtn.textContent = 'Uploading...';
+        bgmUploadBtn.disabled = true;
+      }
+      try {
+        const storyId = activeDraftId || 'draft';
+        const extracted = await extractAudioFromMediaFile(file);
+        const cdnUrl = await uploadAudioData(extracted.blob, storyId, 'bgm');
+        storyBgmUrl = cdnUrl;
+        saveDraft();
+        openStorySettings();
+      } catch (err: any) {
+        console.error('BGM upload failed:', err);
+        alert('BGM upload failed: ' + (err?.message || 'Unknown error'));
+        if (bgmUploadBtn) {
+          bgmUploadBtn.textContent = 'Upload BGM';
+          bgmUploadBtn.disabled = false;
+        }
+      }
+    });
+
+    bgmPlayBtn?.addEventListener('click', () => {
+      if (bgmAudioPreview && !bgmAudioPreview.paused) {
+        stopBgmAudioPreview();
+      } else {
+        if (!storyBgmUrl) return;
+        stopBgmAudioPreview();
+        bgmAudioPreview = new Audio(storyBgmUrl);
+        bgmAudioPreview.volume = storyBgmVolume;
+        bgmAudioPreview.loop = true;
+        bgmAudioPreview.play().catch(() => {});
+        if (bgmPlayBtn) bgmPlayBtn.textContent = '⏸';
+        bgmAudioPreview.onended = () => {
+          if (bgmPlayBtn) bgmPlayBtn.textContent = '▶';
+        };
+      }
+    });
+
+    bgmRemoveBtn?.addEventListener('click', () => {
+      stopBgmAudioPreview();
+      storyBgmUrl = '';
+      saveDraft();
+      openStorySettings();
+    });
+
+    bgmVolSlider?.addEventListener('input', () => {
+      const val = parseInt(bgmVolSlider.value) / 100;
+      storyBgmVolume = val;
+      if (bgmVolVal) bgmVolVal.textContent = `${Math.round(val * 100)}%`;
+      if (bgmAudioPreview) bgmAudioPreview.volume = val;
+      saveDraft();
+    });
+
     document.getElementById('ss-back')?.addEventListener('click', () => {
+      stopBgmAudioPreview();
       // Save field values back to state before returning
       const titleEl = document.getElementById('ss-title') as HTMLInputElement;
       const authorEl = document.getElementById('ss-author') as HTMLInputElement;
@@ -2177,6 +2328,7 @@ export function init(): void {
 
     // Save / Submit handlers
     document.getElementById('ss-save-draft')?.addEventListener('click', async (e) => {
+      stopBgmAudioPreview();
       const btn = e.currentTarget as HTMLButtonElement;
       btn.disabled = true;
       btn.textContent = 'Saving...';
@@ -2194,6 +2346,7 @@ export function init(): void {
     });
 
     document.getElementById('ss-submit')?.addEventListener('click', async (e) => {
+      stopBgmAudioPreview();
       getFormData();
       if (!storyTitle.trim()) {
         (document.getElementById('ss-title') as HTMLInputElement)?.focus();

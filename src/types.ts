@@ -47,6 +47,8 @@ export interface Story {
   pageDialogue?: Record<number, DialogueLine[]>;
   audioMode?: StoryAudioMode;
   narratorVoiceId?: string;
+  bgmUrl?: string;
+  bgmVolume?: number;
 }
 
 export interface UserStory {
@@ -78,6 +80,8 @@ export interface UserStory {
   page_dialogue?: Record<number, DialogueLine[]>;
   audioMode?: StoryAudioMode;
   narratorVoiceId?: string;
+  bgmUrl?: string;
+  bgmVolume?: number;
 }
 
 export type UserPlan = 'free' | 'starter' | 'creator';
