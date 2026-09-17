@@ -950,6 +950,8 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     if (!error) {
       console.log('[DB] Official story saved successfully:', payload.id);
       removeLocalDraft(storyId);
+      _cachedOfficialStories = null;
+      try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
       return;
     }
 
@@ -982,6 +984,8 @@ export async function deleteOfficialStory(storyId: string): Promise<void> {
     console.error('[DB] Error deleting official story:', error);
     throw error;
   }
+  _cachedOfficialStories = null;
+  try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
 }
 
 /** Reorder official stories by updating their sort_order values */
