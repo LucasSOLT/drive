@@ -12889,6 +12889,142 @@ body.content-management-mode .story-card:hover {
 }
 
 /* ═══════════════════════════════════════════════
+   AUDIO PROGRESS BAR & TIME SCRUBBERS
+   ═══════════════════════════════════════════════ */
+.audio-scrubber {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 2px;
+}
+
+.audio-scrubber__slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-border);
+  outline: none;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.audio-scrubber__slider:hover {
+  background: rgba(139, 92, 246, 0.35);
+}
+
+.audio-scrubber__slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-purple);
+  border: 2px solid white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.audio-scrubber__slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+}
+
+.audio-scrubber__slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-purple);
+  border: 2px solid white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.audio-scrubber__time {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-text-muted);
+  user-select: none;
+}
+
+.audio-scrubber__current {
+  font-weight: 700;
+  color: var(--color-purple);
+}
+
+.audio-scrubber__duration {
+  font-weight: 500;
+}
+
+/* Reader floating scrubber pill */
+.reader-audio-scrubber-pill {
+  position: absolute;
+  bottom: 12px;
+  left: 56px;
+  right: 16px;
+  max-width: 280px;
+  height: 36px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.reader-audio-scrubber-pill .audio-scrubber__slider {
+  flex: 1;
+}
+
+.reader-audio-scrubber-pill .reader-scrubber-time {
+  font-size: 0.68rem;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: #f1f5f9;
+  white-space: nowrap;
+}
+
+/* Book Viewer scrubber bar */
+.bv-audio-scrubber {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 16px 6px;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.bv-audio-scrubber .audio-scrubber__slider {
+  flex: 1;
+}
+
+.bv-audio-scrubber__time {
+  font-size: 0.7rem;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  min-width: 30px;
+}
+
+#bv-time-current {
+  text-align: right;
+  color: var(--color-purple);
+}
+
+/* ═══════════════════════════════════════════════
    READER CC BUTTON & CAPTIONS DRAWER
    ═══════════════════════════════════════════════ */
 .book-viewer__circle-btn--cc {

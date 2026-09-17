@@ -375,13 +375,49 @@ export async function extractAudioFromMediaFile(file: File): Promise<{ blob: Blo
   }
 }
 
-/** Play a pre-recorded audio URL (base64 data URL or blob URL). */
-export function playAudioUrl(url: string, onEnded?: () => void): void {
+/** Get the currently active Audio element, if any. */
+export function getCurrentAudio(): HTMLAudioElement | null {
+  return currentAudio;
+}
+
+/** Seek the currently active audio to a specific timestamp in seconds. */
+export function seekAudio(timeSeconds: number): void {
+  if (currentAudio && !isNaN(timeSeconds)) {
+    currentAudio.currentTime = Math.max(0, Math.min(timeSeconds, currentAudio.duration || timeSeconds));
+  }
+}
+
+/** Format seconds into MM:SS display string (e.g. 0:12 or 1:45). */
+export function formatTime(seconds: number): string {
+  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+/** Play a pre-recorded audio URL (base64 data URL or blob URL) with optional time updates. */
+export function playAudioUrl(
+  url: string,
+  onEnded?: () => void,
+  onTimeUpdate?: (currentTime: number, duration: number) => void
+): HTMLAudioElement {
   stopSpeaking();
   const audio = new Audio(url);
   currentAudio = audio;
   // No object URL to revoke for base64 data URLs
   currentObjectURL = null;
+
+  audio.addEventListener('timeupdate', () => {
+    if (currentAudio === audio) {
+      onTimeUpdate?.(audio.currentTime, audio.duration || 0);
+    }
+  });
+
+  audio.addEventListener('loadedmetadata', () => {
+    if (currentAudio === audio) {
+      onTimeUpdate?.(audio.currentTime, audio.duration || 0);
+    }
+  });
 
   audio.addEventListener('ended', () => {
     if (currentAudio === audio) {
@@ -402,6 +438,8 @@ export function playAudioUrl(url: string, onEnded?: () => void): void {
     console.warn('[TTS] Failed to play pre-recorded audio:', err);
     stopSpeaking();
   });
+
+  return audio;
 }
 
 /**

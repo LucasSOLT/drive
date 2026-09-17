@@ -2,7 +2,7 @@ import type { StoryFormat, Genre, Story, StoryCharacter, DialogueLine, StoryAudi
 import { genres } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
 
 import { saveOfficialStory, fetchOfficialStories } from '../lib/db.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
@@ -1476,6 +1476,14 @@ function renderBookCanvas(): string {
                 <div class="audio-upload-preview__meta">
                   <span class="audio-upload-preview__name">${page.audioFileName || 'Audio uploaded'}</span>
                   <span class="audio-upload-preview__tag">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? 'Audio (from Video)' : 'Audio File'}</span>
+                </div>
+              </div>
+              <div class="audio-scrubber" data-audio-scrubber-wrap="${i}">
+                <input type="range" class="audio-scrubber__slider" data-audio-scrubber="${i}" min="0" max="100" value="0" step="0.1" aria-label="Audio progress">
+                <div class="audio-scrubber__time">
+                  <span class="audio-scrubber__current" data-audio-current="${i}">0:00</span>
+                  <span class="audio-scrubber__divider">/</span>
+                  <span class="audio-scrubber__duration" data-audio-duration="${i}">--:--</span>
                 </div>
               </div>
               <div class="audio-upload-actions">
@@ -3151,23 +3159,106 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           }
         });
       });
-      // Play
+      // Pre-load audio duration for preview
+      wizard.querySelectorAll('[data-audio-duration]').forEach(durSpan => {
+        const idx = parseInt(durSpan.getAttribute('data-audio-duration') || '0');
+        const url = bookPages[idx]?.audioUrl;
+        if (url) {
+          const preAudio = new Audio(url);
+          preAudio.addEventListener('loadedmetadata', () => {
+            if (preAudio.duration && !isNaN(preAudio.duration)) {
+              durSpan.textContent = formatTime(preAudio.duration);
+            }
+          });
+        }
+      });
+
+      // Play / Pause with scrubber sync
       wizard.querySelectorAll('[data-audio-play]').forEach(btn => {
         btn.addEventListener('click', () => {
           const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-play') || '0');
-          const url = bookPages[idx].audioUrl;
-          if (url) { if (isSpeaking()) stopSpeaking(); else playAudioUrl(url); }
+          const url = bookPages[idx]?.audioUrl;
+          if (!url) return;
+
+          const playBtn = btn as HTMLButtonElement;
+          const slider = wizard.querySelector(`[data-audio-scrubber="${idx}"]`) as HTMLInputElement | null;
+          const curSpan = wizard.querySelector(`[data-audio-current="${idx}"]`);
+          const durSpan = wizard.querySelector(`[data-audio-duration="${idx}"]`);
+
+          if (isSpeaking()) {
+            stopSpeaking();
+            playBtn.textContent = '▶ Play';
+          } else {
+            playBtn.textContent = '⏸ Pause';
+            playAudioUrl(
+              url,
+              () => {
+                playBtn.textContent = '▶ Play';
+                if (slider) slider.value = '0';
+                if (curSpan) curSpan.textContent = '0:00';
+              },
+              (current, duration) => {
+                if (slider && duration > 0) {
+                  slider.value = ((current / duration) * 100).toFixed(1);
+                }
+                if (curSpan) curSpan.textContent = formatTime(current);
+                if (durSpan && duration > 0) durSpan.textContent = formatTime(duration);
+              }
+            );
+          }
         });
       });
+
       // Restart from start
       wizard.querySelectorAll('[data-audio-restart]').forEach(btn => {
         btn.addEventListener('click', () => {
           const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-restart') || '0');
-          const url = bookPages[idx].audioUrl;
-          if (url) {
-            stopSpeaking();
-            playAudioUrl(url);
-          }
+          const url = bookPages[idx]?.audioUrl;
+          if (!url) return;
+
+          const playBtn = wizard.querySelector(`[data-audio-play="${idx}"]`) as HTMLButtonElement | null;
+          const slider = wizard.querySelector(`[data-audio-scrubber="${idx}"]`) as HTMLInputElement | null;
+          const curSpan = wizard.querySelector(`[data-audio-current="${idx}"]`);
+          const durSpan = wizard.querySelector(`[data-audio-duration="${idx}"]`);
+
+          stopSpeaking();
+          if (playBtn) playBtn.textContent = '⏸ Pause';
+          if (slider) slider.value = '0';
+          if (curSpan) curSpan.textContent = '0:00';
+
+          playAudioUrl(
+            url,
+            () => {
+              if (playBtn) playBtn.textContent = '▶ Play';
+              if (slider) slider.value = '0';
+              if (curSpan) curSpan.textContent = '0:00';
+            },
+            (current, duration) => {
+              if (slider && duration > 0) {
+                slider.value = ((current / duration) * 100).toFixed(1);
+              }
+              if (curSpan) curSpan.textContent = formatTime(current);
+              if (durSpan && duration > 0) durSpan.textContent = formatTime(duration);
+            }
+          );
+        });
+      });
+
+      // Scrubber range input seeking
+      wizard.querySelectorAll('[data-audio-scrubber]').forEach(slider => {
+        const inputEl = slider as HTMLInputElement;
+        const idx = parseInt(inputEl.getAttribute('data-audio-scrubber') || '0');
+
+        inputEl.addEventListener('input', () => {
+          const audio = getCurrentAudio();
+          const curSpan = wizard.querySelector(`[data-audio-current="${idx}"]`);
+          const durSpan = wizard.querySelector(`[data-audio-duration="${idx}"]`);
+          const duration = audio?.duration || 0;
+          const targetTime = (parseFloat(inputEl.value) / 100) * duration;
+
+          seekAudio(targetTime);
+          if (curSpan) curSpan.textContent = formatTime(targetTime);
+          if (durSpan && duration > 0) durSpan.textContent = formatTime(duration);
         });
       });
       // Remove

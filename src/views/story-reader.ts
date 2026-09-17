@@ -7,7 +7,7 @@ import {
   getStoryLikes, hasUserLiked, toggleStoryLike,
   isBookmarked, toggleBookmark
 } from '../state.ts';
-import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 
@@ -535,9 +535,65 @@ export function init(): void {
               ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
               : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
             pageContainer.appendChild(audioBtn);
+
+            // Floating audio scrubber pill
+            const scrubberPill = document.createElement('div');
+            scrubberPill.className = 'reader-audio-scrubber-pill';
+            scrubberPill.innerHTML = `
+              <span class="reader-scrubber-time" id="reader-time-current">0:00</span>
+              <input type="range" class="audio-scrubber__slider" id="reader-audio-slider" min="0" max="100" value="0" step="0.1" aria-label="Audio progress">
+              <span class="reader-scrubber-time" id="reader-time-duration">--:--</span>
+            `;
+            pageContainer.appendChild(scrubberPill);
+
+            const updateScrubberDisplay = (current: number, duration: number) => {
+              const slider = document.getElementById('reader-audio-slider') as HTMLInputElement | null;
+              const curEl = document.getElementById('reader-time-current');
+              const durEl = document.getElementById('reader-time-duration');
+              if (duration > 0 && !isNaN(duration)) {
+                const pct = ((current / duration) * 100).toFixed(1);
+                if (slider && document.activeElement !== slider) {
+                  slider.value = pct;
+                }
+                if (durEl) durEl.textContent = formatTime(duration);
+              }
+              if (curEl) curEl.textContent = formatTime(current);
+            };
+
+            // Pre-load audio duration for current page
+            const currentAudioSrc = story.pageAudio?.[currentPage];
+            if (currentAudioSrc) {
+              const pre = new Audio(currentAudioSrc);
+              pre.addEventListener('loadedmetadata', () => {
+                const durEl = document.getElementById('reader-time-duration');
+                if (durEl && pre.duration && !isNaN(pre.duration)) {
+                  durEl.textContent = formatTime(pre.duration);
+                }
+              });
+            }
+
+            // Scrubber range input seeking
+            const sliderEl = scrubberPill.querySelector('#reader-audio-slider') as HTMLInputElement | null;
+            sliderEl?.addEventListener('input', (e) => {
+              e.stopPropagation();
+              const audio = getCurrentAudio();
+              const dur = audio?.duration || 0;
+              const target = (parseFloat(sliderEl.value) / 100) * dur;
+              seekAudio(target);
+              const curEl = document.getElementById('reader-time-current');
+              if (curEl) curEl.textContent = formatTime(target);
+            });
+            sliderEl?.addEventListener('click', (e) => {
+              e.stopPropagation();
+            });
+
             const onAudioFinished = () => {
               audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
               audioBtn.title = 'Play audio';
+              const slider = document.getElementById('reader-audio-slider') as HTMLInputElement | null;
+              const curEl = document.getElementById('reader-time-current');
+              if (slider) slider.value = '0';
+              if (curEl) curEl.textContent = '0:00';
 
               // Hands-free auto-advance
               if (getSettings().autoAdvance && currentPage < story.panels.length - 1) {
@@ -561,10 +617,10 @@ export function init(): void {
                   if (hasDialogueAudio) {
                     playAudioSequence(audioUrls, undefined, onAudioFinished);
                   } else {
-                    playAudioUrl(story.pageAudio![currentPage], onAudioFinished);
+                    playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
                   }
                 } else {
-                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished);
+                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
                 }
                 audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
                 audioBtn.title = 'Pause audio';
@@ -580,10 +636,10 @@ export function init(): void {
                 if (hasDialogueAudio) {
                   playAudioSequence(audioUrls, undefined, onAudioFinished);
                 } else {
-                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished);
+                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
                 }
               } else {
-                playAudioUrl(story.pageAudio![currentPage], onAudioFinished);
+                playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
               }
               audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
               audioBtn.title = 'Pause audio';
