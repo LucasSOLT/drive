@@ -996,11 +996,22 @@ function renderBookCanvas(): string {
   const page = bookPages[i];
   const cardHtml = `
     <div class="book-tile book-tile--single" data-book-longpress="${i}">
-      <div class="book-tile__header" style="position:relative;">
+      <div class="book-tile__header" style="position:relative; display:flex; align-items:center; justify-content:space-between; padding:10px 14px;">
         <span class="book-tile__label">PAGE ${i + 1}</span>
-        <button class="book-tile__maximize" data-tile-maximize="${i}" title="Expand page">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-        </button>
+        <div class="book-tile__header-actions">
+          <button type="button" class="book-tile__action-btn book-tile__action-btn--move-up" data-page-move-up="${i}" title="Move Page Up" ${i === 0 ? 'disabled' : ''}>
+            ▲
+          </button>
+          <button type="button" class="book-tile__action-btn book-tile__action-btn--move-down" data-page-move-down="${i}" title="Move Page Down" ${i === bookPages.length - 1 ? 'disabled' : ''}>
+            ▼
+          </button>
+          <button type="button" class="book-tile__action-btn book-tile__action-btn--duplicate" data-page-duplicate="${i}" title="Duplicate Page">
+            📋
+          </button>
+          <button class="book-tile__maximize" data-tile-maximize="${i}" title="Expand page">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          </button>
+        </div>
       </div>
 
       <!-- Image area -->
@@ -1316,9 +1327,14 @@ function openStoryboard(): void {
         </div>
         <span class="sb-card__num">${i + 1}</span>
         <span class="sb-card__label">SLIDE CONTENT</span>
-        <button class="sb-card__delete" data-sb-delete="${i}" title="Delete page">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-        </button>
+        <div style="display:flex; align-items:center; gap:2px; margin-left:auto;">
+          <button class="sb-card__ctrl-btn" data-sb-move-up="${i}" title="Move page up" type="button" ${i === 0 ? 'disabled' : ''}>▲</button>
+          <button class="sb-card__ctrl-btn" data-sb-move-down="${i}" title="Move page down" type="button" ${i === bookPages.length - 1 ? 'disabled' : ''}>▼</button>
+          <button class="sb-card__ctrl-btn" data-sb-duplicate="${i}" title="Duplicate page" type="button">📋</button>
+          <button class="sb-card__delete" data-sb-delete="${i}" title="Delete page">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
       </div>
 
       <div class="sb-card__media">
@@ -1523,6 +1539,57 @@ function openStoryboard(): void {
       if (!confirm(`Delete Page ${idx + 1}?`)) return;
       bookPages.splice(idx, 1);
       if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
+      saveDraft();
+      overlay.remove();
+      openStoryboard();
+    });
+  });
+
+  // Move Up (Storyboard)
+  overlay.querySelectorAll('[data-sb-move-up]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-sb-move-up') || '0');
+      if (idx <= 0) return;
+      const temp = bookPages[idx];
+      bookPages[idx] = bookPages[idx - 1];
+      bookPages[idx - 1] = temp;
+      currentPage = idx - 1;
+      saveDraft();
+      overlay.remove();
+      openStoryboard();
+    });
+  });
+
+  // Move Down (Storyboard)
+  overlay.querySelectorAll('[data-sb-move-down]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-sb-move-down') || '0');
+      if (idx >= bookPages.length - 1) return;
+      const temp = bookPages[idx];
+      bookPages[idx] = bookPages[idx + 1];
+      bookPages[idx + 1] = temp;
+      currentPage = idx + 1;
+      saveDraft();
+      overlay.remove();
+      openStoryboard();
+    });
+  });
+
+  // Duplicate (Storyboard)
+  overlay.querySelectorAll('[data-sb-duplicate]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-sb-duplicate') || '0');
+      const src = bookPages[idx];
+      const clonedDialogue = (src.dialogueLines || []).map(line => ({
+        ...line,
+        id: 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      }));
+      const clonedPage: BookPage = {
+        ...src,
+        dialogueLines: clonedDialogue,
+      };
+      bookPages.splice(idx + 1, 0, clonedPage);
+      currentPage = idx + 1;
       saveDraft();
       overlay.remove();
       openStoryboard();
@@ -3424,6 +3491,61 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       tileDd?.addEventListener('input', handleTileDd);
       tileDd?.addEventListener('paste', () => setTimeout(handleTileDd, 0));
 
+
+      // Page Reordering & Duplication
+      wizard.querySelector(`[data-page-move-up="${i}"]`)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (i <= 0) return;
+        const textEl = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
+        if (textEl) bookPages[i].text = textEl.value;
+        const ddEl = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
+        if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
+
+        const temp = bookPages[i];
+        bookPages[i] = bookPages[i - 1];
+        bookPages[i - 1] = temp;
+        currentPage = i - 1;
+        saveDraft();
+        updateView();
+      });
+
+      wizard.querySelector(`[data-page-move-down="${i}"]`)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (i >= bookPages.length - 1) return;
+        const textEl = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
+        if (textEl) bookPages[i].text = textEl.value;
+        const ddEl = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
+        if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
+
+        const temp = bookPages[i];
+        bookPages[i] = bookPages[i + 1];
+        bookPages[i + 1] = temp;
+        currentPage = i + 1;
+        saveDraft();
+        updateView();
+      });
+
+      wizard.querySelector(`[data-page-duplicate="${i}"]`)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const textEl = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
+        if (textEl) bookPages[i].text = textEl.value;
+        const ddEl = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
+        if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
+
+        const src = bookPages[i];
+        const clonedDialogue = (src.dialogueLines || []).map(line => ({
+          ...line,
+          id: 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        }));
+        const clonedPage: BookPage = {
+          ...src,
+          dialogueLines: clonedDialogue,
+        };
+        bookPages.splice(i + 1, 0, clonedPage);
+        currentPage = i + 1;
+        saveDraft();
+        updateView();
+      });
 
       // Maximize
       wizard.querySelector(`[data-tile-maximize="${i}"]`)?.addEventListener('click', (e) => {

@@ -5757,6 +5757,88 @@ button.profile-avatar {
   transform: scale(0.92);
 }
 
+/* Page Reordering & Duplication Controls */
+.book-tile__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.book-tile__action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border-radius: 7px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.book-tile__action-btn:hover:not(:disabled) {
+  background: var(--color-surface-hover, rgba(255, 255, 255, 0.1));
+  color: var(--color-text-primary);
+  border-color: var(--color-purple);
+  transform: translateY(-1px);
+}
+
+.book-tile__action-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.book-tile__action-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.book-tile__action-btn--duplicate {
+  font-size: 0.8rem;
+}
+
+.book-tile__header-actions .book-tile__maximize {
+  position: static;
+  opacity: 0.85;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+.book-tile__header-actions .book-tile__maximize:hover {
+  opacity: 1;
+}
+
+.sb-card__ctrl-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: all var(--transition-fast);
+}
+
+.sb-card__ctrl-btn:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.sb-card__ctrl-btn:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
 /* Page progress dots */
 .book-dots {
   display: flex;
