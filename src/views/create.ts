@@ -3,7 +3,7 @@ import { genres } from '../data/stories.ts';
 import { addUserStory, addUserStory as saveUserStory, getUserStories, isLibraryUnlocked, canCreateStory, getTokensRemaining, getUserPlan, consumeToken } from '../state.ts';
 import { navigate, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile } from '../lib/tts.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { uploadMedia, uploadAudioData } from '../lib/storage.ts';
 import { VOICE_OPTIONS } from '../lib/settings.ts';
@@ -76,11 +76,12 @@ interface BookPage {
   stability: number;
   deeperDiveContent: string;
   audioUrl: string | null;  // pre-recorded ElevenLabs audio
+  audioFileName?: string | null;
   dialogText: string;
   dialogAudioUrl: string | null;
   dialogueLines?: DialogueLine[];
 }
-const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [] });
+const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, audioFileName: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [] });
 let bookPages: BookPage[] = [
   defaultBookPage(), defaultBookPage(), defaultBookPage(),
   defaultBookPage(), defaultBookPage(),
@@ -1017,11 +1018,48 @@ function renderBookCanvas(): string {
         placeholder="Write the story for this page..."
         rows="4" maxlength="1000">${page.text}</textarea>
 
-      <!-- Dialogue -->
-      <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
-        <span>CHARACTER DIALOGUE</span>
-      </div>
-      ${renderDialogueLines(i, page.dialogueLines || [], 'mob')}
+      <!-- Dialogue / Audio -->
+      ${storyAudioMode === 'simple_upload' ? `
+        <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
+          <span>📁 PAGE AUDIO</span>
+        </div>
+        <div class="audio-upload-zone" data-audio-upload-zone="${i}">
+          ${page.audioUrl ? `
+            <div class="audio-upload-preview">
+              <div class="audio-upload-preview__info">
+                <span class="audio-upload-preview__icon">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? '🎬' : '🎵'}</span>
+                <div class="audio-upload-preview__meta">
+                  <span class="audio-upload-preview__name">${page.audioFileName || 'Audio uploaded'}</span>
+                  <span class="audio-upload-preview__tag">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? 'Audio (from Video)' : 'Audio File'}</span>
+                </div>
+              </div>
+              <div class="audio-upload-actions">
+                <button class="audio-upload-actions__btn" data-audio-play="${i}" type="button">▶ Play</button>
+                <button class="audio-upload-actions__btn audio-upload-actions__btn--restart" data-audio-restart="${i}" type="button" title="Play from start">⏮ Restart</button>
+                <button class="audio-upload-actions__btn" data-audio-replace="${i}" type="button">Replace</button>
+                <button class="audio-upload-actions__btn audio-upload-actions__btn--delete" data-audio-remove="${i}" type="button">✕</button>
+              </div>
+            </div>
+          ` : `
+            <button class="audio-upload-btn" data-audio-upload-trigger="${i}" type="button">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span>Click to Upload Audio or Video (MP3, WAV, M4A, MP4, MOV)</span>
+            </button>
+          `}
+          <input type="file" class="audio-upload-file" data-audio-file="${i}" accept="audio/*,video/*" hidden>
+        </div>
+        <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
+          <span>📝 CAPTIONS (for hearing-impaired viewers)</span>
+        </div>
+        <textarea class="book-tile__textarea" data-simple-captions="${i}"
+          placeholder="Type dialogue and captions here for hearing-impaired viewers (optional)..."
+          rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
+      ` : `
+        <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
+          <span>CHARACTER DIALOGUE</span>
+        </div>
+        ${renderDialogueLines(i, page.dialogueLines || [], 'mob')}
+      `}
 
 
 
@@ -3080,6 +3118,84 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
 
       // Wire multi-character dialogue line events for mobile canvas
       wireDialogueLineEvents(wizard, 'mob', () => updateView());
+
+      // --- Simple Audio Upload handlers ---
+      // Upload trigger
+      wizard.querySelectorAll('[data-audio-upload-trigger]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-upload-trigger') || '0');
+          const fileInput = wizard.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+          fileInput?.click();
+        });
+      });
+      // Replace trigger
+      wizard.querySelectorAll('[data-audio-replace]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-replace') || '0');
+          const fileInput = wizard.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+          fileInput?.click();
+        });
+      });
+      // File input change
+      wizard.querySelectorAll('[data-audio-file]').forEach(input => {
+        input.addEventListener('change', async () => {
+          const idx = parseInt((input as HTMLElement).getAttribute('data-audio-file') || '0');
+          const file = (input as HTMLInputElement).files?.[0];
+          if (!file) return;
+          try {
+            const storyId = activeDraftId || 'draft';
+            // Extract audio track if video was uploaded
+            const extracted = await extractAudioFromMediaFile(file);
+            const cdnUrl = await uploadAudioData(extracted.blob, storyId, 'page_' + idx);
+            bookPages[idx].audioUrl = cdnUrl;
+            bookPages[idx].audioFileName = extracted.fileName;
+            saveDraft();
+            updateView();
+          } catch (err: any) {
+            console.error('Audio upload failed:', err);
+            alert('Audio upload failed: ' + (err?.message || 'Unknown error'));
+          }
+        });
+      });
+      // Play
+      wizard.querySelectorAll('[data-audio-play]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-play') || '0');
+          const url = bookPages[idx].audioUrl;
+          if (url) { if (isSpeaking()) stopSpeaking(); else playAudioUrl(url); }
+        });
+      });
+      // Restart from start
+      wizard.querySelectorAll('[data-audio-restart]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-restart') || '0');
+          const url = bookPages[idx].audioUrl;
+          if (url) {
+            stopSpeaking();
+            playAudioUrl(url);
+          }
+        });
+      });
+      // Remove
+      wizard.querySelectorAll('[data-audio-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-remove') || '0');
+          bookPages[idx].audioUrl = null;
+          bookPages[idx].audioFileName = null;
+          saveDraft();
+          updateView();
+        });
+      });
+      // Manual captions
+      wizard.querySelectorAll('[data-simple-captions]').forEach(ta => {
+        const handler = () => {
+          const idx = parseInt((ta as HTMLElement).getAttribute('data-simple-captions') || '0');
+          bookPages[idx].dialogText = (ta as HTMLTextAreaElement).value;
+          saveDraft();
+        };
+        ta.addEventListener('input', handler);
+        ta.addEventListener('paste', () => setTimeout(handler, 0));
+      });
 
 
       // Pre-record Audio for book page

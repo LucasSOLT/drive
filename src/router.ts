@@ -12,13 +12,7 @@ export function getCurrentRoute(): string {
   const hash = window.location.hash;
   if (hash && hash !== '#') return hash.substring(1);
 
-  // Fallback: restore last route from localStorage if hash is empty
-  const saved = localStorage.getItem(ROUTE_KEY);
-  if (saved) {
-    window.location.replace('#' + saved);
-    return saved;
-  }
-
+  // Root URL or empty hash always brings user to the Home Screen
   return 'home';
 }
 

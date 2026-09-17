@@ -2,7 +2,7 @@ import type { StoryFormat, Genre, Story, StoryCharacter, DialogueLine, StoryAudi
 import { genres } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile } from '../lib/tts.ts';
 
 import { saveOfficialStory, fetchOfficialStories } from '../lib/db.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
@@ -75,11 +75,12 @@ interface BookPage {
   stability: number;
   deeperDiveContent: string;
   audioUrl: string | null;
+  audioFileName?: string | null;
   dialogText: string;
   dialogAudioUrl: string | null;
   dialogueLines?: DialogueLine[];
 }
-const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [] });
+const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, audioFileName: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [] });
 let bookPages: BookPage[] = [
   defaultBookPage(), defaultBookPage(), defaultBookPage(),
   defaultBookPage(), defaultBookPage(),
@@ -1340,11 +1341,15 @@ function renderBookCanvas(): string {
           ${page.audioUrl ? `
             <div class="audio-upload-preview">
               <div class="audio-upload-preview__info">
-                <span class="audio-upload-preview__icon">🎵</span>
-                <span class="audio-upload-preview__name">Audio uploaded</span>
+                <span class="audio-upload-preview__icon">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? '🎬' : '🎵'}</span>
+                <div class="audio-upload-preview__meta">
+                  <span class="audio-upload-preview__name">${page.audioFileName || 'Audio uploaded'}</span>
+                  <span class="audio-upload-preview__tag">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? 'Audio (from Video)' : 'Audio File'}</span>
+                </div>
               </div>
               <div class="audio-upload-actions">
                 <button class="audio-upload-actions__btn" data-audio-play="${i}" type="button">▶ Play</button>
+                <button class="audio-upload-actions__btn audio-upload-actions__btn--restart" data-audio-restart="${i}" type="button" title="Play from start">⏮ Restart</button>
                 <button class="audio-upload-actions__btn" data-audio-replace="${i}" type="button">Replace</button>
                 <button class="audio-upload-actions__btn audio-upload-actions__btn--delete" data-audio-remove="${i}" type="button">✕</button>
               </div>
@@ -1352,10 +1357,10 @@ function renderBookCanvas(): string {
           ` : `
             <button class="audio-upload-btn" data-audio-upload-trigger="${i}" type="button">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <span>Click to Upload Page Audio (MP3, WAV, M4A)</span>
+              <span>Click to Upload Audio or Video (MP3, WAV, M4A, MP4, MOV)</span>
             </button>
           `}
-          <input type="file" class="audio-upload-file" data-audio-file="${i}" accept="audio/*" hidden>
+          <input type="file" class="audio-upload-file" data-audio-file="${i}" accept="audio/*,video/*" hidden>
         </div>
         <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
           <span>📝 CAPTIONS (for hearing-impaired viewers)</span>
@@ -2946,8 +2951,11 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           if (!file) return;
           try {
             const storyId = editStoryId || activeDraftId || 'draft';
-            const cdnUrl = await uploadAudioData(file, storyId, 'page_' + idx);
+            // Extract audio track if video was uploaded
+            const extracted = await extractAudioFromMediaFile(file);
+            const cdnUrl = await uploadAudioData(extracted.blob, storyId, 'page_' + idx);
             bookPages[idx].audioUrl = cdnUrl;
+            bookPages[idx].audioFileName = extracted.fileName;
             saveDraft();
             updateView();
           } catch (err: any) {
@@ -2964,11 +2972,23 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           if (url) { if (isSpeaking()) stopSpeaking(); else playAudioUrl(url); }
         });
       });
+      // Restart from start
+      wizard.querySelectorAll('[data-audio-restart]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-restart') || '0');
+          const url = bookPages[idx].audioUrl;
+          if (url) {
+            stopSpeaking();
+            playAudioUrl(url);
+          }
+        });
+      });
       // Remove
       wizard.querySelectorAll('[data-audio-remove]').forEach(btn => {
         btn.addEventListener('click', () => {
           const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-remove') || '0');
           bookPages[idx].audioUrl = null;
+          bookPages[idx].audioFileName = null;
           saveDraft();
           updateView();
         });

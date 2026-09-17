@@ -4,6 +4,7 @@ import {
   fetchAdminMetrics,
   fetchAdminStories,
   fetchOfficialStories,
+  getCachedOfficialStories,
   saveOfficialStory,
   reorderOfficialStories,
   approveStoryAdmin,
@@ -350,16 +351,25 @@ async function loadTabContent(): Promise<void> {
 }
 
 async function loadOriginalsTab(area: HTMLElement): Promise<void> {
-  try {
-    currentOfficialStories = await fetchOfficialStories();
-    if (currentOfficialStories.length === 0) {
-      currentOfficialStories = [...staticStories];
-    }
-  } catch (err) {
-    console.warn('[Admin] Failed to fetch official stories, fallback to static:', err);
-    currentOfficialStories = [...staticStories];
+  // If cached stories are available, render immediately to eliminate 10s wait
+  const cached = getCachedOfficialStories();
+  if (!currentOfficialStories.length && cached && cached.length > 0) {
+    currentOfficialStories = cached;
+    renderOriginalsContent(area);
   }
 
+  try {
+    const fetched = await fetchOfficialStories();
+    currentOfficialStories = fetched.length > 0 ? fetched : [...staticStories];
+  } catch (err) {
+    console.warn('[Admin] Failed to fetch official stories, fallback to static/cache:', err);
+    if (!currentOfficialStories.length) currentOfficialStories = [...staticStories];
+  }
+
+  renderOriginalsContent(area);
+}
+
+function renderOriginalsContent(area: HTMLElement): void {
   let filtered = currentOfficialStories;
   if (searchQuery) {
     filtered = filtered.filter(s =>

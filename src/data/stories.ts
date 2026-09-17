@@ -214,9 +214,9 @@ export function getStoriesByGenre(genre: Genre): Story[] {
 }
 
 export function getFeaturedStories(): Story[] {
-  return stories.filter(s => s.isFeatured);
+  return stories.filter(s => s.isFeatured && s.title && s.title.trim().length > 0);
 }
 
 export function getEditorPicks(): Story[] {
-  return stories.filter(s => s.isEditorPick);
+  return stories.filter(s => s.isEditorPick && s.title && s.title.trim().length > 0);
 }

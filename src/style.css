@@ -12737,6 +12737,7 @@ body.content-management-mode .story-card:hover {
   border-radius: 12px;
   border: 1.5px solid rgba(16, 185, 129, 0.3);
   background: rgba(16, 185, 129, 0.06);
+  flex-wrap: wrap;
 }
 .audio-upload-preview__info {
   display: flex;
@@ -12745,16 +12746,44 @@ body.content-management-mode .story-card:hover {
   font-size: 0.82rem;
   font-weight: 600;
   color: #10b981;
+  min-width: 0;
+  flex: 1;
 }
 .audio-upload-preview__icon {
-  font-size: 1.1rem;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.audio-upload-preview__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.audio-upload-preview__name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audio-upload-preview__tag {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  padding: 1px 6px;
+  border-radius: 6px;
+  width: fit-content;
 }
 .audio-upload-actions {
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
 }
 .audio-upload-actions__btn {
-  padding: 5px 10px;
+  padding: 5px 9px;
   border-radius: 8px;
   border: 1px solid var(--color-border);
   background: var(--color-bg);
@@ -12766,6 +12795,11 @@ body.content-management-mode .story-card:hover {
 }
 .audio-upload-actions__btn:active {
   transform: scale(0.95);
+}
+.audio-upload-actions__btn--restart {
+  color: var(--color-purple);
+  border-color: rgba(139, 92, 246, 0.35);
+  background: rgba(139, 92, 246, 0.08);
 }
 .audio-upload-actions__btn--delete {
   color: #ef4444;

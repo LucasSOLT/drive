@@ -298,7 +298,7 @@ async function concatenateAudioSegments(dataUrls: string[], pauseMs = 120): Prom
 }
 
 /** Encode an AudioBuffer to a WAV Blob. */
-function audioBufferToWav(buffer: AudioBuffer): Blob {
+export function audioBufferToWav(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
   const format = 1; // PCM
@@ -341,6 +341,38 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
   }
 
   return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
+/**
+ * Extract audio track from an uploaded media file (audio or video).
+ * If the file is a video (MP4, MOV, WebM, etc.), it decodes the audio track using
+ * AudioContext and encodes it as a clean WAV Blob, completely stripping the video.
+ */
+export async function extractAudioFromMediaFile(file: File): Promise<{ blob: Blob; fileName: string; isVideo: boolean }> {
+  const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi|mkv)$/i.test(file.name);
+  if (!isVideo) {
+    return { blob: file, fileName: file.name, isVideo: false };
+  }
+
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) {
+      return { blob: file, fileName: file.name, isVideo: true };
+    }
+
+    const ctx = new AudioCtx();
+    const arrayBuffer = await file.arrayBuffer();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    const wavBlob = audioBufferToWav(audioBuffer);
+
+    const baseName = file.name.replace(/\.[^/.]+$/, '');
+    const cleanFileName = `${baseName}.wav`;
+
+    return { blob: wavBlob, fileName: cleanFileName, isVideo: true };
+  } catch (err) {
+    console.warn('[TTS] Failed to extract audio track from video, falling back to original:', err);
+    return { blob: file, fileName: file.name, isVideo: true };
+  }
 }
 
 /** Play a pre-recorded audio URL (base64 data URL or blob URL). */

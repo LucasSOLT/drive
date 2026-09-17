@@ -812,6 +812,21 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
 
 /** Fetch all official stories sorted by sort_order ASC, then created_at DESC.
  *  Includes an 8-second timeout so the Admin Dashboard never freezes on Loading... */
+let _cachedOfficialStories: Story[] | null = null;
+
+/** Get cached official stories synchronously if available for instant UI rendering. */
+export function getCachedOfficialStories(): Story[] | null {
+  if (_cachedOfficialStories && _cachedOfficialStories.length > 0) return _cachedOfficialStories;
+  try {
+    const raw = sessionStorage.getItem('drive_cached_official_stories');
+    if (raw) {
+      _cachedOfficialStories = JSON.parse(raw);
+      return _cachedOfficialStories;
+    }
+  } catch {}
+  return null;
+}
+
 export async function fetchOfficialStories(): Promise<Story[]> {
   try {
     const fetchPromise = supabase
@@ -821,13 +836,15 @@ export async function fetchOfficialStories(): Promise<Story[]> {
       .order('created_at', { ascending: false });
 
     const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-      setTimeout(() => resolve({ data: null, error: { message: 'Fetch timed out after 8s' } }), 8000)
+      setTimeout(() => resolve({ data: null, error: { message: 'Fetch timed out after 3.5s' } }), 3500)
     );
 
     const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
 
     if (error) {
-      console.warn('[DB] Error/timeout fetching official stories (fallback to local):', error);
+      console.warn('[DB] Error/timeout fetching official stories (fallback to local/cache):', error);
+      const cached = getCachedOfficialStories();
+      if (cached && cached.length > 0) return cached;
       return getLocalDraftStories();
     }
 
@@ -838,9 +855,15 @@ export async function fetchOfficialStories(): Promise<Story[]> {
     for (const draft of localDrafts) {
       if (!cloudIds.has(draft.id)) stories.push(draft);
     }
+    _cachedOfficialStories = stories;
+    try {
+      sessionStorage.setItem('drive_cached_official_stories', JSON.stringify(stories));
+    } catch {}
     return stories;
   } catch (err) {
-    console.warn('[DB] fetchOfficialStories exception, returning local drafts:', err);
+    console.warn('[DB] fetchOfficialStories exception, returning local/cached drafts:', err);
+    const cached = getCachedOfficialStories();
+    if (cached && cached.length > 0) return cached;
     return getLocalDraftStories();
   }
 }
