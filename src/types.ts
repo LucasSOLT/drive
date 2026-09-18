@@ -50,6 +50,12 @@ export interface Story {
   bgmUrl?: string;
   bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
+  // ─── Squad Gate & SPARC Checkpoint ───
+  soloEpisodeCount?: 1 | 2 | 3;         // Episodes playable solo before squad gate (default 1)
+  sparcPrompt?: {                        // SPARC checkpoint config for this episode
+    text: string;                        // The challenge/question/prompt text
+    mediaUrls?: string[];                // Attached images or videos
+  };
 }
 
 export interface UserStory {
@@ -96,3 +102,52 @@ export interface UserSubscription {
   purchasedAt: string;       // ISO date
   expiresAt?: string;        // For creator subscription
 }
+
+// ─── Squad Episode Progression ───
+
+/** Tracks a squad's progress through a story group's episodes */
+export interface SquadSession {
+  id: string;
+  squadId: string;
+  storyGroupId: string;
+  currentEpisodeNumber: number;
+  episodeStartedAt: string;         // ISO timestamp — 48h timer starts here
+  status: 'reading' | 'sparc' | 'advancing' | 'completed';
+}
+
+/** A single SPARC response posted by a squad member */
+export interface SparcPost {
+  id: string;
+  squadId: string;
+  storyGroupId: string;
+  episodeNumber: number;
+  userId: string;
+  username: string;
+  avatarIndex: number;
+  content: string;                  // Rich text (HTML from contenteditable)
+  mediaUrls: string[];             // Attached photos, videos, hyperlinks
+  createdAt: string;
+}
+
+export interface SquadMemberState {
+  userId: string;
+  username: string;
+  avatarIndex: number;
+  role: 'driver' | 'player';
+  isReady: boolean;
+}
+
+export interface SquadDetail {
+  id: string;
+  driverId: string;
+  storyId: string;
+  storyTitle?: string;
+  storyCoverImage?: string;
+  name: string;
+  inviteCode: string;
+  status: 'forming' | 'in-progress' | 'completed';
+  minSize: number;
+  maxSize: number;
+  members: SquadMemberState[];
+}
+

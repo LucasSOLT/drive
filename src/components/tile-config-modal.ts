@@ -1,7 +1,7 @@
 import { fetchOfficialStories } from '../lib/db.ts';
 import type { Story } from '../types.ts';
 import { setSlotOverride } from '../state.ts';
-import { renderStoryCard } from './story-card.ts';
+import { renderStoryCard, renderEmptySlot } from './story-card.ts';
 
 let currentSlotStoryId: string | null = null;
 let currentSlotType: string = '';
@@ -255,8 +255,9 @@ function updateGridSlotInView(slotType: string, slotIndex: number, story: Story 
   if (slotType === 'home-bestselling') containerId = 'home-bestselling-grid';
   else if (slotType === 'home-featured') containerId = 'home-featured-grid';
   else if (slotType === 'explore-grid') containerId = 'explore-grid';
-  else if (slotType === 'featured-hero') containerId = 'featured-hero-container';
-  else if (slotType === 'featured-rising') containerId = 'rising-stars-grid';
+  else if (slotType === 'featured-hero') containerId = 'featured-hero';
+  else if (slotType === 'featured-rising') containerId = 'featured-rising-stars';
+  else if (slotType === 'featured-staff') containerId = 'featured-staff-picks';
 
   const container = containerId ? document.getElementById(containerId) : null;
   if (!container) return;
@@ -265,23 +266,19 @@ function updateGridSlotInView(slotType: string, slotIndex: number, story: Story 
   const targetCard = cards[slotIndex];
   if (!targetCard) return;
 
+  const isHero = slotType === 'featured-hero' || (slotType === 'home-featured' && (slotIndex === 0 || slotIndex === 3));
+  const variant = isHero ? 'hero' : 'full';
+
   if (!story) {
-    // Replace with empty dashed slot
-    const placeholder = document.createElement('div');
-    placeholder.className = 'story-card fade-in';
-    placeholder.style.cssText = 'display:flex; justify-content:center; align-items:center; background:var(--color-surface); border:2px dashed var(--color-border); cursor:pointer; min-height:160px; border-radius:var(--radius-lg);';
-    placeholder.innerHTML = `
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.6;">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
-    `;
-    placeholder.setAttribute('data-story-id', `placeholder-${slotIndex}`);
-    targetCard.replaceWith(placeholder);
-  } else {
-    // Replace with rendered card
     const div = document.createElement('div');
-    div.innerHTML = renderStoryCard(story, 'full');
+    div.innerHTML = renderEmptySlot(slotType, slotIndex, variant);
+    const placeholder = div.firstElementChild;
+    if (placeholder) {
+      targetCard.replaceWith(placeholder);
+    }
+  } else {
+    const div = document.createElement('div');
+    div.innerHTML = renderStoryCard(story, variant);
     const newCard = div.firstElementChild;
     if (newCard) {
       targetCard.replaceWith(newCard);
@@ -293,9 +290,10 @@ function formatSlotLabel(slotType: string, index: number): string {
   const labels: Record<string, string> = {
     'home-bestselling': 'Home \u2022 Best-Selling',
     'home-featured': 'Home \u2022 Featured',
-    'featured-hero': 'Featured \u2022 Editor\'s Pick',
-    'featured-rising': 'Featured \u2022 Rising Stars',
-    'explore-grid': 'Explore \u2022 Discovery Grid',
+    'featured-hero': 'Featured • Editor\'s Pick',
+    'featured-staff': 'Featured • Staff Picks',
+    'featured-rising': 'Featured • Rising Stars',
+    'explore-grid': 'Explore • Discovery Grid',
   };
   const base = labels[slotType] || slotType;
   return `${base} \u2022 Slot #${index + 1}`;

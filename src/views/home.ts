@@ -1,37 +1,80 @@
 import { navigate } from '../router.ts';
-import { isContentManagementMode } from '../state.ts';
+import { isContentManagementMode, getSlotOverride } from '../state.ts';
 import { openTileConfigModal } from '../components/tile-config-modal.ts';
-import { renderStoryCard, initVideoCovers, initBookmarkButtons } from '../components/story-card.ts';
+import { renderStoryCard, renderEmptySlot, initVideoCovers, initBookmarkButtons } from '../components/story-card.ts';
 import { stories, getFeaturedStories, getEditorPicks } from '../data/stories.ts';
 import { fetchFeaturedStories, fetchUnifiedExploreStories } from '../lib/db.ts';
 import type { Story } from '../types.ts';
 
 function renderFeaturedRows(allCards: Story[]): string {
-  const card1 = allCards[0];
-  const card2 = allCards[1];
-  const card3 = allCards[2] || allCards[0];
-  const card4 = allCards[3] || allCards[1] || allCards[0];
+  const getStoryForSlot = (index: number): Story | null => {
+    const override = getSlotOverride('home-featured', index);
+    if (override === null) {
+      // Explicitly removed by admin: show empty slot
+      return null;
+    }
+    if (typeof override === 'string') {
+      return allCards.find(s => s.id === override) || null;
+    }
+    // No override: use unique story at this slot index (never duplicate!)
+    return allCards[index] || null;
+  };
+
+  const card1 = getStoryForSlot(0);
+  const card2 = getStoryForSlot(1);
+  const card3 = getStoryForSlot(2);
+  const card4 = getStoryForSlot(3);
 
   return `
   <!-- Row 1: Big left, Small right -->
   <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md); margin-bottom:var(--space-md);">
     <div style="flex:3; position:relative;">
-      ${card1 ? renderStoryCard(card1, 'hero') : ''}
+      ${card1 ? renderStoryCard(card1, 'hero') : renderEmptySlot('home-featured', 0, 'hero')}
     </div>
     <div style="flex:2;">
-      ${card2 ? renderStoryCard(card2, 'full') : ''}
+      ${card2 ? renderStoryCard(card2, 'full') : renderEmptySlot('home-featured', 1, 'full')}
     </div>
   </div>
   <!-- Row 2: Small left, Big right (inverted!) -->
   <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md);">
     <div style="flex:2;">
-      ${card3 ? renderStoryCard(card3, 'full') : ''}
+      ${card3 ? renderStoryCard(card3, 'full') : renderEmptySlot('home-featured', 2, 'full')}
     </div>
     <div style="flex:3; position:relative;">
-      ${card4 ? renderStoryCard(card4, 'hero') : ''}
+      ${card4 ? renderStoryCard(card4, 'hero') : renderEmptySlot('home-featured', 3, 'hero')}
     </div>
   </div>
   `;
+}
+
+function renderBestsellingRow(allBestselling: Story[]): string {
+  const count = Math.max(allBestselling.length, isContentManagementMode() ? 5 : allBestselling.length);
+  const cards: string[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const override = getSlotOverride('home-bestselling', i);
+    if (override === null) {
+      // Explicitly removed by admin: render empty slot tile on all devices
+      cards.push(renderEmptySlot('home-bestselling', i, 'full'));
+      continue;
+    }
+    if (typeof override === 'string') {
+      const story = allBestselling.find(s => s.id === override);
+      if (story) {
+        cards.push(renderStoryCard(story, 'full'));
+      } else {
+        cards.push(renderEmptySlot('home-bestselling', i, 'full'));
+      }
+      continue;
+    }
+    if (allBestselling[i]) {
+      cards.push(renderStoryCard(allBestselling[i], 'full'));
+    } else if (isContentManagementMode()) {
+      cards.push(renderEmptySlot('home-bestselling', i, 'full'));
+    }
+  }
+
+  return cards.join('');
 }
 
 export function render(): string {
@@ -96,7 +139,7 @@ export function render(): string {
         </div>
         <div class="bestselling-carousel-wrapper" style="margin: 0 var(--space-md); overflow: hidden;">
           <div class="scroll-row no-scrollbar" id="home-bestselling-grid" style="padding: 0 0 var(--space-sm) 0; margin: 0;">
-            ${[...stories].sort((a, b) => b.readCount - a.readCount).map(story => renderStoryCard(story, 'full')).join('')}
+            ${renderBestsellingRow([...stories].sort((a, b) => b.readCount - a.readCount))}
           </div>
         </div>
       </section>
@@ -182,30 +225,41 @@ export function init(): void {
   // Fetch live stories and update sections
   (async () => {
     try {
+      // Sync cloud slot overrides first so all devices receive latest layout
+      const { initSlotOverrides } = await import('../state.ts');
+      await initSlotOverrides();
+
       const [featuredLive, allExplore] = await Promise.all([
         fetchFeaturedStories(),
         fetchUnifiedExploreStories()
       ]);
       
       const featuredGrid = document.getElementById('home-featured-grid');
-      if (featuredGrid && featuredLive.length > 0) {
-        // Merge with static fallbacks
+      if (featuredGrid) {
         const editorPicks = getEditorPicks();
         const staticFeatured = getFeaturedStories();
         const allCards = [...new Map([...featuredLive, ...editorPicks, ...staticFeatured].map(s => [s.id, s])).values()];
-        featuredGrid.innerHTML = renderFeaturedRows(allCards);
-        initVideoCovers(featuredGrid);
-        initBookmarkButtons(featuredGrid);
+        const newFeaturedHtml = renderFeaturedRows(allCards);
+        // Only update DOM if content actually changed (prevents flash from DOM rebuild)
+        if (featuredGrid.innerHTML !== newFeaturedHtml) {
+          featuredGrid.innerHTML = newFeaturedHtml;
+          initVideoCovers(featuredGrid);
+          initBookmarkButtons(featuredGrid);
+        }
       }
 
       const bestGrid = document.getElementById('home-bestselling-grid');
-      if (bestGrid && allExplore.length > 0) {
+      if (bestGrid) {
         const staticStories = [...stories];
         const allBestselling = [...new Map([...allExplore, ...staticStories].map(s => [s.id, s])).values()]
           .sort((a, b) => b.readCount - a.readCount);
-        bestGrid.innerHTML = allBestselling.map(story => renderStoryCard(story, 'full')).join('');
-        initVideoCovers(bestGrid);
-        initBookmarkButtons(bestGrid);
+        const newBestHtml = renderBestsellingRow(allBestselling);
+        // Only update DOM if content actually changed (prevents flash from DOM rebuild)
+        if (bestGrid.innerHTML !== newBestHtml) {
+          bestGrid.innerHTML = newBestHtml;
+          initVideoCovers(bestGrid);
+          initBookmarkButtons(bestGrid);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch live home stories:', err);
@@ -246,19 +300,26 @@ export function init(): void {
     const card = target.closest('[data-story-id]');
     if (card) {
       const storyId = card.getAttribute('data-story-id');
-      if (storyId) {
-        if (isContentManagementMode()) {
-          e.preventDefault();
-          const titleEl = card.querySelector('.story-title');
-          const allCards = Array.from(container.querySelectorAll('[data-story-id]'));
-          const slotIndex = allCards.indexOf(card as Element);
-          openTileConfigModal({
-            storyId,
-            slotType: 'home-bestselling',
-            slotIndex: slotIndex >= 0 ? slotIndex : 0,
-            storyTitle: titleEl?.textContent || undefined,
-          });
-        } else {
+      if (isContentManagementMode()) {
+        e.preventDefault();
+        const titleEl = card.querySelector('.story-title');
+        const isFeatured = !!card.closest('#home-featured-grid');
+        const grid = isFeatured
+          ? document.getElementById('home-featured-grid')
+          : document.getElementById('home-bestselling-grid');
+        const allCards = grid ? Array.from(grid.querySelectorAll('.story-card')) : [];
+        const slotIndex = allCards.indexOf(card as Element);
+        const slotType = isFeatured ? 'home-featured' : 'home-bestselling';
+        const isPlaceholder = !storyId || storyId.startsWith('placeholder-') || storyId.startsWith('empty-');
+
+        openTileConfigModal({
+          storyId: isPlaceholder ? null : storyId,
+          slotType,
+          slotIndex: slotIndex >= 0 ? slotIndex : 0,
+          storyTitle: isPlaceholder ? undefined : (titleEl?.textContent || undefined),
+        });
+      } else {
+        if (storyId && !storyId.startsWith('placeholder-') && !storyId.startsWith('empty-')) {
           navigate('story/' + storyId);
         }
       }

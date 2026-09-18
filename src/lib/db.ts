@@ -1,6 +1,6 @@
 import { supabase } from './supabase.ts';
 import { getUser, isAuthenticated, getUserId } from './auth.ts';
-import type { Story, UserStory, UserSubscription, UserPlan } from '../types.ts';
+import type { Story, UserStory, UserSubscription, UserPlan, SquadSession, SparcPost } from '../types.ts';
 import { isVideoMedia } from './media.ts';
 
 // ═══════════════════════════════════════════════════════════
@@ -724,7 +724,7 @@ export async function resubmitStoryUser(storyId: string): Promise<void> {
 export async function fetchPublishedExploreStories(): Promise<UserStory[]> {
   const { data, error } = await supabase
     .from('user_stories')
-    .select('*, profiles(username)')
+    .select('*')
     .eq('status', 'published')
     .order('created_at', { ascending: false });
 
@@ -736,7 +736,7 @@ export async function fetchPublishedExploreStories(): Promise<UserStory[]> {
   return (data || []).map((s: any) => ({
     id: s.id,
     user_id: s.user_id,
-    author_name: s.profiles?.username || 'DRiVE Author',
+    author_name: s.author_name || 'DRiVE Author',
     title: s.title,
     genre: s.genre,
     format: s.format,
@@ -820,6 +820,8 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     bgmUrl: s.bgm_url || undefined,
     bgmVolume: typeof s.bgm_volume === 'number' ? s.bgm_volume : 0.25,
     pageFocalPositions: s.page_focal_positions || undefined,
+    soloEpisodeCount: s.solo_episode_count || 1,
+    sparcPrompt: s.sparc_prompt || undefined,
   };
 }
 
@@ -947,6 +949,8 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     bgm_url: story.bgmUrl || null,
     bgm_volume: story.bgmVolume ?? 0.25,
     page_focal_positions: story.pageFocalPositions || {},
+    solo_episode_count: story.soloEpisodeCount || 1,
+    sparc_prompt: story.sparcPrompt || null,
   };
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);
@@ -1321,23 +1325,135 @@ export async function joinSquadByCode(code: string): Promise<{ squadId: string; 
   return { squadId: squad.id, name: squad.name };
 }
 
-export async function getSquadMembers(squadId: string): Promise<Array<{ userId: string; username: string; avatarIndex: number; role: 'driver' | 'player' }>> {
+export async function getSquadMembers(squadId: string): Promise<Array<{ userId: string; username: string; avatarIndex: number; role: 'driver' | 'player'; isReady: boolean }>> {
   const { data, error } = await supabase
     .from('squad_members')
-    .select('user_id, role, profiles(username, avatar_index)')
+    .select('user_id, role, is_ready')
     .eq('squad_id', squadId);
 
-  if (error) {
+  if (error || !data) {
     console.error('Error fetching squad members:', error);
     return [];
   }
 
-  return (data || []).map((m: any) => ({
-    userId: m.user_id,
-    username: m.profiles?.username || 'Player',
-    avatarIndex: m.profiles?.avatar_index ?? 0,
-    role: m.role as 'driver' | 'player',
-  }));
+  const userIds = data.map((m: any) => m.user_id).filter(Boolean);
+  let profileMap = new Map<string, any>();
+
+  if (userIds.length > 0) {
+    const { data: profiles, error: pErr } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_index')
+      .in('id', userIds);
+
+    if (!pErr && profiles) {
+      profileMap = new Map(profiles.map((p: any) => [p.id, p]));
+    }
+  }
+
+  return data.map((m: any) => {
+    const prof = profileMap.get(m.user_id);
+    return {
+      userId: m.user_id,
+      username: prof?.username || 'Player',
+      avatarIndex: prof?.avatar_index ?? 0,
+      role: m.role as 'driver' | 'player',
+      isReady: m.is_ready ?? false,
+    };
+  });
+}
+
+/** Fetch squad by ID from Supabase */
+export async function fetchSquadById(squadId: string): Promise<{
+  id: string;
+  driverId: string;
+  storyId: string;
+  name: string;
+  inviteCode: string;
+  status: 'forming' | 'in-progress' | 'completed';
+  minSize: number;
+  maxSize: number;
+} | null> {
+  const { data, error } = await supabase
+    .from('squads')
+    .select('*')
+    .eq('id', squadId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    driverId: data.driver_id,
+    storyId: data.story_id || '',
+    name: data.name || 'DRiVE Squad',
+    inviteCode: data.invite_code,
+    status: data.status,
+    minSize: data.min_size || 3,
+    maxSize: data.max_size || 5,
+  };
+}
+
+/** Fetch squad by Invite Code from Supabase */
+export async function fetchSquadByCode(code: string): Promise<{
+  id: string;
+  driverId: string;
+  storyId: string;
+  name: string;
+  inviteCode: string;
+  status: 'forming' | 'in-progress' | 'completed';
+  minSize: number;
+  maxSize: number;
+} | null> {
+  const cleanCode = code.trim().toUpperCase();
+  const { data, error } = await supabase
+    .from('squads')
+    .select('*')
+    .eq('invite_code', cleanCode)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    driverId: data.driver_id,
+    storyId: data.story_id || '',
+    name: data.name || 'DRiVE Squad',
+    inviteCode: data.invite_code,
+    status: data.status,
+    minSize: data.min_size || 3,
+    maxSize: data.max_size || 5,
+  };
+}
+
+/** Remove a user from a squad (leave squad) */
+export async function leaveSquad(squadId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('squad_members')
+    .delete()
+    .eq('squad_id', squadId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[DB] Error leaving squad:', error);
+    throw error;
+  }
+}
+
+/** Update squad status (e.g. 'forming' -> 'in-progress') */
+export async function updateSquadStatus(squadId: string, status: 'forming' | 'in-progress' | 'completed'): Promise<void> {
+  const { error } = await supabase
+    .from('squads')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', squadId);
+
+  if (error) {
+    console.error('[DB] Error updating squad status:', error);
+    throw error;
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -1532,5 +1648,377 @@ export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
   }
 
   return null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Squad Session & SPARC Checkpoint Functions
+// ═══════════════════════════════════════════════════════════
+
+// ─── Squad Member Ready State ───
+
+/** Toggle a squad member's is_ready state */
+export async function setMemberReady(squadId: string, userId: string, isReady: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('squad_members')
+    .update({ is_ready: isReady })
+    .eq('squad_id', squadId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[DB] Error setting member ready state:', error);
+    throw error;
+  }
+  console.log(`[DB] Member ${userId} ready=${isReady} in squad ${squadId}`);
+}
+
+/** Get ready states for all members of a squad */
+export async function getMemberReadyStates(squadId: string): Promise<Record<string, boolean>> {
+  const { data, error } = await supabase
+    .from('squad_members')
+    .select('user_id, is_ready')
+    .eq('squad_id', squadId);
+
+  if (error) {
+    console.error('[DB] Error fetching ready states:', error);
+    return {};
+  }
+
+  const states: Record<string, boolean> = {};
+  (data || []).forEach((m: any) => {
+    states[m.user_id] = m.is_ready ?? false;
+  });
+  return states;
+}
+
+// ─── Squad Sessions ───
+
+/** Create a new squad session when the squad starts reading */
+export async function createSquadSession(
+  squadId: string,
+  storyGroupId: string,
+  startEpisode: number
+): Promise<SquadSession | null> {
+  const { data, error } = await supabase
+    .from('squad_sessions')
+    .insert({
+      squad_id: squadId,
+      story_group_id: storyGroupId,
+      current_episode_number: startEpisode,
+      episode_started_at: new Date().toISOString(),
+      status: 'reading',
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[DB] Error creating squad session:', error);
+    return null;
+  }
+
+  console.log('[DB] Squad session created:', data.id);
+  return mapSquadSession(data);
+}
+
+/** Get the active squad session for a squad */
+export async function getSquadSession(squadId: string): Promise<SquadSession | null> {
+  const { data, error } = await supabase
+    .from('squad_sessions')
+    .select('*')
+    .eq('squad_id', squadId)
+    .neq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') { // PGRST116 = no rows
+      console.error('[DB] Error fetching squad session:', error);
+    }
+    return null;
+  }
+
+  return mapSquadSession(data);
+}
+
+
+
+
+/** Advance episode number by 1 and reset timer */
+export async function advanceSquadToNextEpisode(sessionId: string): Promise<{ nextEpisode: number; completed: boolean }> {
+  // Fetch current session
+  const { data: session, error: fetchErr } = await supabase
+    .from('squad_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (fetchErr || !session) {
+    console.error('[DB] Error fetching session for advance:', fetchErr);
+    throw fetchErr || new Error('Session not found');
+  }
+
+  const nextEpisode = session.current_episode_number + 1;
+
+  // Check if there are more episodes in this story group
+  const { count } = await supabase
+    .from('official_stories')
+    .select('id', { count: 'exact', head: true })
+    .eq('story_group_id', session.story_group_id)
+    .eq('episode_number', nextEpisode);
+
+  const hasMoreEpisodes = (count ?? 0) > 0;
+
+  if (hasMoreEpisodes) {
+    const { error } = await supabase
+      .from('squad_sessions')
+      .update({
+        current_episode_number: nextEpisode,
+        episode_started_at: new Date().toISOString(),
+        status: 'reading',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', sessionId);
+
+    if (error) {
+      console.error('[DB] Error advancing to next episode:', error);
+      throw error;
+    }
+    console.log(`[DB] Squad advanced to episode ${nextEpisode}`);
+    return { nextEpisode, completed: false };
+  } else {
+    // No more episodes — mark session completed
+    const { error } = await supabase
+      .from('squad_sessions')
+      .update({
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', sessionId);
+
+    if (error) {
+      console.error('[DB] Error completing squad session:', error);
+      throw error;
+    }
+    console.log('[DB] Squad session completed — no more episodes');
+    return { nextEpisode, completed: true };
+  }
+}
+
+/** Update squad session status */
+export async function updateSquadSessionStatus(
+  sessionId: string,
+  status: SquadSession['status']
+): Promise<void> {
+  const { error } = await supabase
+    .from('squad_sessions')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', sessionId);
+
+  if (error) {
+    console.error('[DB] Error updating squad session status:', error);
+    throw error;
+  }
+}
+
+function mapSquadSession(row: any): SquadSession {
+  return {
+    id: row.id,
+    squadId: row.squad_id,
+    storyGroupId: row.story_group_id,
+    currentEpisodeNumber: row.current_episode_number,
+    episodeStartedAt: row.episode_started_at,
+    status: row.status,
+  };
+}
+
+// ─── SPARC Responses ───
+
+/** Submit a SPARC response to the social feed */
+export async function submitSparcResponse(post: {
+  squadId: string;
+  storyGroupId: string;
+  episodeNumber: number;
+  userId: string;
+  content: string;
+  mediaUrls: string[];
+}): Promise<void> {
+  const { error } = await supabase
+    .from('sparc_responses')
+    .insert({
+      squad_id: post.squadId,
+      user_id: post.userId,
+      story_group_id: post.storyGroupId,
+      episode_number: post.episodeNumber,
+      content: post.content,
+      media_urls: post.mediaUrls,
+    });
+
+  if (error) {
+    console.error('[DB] Error submitting SPARC response:', error);
+    throw error;
+  }
+  console.log('[DB] SPARC response submitted for episode', post.episodeNumber);
+}
+
+/** Fetch all SPARC responses for a squad's episode (for the social feed) */
+export async function getSparcResponses(
+  squadId: string,
+  storyGroupId: string,
+  episodeNumber: number
+): Promise<SparcPost[]> {
+  const { data, error } = await supabase
+    .from('sparc_responses')
+    .select('*, profiles:user_id(username, avatar_index)')
+    .eq('squad_id', squadId)
+    .eq('story_group_id', storyGroupId)
+    .eq('episode_number', episodeNumber)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[DB] Error fetching SPARC responses:', error);
+    return [];
+  }
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    squadId: row.squad_id,
+    storyGroupId: row.story_group_id,
+    episodeNumber: row.episode_number,
+    userId: row.user_id,
+    username: row.profiles?.username || 'Unknown',
+    avatarIndex: row.profiles?.avatar_index ?? 0,
+    content: row.content,
+    mediaUrls: row.media_urls || [],
+    createdAt: row.created_at,
+  }));
+}
+
+/** Mark a user as having completed SPARC for a specific episode */
+export async function markSparcCompleted(
+  squadId: string,
+  userId: string,
+  episodeNumber: number
+): Promise<void> {
+  // Fetch current completed episodes array
+  const { data, error: fetchErr } = await supabase
+    .from('squad_members')
+    .select('sparc_completed_episodes')
+    .eq('squad_id', squadId)
+    .eq('user_id', userId)
+    .single();
+
+  if (fetchErr) {
+    console.error('[DB] Error fetching sparc_completed_episodes:', fetchErr);
+    throw fetchErr;
+  }
+
+  const completed: number[] = data?.sparc_completed_episodes || [];
+  if (!completed.includes(episodeNumber)) {
+    completed.push(episodeNumber);
+  }
+
+  const { error } = await supabase
+    .from('squad_members')
+    .update({ sparc_completed_episodes: completed })
+    .eq('squad_id', squadId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[DB] Error marking SPARC completed:', error);
+    throw error;
+  }
+  console.log(`[DB] User ${userId} completed SPARC for episode ${episodeNumber}`);
+}
+
+/** Check if all squad members have completed SPARC for a specific episode */
+export async function checkAllSparcCompleted(
+  squadId: string,
+  episodeNumber: number
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('squad_members')
+    .select('sparc_completed_episodes')
+    .eq('squad_id', squadId);
+
+  if (error) {
+    console.error('[DB] Error checking all SPARC completions:', error);
+    return false;
+  }
+
+  return (data || []).every((member: any) => {
+    const completed: number[] = member.sparc_completed_episodes || [];
+    return completed.includes(episodeNumber);
+  });
+}
+
+/** Check if a specific user has completed SPARC for a specific episode */
+export async function hasUserCompletedSparc(
+  squadId: string,
+  userId: string,
+  episodeNumber: number
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('squad_members')
+    .select('sparc_completed_episodes')
+    .eq('squad_id', squadId)
+    .eq('user_id', userId)
+    .single();
+
+  if (error) {
+    console.error('[DB] Error checking user SPARC completion:', error);
+    return false;
+  }
+
+  const completed: number[] = data?.sparc_completed_episodes || [];
+  return completed.includes(episodeNumber);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Content Slot Overrides (Cloud-synced Homepage / Feed Curation)
+// ═══════════════════════════════════════════════════════════
+
+/** Fetch all content slot overrides from Supabase */
+export async function fetchSlotOverridesFromDb(): Promise<Record<string, string | null>> {
+  try {
+    const { data, error } = await supabase
+      .from('content_slot_overrides')
+      .select('slot_key, story_id');
+
+    if (error) {
+      // Table might not exist yet if migration hasn't run
+      console.warn('[DB] Could not fetch slot overrides from DB:', error.message);
+      return {};
+    }
+
+    const overrides: Record<string, string | null> = {};
+    (data || []).forEach((row: any) => {
+      overrides[row.slot_key] = row.story_id ?? null;
+    });
+    return overrides;
+  } catch (e) {
+    console.warn('[DB] Exception fetching slot overrides:', e);
+    return {};
+  }
+}
+
+/** Save a slot override to Supabase (sets storyId or null if removed) */
+export async function saveSlotOverrideToDb(slotKey: string, storyId: string | null): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('content_slot_overrides')
+      .upsert({
+        slot_key: slotKey,
+        story_id: storyId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'slot_key' });
+
+    if (error) {
+      console.warn('[DB] Could not save slot override to DB:', error.message);
+    } else {
+      console.log(`[DB] Slot override saved: ${slotKey} -> ${storyId}`);
+    }
+  } catch (e) {
+    console.warn('[DB] Exception saving slot override:', e);
+  }
 }
 

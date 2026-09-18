@@ -361,13 +361,18 @@ export function setContentManagementMode(active: boolean): void {
   } catch {}
 }
 
-// ─── Slot Overrides (Content Management Mode) ───
+// ─── Slot Overrides (Content Management Mode — Cloud Synced) ───
 const SLOT_OVERRIDES_KEY = 'drive_slot_overrides';
+let _cachedSlotOverrides: Record<string, string | null> | null = null;
 
 export function getSlotOverrides(): Record<string, string | null> {
+  if (_cachedSlotOverrides !== null) {
+    return _cachedSlotOverrides;
+  }
   try {
     const raw = localStorage.getItem(SLOT_OVERRIDES_KEY);
-    return raw ? JSON.parse(raw) : {};
+    _cachedSlotOverrides = raw ? JSON.parse(raw) : {};
+    return _cachedSlotOverrides || {};
   } catch {
     return {};
   }
@@ -381,14 +386,42 @@ export function getSlotOverride(slotType: string, slotIndex: number): string | n
 
 export function setSlotOverride(slotType: string, slotIndex: number, storyId: string | null): void {
   try {
-    const overrides = getSlotOverrides();
+    const overrides = { ...getSlotOverrides() };
     const key = `${slotType}_${slotIndex}`;
     if (storyId === undefined) {
       delete overrides[key];
     } else {
       overrides[key] = storyId;
     }
+    _cachedSlotOverrides = overrides;
     localStorage.setItem(SLOT_OVERRIDES_KEY, JSON.stringify(overrides));
-  } catch {}
+
+    // Persist to Supabase so it applies to ALL devices everywhere!
+    import('./lib/db.ts').then(db => {
+      db.saveSlotOverrideToDb(key, storyId);
+    }).catch(err => {
+      console.warn('[State] Could not persist slot override to DB:', err);
+    });
+  } catch (e) {
+    console.warn('[State] Error setting slot override:', e);
+  }
 }
+
+/** Initialize slot overrides from Supabase cloud so all devices load the same layout */
+export async function initSlotOverrides(): Promise<void> {
+  try {
+    const { fetchSlotOverridesFromDb } = await import('./lib/db.ts');
+    const cloudOverrides = await fetchSlotOverridesFromDb();
+    if (cloudOverrides) {
+      // Merge local with cloud (cloud takes precedence)
+      const current = getSlotOverrides();
+      _cachedSlotOverrides = { ...current, ...cloudOverrides };
+      localStorage.setItem(SLOT_OVERRIDES_KEY, JSON.stringify(_cachedSlotOverrides));
+      console.log('[State] Synced slot overrides with cloud:', Object.keys(_cachedSlotOverrides).length, 'slots');
+    }
+  } catch (e) {
+    console.warn('[State] Failed to initialize slot overrides from cloud:', e);
+  }
+}
+
 

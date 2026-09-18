@@ -2198,9 +2198,25 @@ p {
   50% { transform: scale(1.02); }
   100% { transform: scale(1); opacity: 1; }
 }
-.fade-in { animation: fadeIn 0.4s ease-out forwards; }
-
-/* Skip fade/slide animations on the very first page render to prevent white flash */
+/* Entrance animation classes — instant display (no animation).
+   Prevents the blink/flash that occurred when every section animated
+   from opacity:0 → opacity:1 on each page load or route change.        */
+.fade-in {
+  opacity: 1;
+}
+.slide-up {
+  opacity: 1;
+  transform: none;
+}
+.stagger-1,
+.stagger-2,
+.stagger-3,
+.stagger-4,
+.stagger-5,
+.stagger-6 {
+  /* No staggered delay — everything appears at once */
+}
+/* Legacy override — kept for compatibility but no longer needed */
 .no-initial-fade,
 .no-initial-fade .slide-up,
 .no-initial-fade .stagger-1,
@@ -2213,13 +2229,6 @@ p {
   opacity: 1 !important;
   transform: none !important;
 }
-.slide-up { animation: slideUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
-.stagger-1 { animation-delay: 0.1s; }
-.stagger-2 { animation-delay: 0.2s; }
-.stagger-3 { animation-delay: 0.3s; }
-.stagger-4 { animation-delay: 0.4s; }
-.stagger-5 { animation-delay: 0.5s; }
-.stagger-6 { animation-delay: 0.6s; }
 
 /* 23. Utility Classes */
 .text-center { text-align: center; }

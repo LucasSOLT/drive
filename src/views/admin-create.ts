@@ -22,6 +22,11 @@ let storyContentRating: 'All Ages' | 'PG-13' | 'Mature' = 'All Ages';
 let storyCoverVideo = '';
 let storyCustomGenre = '';
 
+// Squad Gate & SPARC Checkpoint State
+let soloEpisodeCount: 1 | 2 | 3 = 1;
+let sparcPromptText = '';
+let sparcPromptMediaUrls: string[] = [];
+
 // Endless Scroll state
 interface TextOverlay {
   id: string;
@@ -192,6 +197,9 @@ interface DraftEntry {
   storyCharacters?: StoryCharacter[];
   bgmUrl?: string;
   bgmVolume?: number;
+  soloEpisodeCount?: 1 | 2 | 3;
+  sparcPromptText?: string;
+  sparcPromptMediaUrls?: string[];
 }
 
 function getDraft(): DraftEntry | null {
@@ -227,6 +235,9 @@ function saveDraft() {
     storyCharacters,
     bgmUrl: storyBgmUrl,
     bgmVolume: storyBgmVolume,
+    soloEpisodeCount,
+    sparcPromptText,
+    sparcPromptMediaUrls,
   };
   try {
     localStorage.setItem('drive_admin_create_draft', JSON.stringify(entry));
@@ -282,12 +293,18 @@ function loadDraft(draft: DraftEntry) {
   storyCharacters = draft.storyCharacters || [];
   storyBgmUrl = draft.bgmUrl || '';
   storyBgmVolume = typeof draft.bgmVolume === 'number' ? draft.bgmVolume : 0.25;
+  soloEpisodeCount = draft.soloEpisodeCount || 1;
+  sparcPromptText = draft.sparcPromptText || '';
+  sparcPromptMediaUrls = draft.sparcPromptMediaUrls || [];
 }
 
 function clearDraft() {
   localStorage.removeItem('drive_admin_create_draft');
   activeDraftId = null;
   editStoryId = null;
+  soloEpisodeCount = 1;
+  sparcPromptText = '';
+  sparcPromptMediaUrls = [];
 }
 
 function getFormData(): void {
@@ -379,6 +396,11 @@ function buildStory(status: 'draft' | 'live'): Story {
     bgmUrl: storyBgmUrl || undefined,
     bgmVolume: storyBgmVolume,
     pageFocalPositions: Object.keys(pageFocalPositions).length > 0 ? pageFocalPositions : undefined,
+    soloEpisodeCount,
+    sparcPrompt: (sparcPromptText.trim() || sparcPromptMediaUrls.length > 0) ? {
+      text: sparcPromptText.trim(),
+      mediaUrls: sparcPromptMediaUrls.length > 0 ? sparcPromptMediaUrls : undefined,
+    } : undefined,
   };
 }
 
@@ -459,6 +481,27 @@ function openStorySettings(): void {
               <option value="PG-13" ${storyContentRating === 'PG-13' ? 'selected' : ''}>PG-13</option>
               <option value="Mature" ${storyContentRating === 'Mature' ? 'selected' : ''}>Mature</option>
             </select>
+          </div>
+        </div>
+
+        <div class="ss-section" id="ss-squad-gate-section">
+          <div class="ss-section__label">🛡️ Squad Gate Configuration</div>
+          <div class="ss-field">
+            <label class="ss-field__label">Episodes Playable Solo BEFORE Squad Gate Hits</label>
+            <div class="ss-gate-selector" id="ss-gate-selector" style="display: flex; gap: 10px; margin-top: 8px;">
+              <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? 'btn-gate-option--active' : ''}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                1 Episode
+              </button>
+              <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? 'btn-gate-option--active' : ''}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                2 Episodes
+              </button>
+              <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? 'btn-gate-option--active' : ''}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 3 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                3 Episodes
+              </button>
+            </div>
+            <div class="ss-field__hint" id="ss-gate-hint" style="font-size: 0.76rem; color: var(--color-text-muted); margin-top: 8px; line-height: 1.45;">
+              ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.
+            </div>
           </div>
         </div>
 
@@ -713,6 +756,25 @@ function openStorySettings(): void {
     openStorySettings(); // re-render
   });
 
+  // Squad Gate Episodes Before Gate Selector
+  wizard.querySelectorAll('[data-gate-count]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const count = parseInt((btn as HTMLElement).getAttribute('data-gate-count') || '1', 10) as 1 | 2 | 3;
+      soloEpisodeCount = count;
+      wizard.querySelectorAll('[data-gate-count]').forEach(b => {
+        const c = parseInt((b as HTMLElement).getAttribute('data-gate-count') || '1', 10);
+        const isActive = c === count;
+        (b as HTMLElement).style.borderColor = isActive ? '#6366f1' : 'var(--color-border)';
+        (b as HTMLElement).style.background = isActive ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)';
+      });
+      const hint = document.getElementById('ss-gate-hint');
+      if (hint) {
+        hint.innerHTML = `ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.`;
+      }
+      saveDraft();
+    });
+  });
+
   // --- Background Music (BGM) Wiring ---
   let bgmAudioPreview: HTMLAudioElement | null = null;
   const stopBgmAudioPreview = () => {
@@ -815,6 +877,11 @@ function openStorySettings(): void {
     getFormData();
     if (!storyTitle.trim()) {
       (document.getElementById('ss-title') as HTMLInputElement)?.focus();
+      return;
+    }
+    const pageCount = selectedFormat === 'book' ? bookPages.length : scrollPanels.length;
+    if (pageCount < 12 || pageCount > 36) {
+      alert(`Episodes must contain between 12 and 36 pages to go live (currently: ${pageCount} pages). Please adjust your pages or save as a draft.`);
       return;
     }
     const btn = e.currentTarget as HTMLButtonElement;
@@ -923,6 +990,141 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
   return `<div class="${gridClass}">${Array.from({length: count}, (_, i) => renderSingleTile(i)).join('')}</div>`;
 }
 
+// ═══════════════════════════════════════════════════════════
+// SPARC Checkpoint Admin Authoring (End of Episode Challenge)
+// ═══════════════════════════════════════════════════════════
+
+function renderSparcAdminEditor(): string {
+  return `
+    <div class="sparc-admin-editor" id="sparc-admin-editor" style="margin-top: 28px; margin-bottom: 24px; background: linear-gradient(180deg, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 100%); border: 2px solid rgba(99, 102, 241, 0.25); border-radius: 18px; padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.4rem;">⚡</span>
+          <div>
+            <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--color-text);">SPARC Checkpoint Challenge</h3>
+            <p style="margin: 0; font-size: 0.75rem; color: var(--color-text-muted);">End of Episode ${episodeNumber} Squad Challenge</p>
+          </div>
+        </div>
+        <span style="font-size: 0.72rem; padding: 4px 10px; border-radius: 12px; background: rgba(99, 102, 241, 0.2); color: #818cf8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">
+          Social Feed Checkpoint
+        </span>
+      </div>
+
+      <p style="font-size: 0.82rem; color: var(--color-text-secondary); margin-bottom: 14px; line-height: 1.45;">
+        When squad members reach the end of this episode, they will be stopped at this SPARC checkpoint. They must respond to your challenge in the social feed before advancing.
+      </p>
+
+      <div style="margin-bottom: 14px;">
+        <label style="display: block; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin-bottom: 6px;">
+          Challenge / Prompt Text
+        </label>
+        <textarea id="admin-sparc-text" class="ss-field__textarea" rows="3" placeholder="Enter the SPARC challenge prompt (e.g. Reflect on what you experienced, share a life moment, write a poem...)" style="width: 100%; border-radius: 10px; padding: 12px; font-size: 0.88rem; box-sizing: border-box; line-height: 1.4; background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text);">${escapeHtml(sparcPromptText)}</textarea>
+      </div>
+
+      <div style="margin-bottom: 8px;">
+        <label style="display: block; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin-bottom: 6px;">
+          Attached Reference Media (Images, Videos, Links)
+        </label>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px;" id="admin-sparc-media-list">
+          ${sparcPromptMediaUrls.map((url, uIdx) => `
+            <div class="sparc-admin-thumb" style="position: relative; width: 84px; height: 84px; border-radius: 10px; overflow: hidden; border: 1px solid var(--color-border); background: #000;">
+              ${isVideoMedia(url)
+                ? `<video src="${url}" style="width: 100%; height: 100%; object-fit: cover;" autoplay muted loop playsinline></video>`
+                : `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover;" />`
+              }
+              <button type="button" class="sparc-admin-remove-media" data-remove-media="${uIdx}" title="Remove media" style="position: absolute; top: 3px; right: 3px; background: rgba(0, 0, 0, 0.75); color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">✕</button>
+            </div>
+          `).join('')}
+          <button type="button" id="btn-sparc-upload-media" style="width: 84px; height: 84px; border-radius: 10px; border: 2px dashed var(--color-border); background: var(--color-surface); color: var(--color-text-muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 0.72rem; transition: border-color 0.2s;">
+            <span style="font-size: 1.3rem;">📎</span>
+            <span>Attach File</span>
+          </button>
+          <input type="file" id="sparc-media-file-input" accept="image/*,video/*" style="display: none;" />
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="sparc-media-url-input" class="ss-field__input" placeholder="Or paste media URL (https://...) and click Add..." style="flex: 1; font-size: 0.82rem; height: 36px;" />
+          <button type="button" id="btn-sparc-add-url" class="btn btn--secondary" style="height: 36px; padding: 0 14px; font-size: 0.8rem; white-space: nowrap;">Add URL</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function attachSparcAdminListeners(container: HTMLElement | Document): void {
+  const sparcTextEl = container.querySelector('#admin-sparc-text') as HTMLTextAreaElement | null;
+  if (sparcTextEl) {
+    sparcTextEl.addEventListener('input', () => {
+      sparcPromptText = sparcTextEl.value;
+      saveDraft();
+    });
+  }
+
+  const uploadBtn = container.querySelector('#btn-sparc-upload-media') as HTMLElement | null;
+  const fileInput = container.querySelector('#sparc-media-file-input') as HTMLInputElement | null;
+  if (uploadBtn && fileInput) {
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      if (file) {
+        try {
+          uploadBtn.innerHTML = '<span style="font-size:0.75rem;">Uploading...</span>';
+          const res = await uploadMedia(file, 'covers');
+          if (res?.url) {
+            sparcPromptMediaUrls.push(res.url);
+            saveDraft();
+            rerenderSparcEditor();
+          }
+        } catch (e) {
+          console.error('Failed to upload SPARC media:', e);
+          alert('Failed to upload media attachment.');
+        } finally {
+          fileInput.value = '';
+        }
+      }
+    });
+  }
+
+  const addUrlBtn = container.querySelector('#btn-sparc-add-url') as HTMLElement | null;
+  const urlInput = container.querySelector('#sparc-media-url-input') as HTMLInputElement | null;
+  if (addUrlBtn && urlInput) {
+    addUrlBtn.addEventListener('click', () => {
+      const url = urlInput.value.trim();
+      if (url) {
+        sparcPromptMediaUrls.push(url);
+        urlInput.value = '';
+        saveDraft();
+        rerenderSparcEditor();
+      }
+    });
+  }
+
+  container.querySelectorAll('.sparc-admin-remove-media').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt((btn as HTMLElement).getAttribute('data-remove-media') || '-1', 10);
+      if (idx >= 0 && idx < sparcPromptMediaUrls.length) {
+        sparcPromptMediaUrls.splice(idx, 1);
+        saveDraft();
+        rerenderSparcEditor();
+      }
+    });
+  });
+}
+
+function rerenderSparcEditor(): void {
+  const currentEditor = document.getElementById('sparc-admin-editor');
+  if (currentEditor && currentEditor.parentElement) {
+    const parent = currentEditor.parentElement;
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = renderSparcAdminEditor();
+    const newEl = tempDiv.firstElementChild;
+    if (newEl) {
+      parent.replaceChild(newEl, currentEditor);
+      attachSparcAdminListeners(parent);
+    }
+  }
+}
+
 function renderStudioOrbs(): string {
   return `
     <div class="studio-orbs">
@@ -939,6 +1141,8 @@ function renderStudioOrbs(): string {
 
 function renderCanvasToolbar(formatLabel: string): string {
   const isBook = formatLabel.startsWith('Illustrated Book');
+  const pageCount = selectedFormat === 'book' ? bookPages.length : scrollPanels.length;
+  const isValidLength = pageCount >= 12 && pageCount <= 36;
   
   return `
     <div class="canvas-toolbar" id="canvas-toolbar">
@@ -950,9 +1154,15 @@ function renderCanvasToolbar(formatLabel: string): string {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
       </div>
-      <span class="canvas-toolbar__title">${formatLabel}</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="canvas-toolbar__title">${formatLabel}</span>
+        <span class="canvas-toolbar__page-counter" title="${isValidLength ? 'Page count satisfies 12–36 page requirement' : pageCount < 12 ? 'Need at least 12 pages' : 'Maximum 36 pages'}" style="display:inline-flex; align-items:center; gap:4px; font-size:0.75rem; font-weight:700; padding:2px 8px; border-radius:12px; background:${isValidLength ? 'rgba(34,197,94,0.15)' : 'rgba(234,179,8,0.18)'}; color:${isValidLength ? '#22c55e' : '#eab308'}; border:1px solid ${isValidLength ? 'rgba(34,197,94,0.35)' : 'rgba(234,179,8,0.35)'};">
+          <span>${isValidLength ? '✓' : '⚠️'}</span>
+          <span>${pageCount}/12–36</span>
+        </span>
+      </div>
       <div class="canvas-toolbar__right" style="position:relative; display:flex; align-items:center; gap:8px;">
-        ${isBook ? `
+        ${(isBook && !isDesktopScreen()) ? `
           <button class="canvas-toolbar__btn-storyboard" id="btn-toolbar-switch-storyboard" type="button" title="Switch to Content Storyboard desktop view">
             🖥️ Storyboard View
           </button>
@@ -970,10 +1180,12 @@ function renderCanvasToolbar(formatLabel: string): string {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Page
             </button>
-            <button class="canvas-toolbar__dd-item" id="btn-dd-storyboard">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              Storyboard View
-            </button>
+            ${!isDesktopScreen() ? `
+              <button class="canvas-toolbar__dd-item" id="btn-dd-storyboard">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                Storyboard View
+              </button>
+            ` : ''}
           ` : `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1110,6 +1322,8 @@ function renderScrollCanvas(): string {
             <span>Add Panel</span>
           </div>
         </div>
+
+        ${renderSparcAdminEditor()}
 
         <!-- Bottom Actions -->
         <div class="scroll-bottom-actions">
@@ -1577,6 +1791,8 @@ function renderBookCanvas(): string {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
       </div>
+
+      ${renderSparcAdminEditor()}
     </div>
   `;
 }
@@ -1736,7 +1952,11 @@ function closePageFullscreen(overlay: HTMLElement): void {
 //  STORYBOARD — Wide Desktop View
 // ═══════════════════════════════════════
 
-const isDesktopScreen = (): boolean => window.innerWidth >= 1024;
+const isDesktopScreen = (): boolean => {
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  if (isMobile) return false;
+  return window.innerWidth >= 768;
+};
 let activeEditorMode: 'storyboard' | 'mobile' = isDesktopScreen() ? 'storyboard' : 'mobile';
 let promptSaveStoryAdminGlobal: ((status?: 'draft' | 'live') => Promise<void>) | null = null;
 
@@ -1847,9 +2067,11 @@ function openStoryboard(): void {
       </div>
       <div class="sb-topbar__right">
         <span class="sb-topbar__counter">${bookPages.length} Pages</span>
-        <button class="sb-topbar__btn-switch" id="sb-switch-mobile" type="button" title="Switch to mobile phone preview">
-          📱 Mobile View
-        </button>
+        ${!isDesktopScreen() ? `
+          <button class="sb-topbar__btn-switch" id="sb-switch-mobile" type="button" title="Switch to mobile phone preview">
+            📱 Mobile View
+          </button>
+        ` : ''}
         <button class="sb-topbar__btn-action" id="sb-story-settings" type="button" title="Edit story title, cover, and metadata">
           ⚙️ Settings
         </button>
@@ -1860,17 +2082,27 @@ function openStoryboard(): void {
           🚀 Go Live
         </button>
         <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
-        <button class="sb-topbar__close" id="sb-close" type="button" title="Close and return to mobile editor">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        ${!isDesktopScreen() ? `
+          <button class="sb-topbar__close" id="sb-close" type="button" title="Close and return to mobile editor">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        ` : `
+          <button class="sb-topbar__close" id="sb-close" type="button" title="Return to admin dashboard" style="margin-left:8px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        `}
       </div>
     </div>
     <div class="sb-track" id="sb-track">
       ${cardsHtml}
+      <div class="sb-card sb-card--sparc" style="min-width:420px; max-width:460px; overflow-y:auto; padding:8px 12px; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px;">
+        ${renderSparcAdminEditor()}
+      </div>
     </div>
   `;
 
   document.body.appendChild(overlay);
+  attachSparcAdminListeners(overlay);
   ensureVideoPlayback(overlay);
 
   // --- Wire up events ---
@@ -1884,10 +2116,25 @@ function openStoryboard(): void {
     }, { once: true });
   };
 
+  // Mobile View button only exists on non-desktop screens
   document.getElementById('sb-switch-mobile')?.addEventListener('click', switchToMobileView);
-  document.getElementById('sb-close')?.addEventListener('click', switchToMobileView);
+
+  // Close button behavior depends on screen size:
+  // Desktop → save draft and return to admin dashboard (no mobile editor available)
+  // Mobile  → switch back to mobile editor view
+  document.getElementById('sb-close')?.addEventListener('click', () => {
+    if (isDesktopScreen()) {
+      saveDraft();
+      overlay.remove();
+      navigate('admin');
+    } else {
+      switchToMobileView();
+    }
+  });
 
   document.getElementById('sb-story-settings')?.addEventListener('click', () => {
+    // Keep activeEditorMode = 'storyboard' so that pressing "Back" in settings
+    // returns to the storyboard view (updateView checks activeEditorMode).
     overlay.remove();
     openStorySettings();
   });
@@ -2202,7 +2449,7 @@ export function init(): void {
   if (epNumMatch) episodeNumber = parseInt(epNumMatch[1], 10) || 1;
   if (titleMatch) episodeParentTitle = decodeURIComponent(titleMatch[1]);
 
-  let attachListeners: () => void;
+  let attachListeners: () => void = () => {};
 
   const loadData = async () => {
     if (editId) {
@@ -2228,6 +2475,14 @@ export function init(): void {
         storyCharacters = storyToEdit.characters || [];
         storyAudioMode = storyToEdit.audioMode || 'make_audio';
         storyNarratorVoiceId = storyToEdit.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM';
+        soloEpisodeCount = storyToEdit.soloEpisodeCount || 1;
+        if (storyToEdit.sparcPrompt) {
+          sparcPromptText = storyToEdit.sparcPrompt.text || '';
+          sparcPromptMediaUrls = storyToEdit.sparcPrompt.mediaUrls ? [...storyToEdit.sparcPrompt.mediaUrls] : [];
+        } else {
+          sparcPromptText = '';
+          sparcPromptMediaUrls = [];
+        }
 
         if (selectedFormat === 'book') {
            bookPages = storyToEdit.panels.map((p, i) => ({
@@ -2299,7 +2554,8 @@ export function init(): void {
         wiz.innerHTML = renderPhase();
         attachListeners();
       }
-      if (selectedFormat === 'book' && isDesktopScreen() && activeEditorMode === 'storyboard') {
+      if (selectedFormat === 'book' && isDesktopScreen()) {
+        activeEditorMode = 'storyboard';
         openStoryboard();
       }
     };
@@ -2322,6 +2578,30 @@ export function init(): void {
   async function promptSaveStoryAdmin(saveStatus: 'draft' | 'live' = 'draft'): Promise<void> {
     promptSaveStoryAdminGlobal = promptSaveStoryAdmin;
     getFormData();
+
+    const pageCount = selectedFormat === 'book' ? bookPages.length : scrollPanels.length;
+    if (saveStatus === 'live' && (pageCount < 12 || pageCount > 36)) {
+      showModal({
+        title: 'Episode Length Requirement',
+        content: `
+          <p style="line-height:1.5; margin-bottom:12px; font-size:0.9rem; color:var(--color-text-secondary);">
+            Episodes must contain between <strong>12 and 36 pages</strong> to go live.<br><br>
+            Current count: <strong>${pageCount} pages</strong>.<br>
+            ${pageCount < 12 ? `Please add at least <strong>${12 - pageCount}</strong> more page(s).` : `Please remove <strong>${pageCount - 36}</strong> page(s).`}
+          </p>
+          <p style="font-size:0.8rem; color:var(--color-text-muted);">
+            You can still save this episode as a <strong>Draft</strong> and continue editing later.
+          </p>
+        `,
+        confirmText: 'Save as Draft',
+        cancelText: 'Keep Editing',
+        onConfirm: async () => {
+          await promptSaveStoryAdmin('draft');
+        }
+      });
+      return;
+    }
+
     const hasValidTitle = storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled';
     if (hasValidTitle) {
       saveDraft();
@@ -2385,6 +2665,9 @@ export function init(): void {
   attachListeners = () => {
     // ─── SHARED CANVAS TOOLBAR ───
     if (phase === 'canvas') {
+      // SPARC Checkpoint Challenge Authoring
+      attachSparcAdminListeners(document);
+
       // Auto-save and exit — no popup
       document.getElementById('btn-toolbar-quit')?.addEventListener('click', async () => {
         if (!storyTitle.trim()) storyTitle = 'Untitled';

@@ -1,32 +1,44 @@
 import type { Story, UserStory } from '../types.ts';
 import { stories as staticStories, genres, registerStories } from '../data/stories.ts';
-import { renderStoryCard, initVideoCovers } from '../components/story-card.ts';
+import { renderStoryCard, renderEmptySlot, initVideoCovers } from '../components/story-card.ts';
 import { navigate } from '../router.ts';
-import { isContentManagementMode } from '../state.ts';
+import { isContentManagementMode, getSlotOverride, initSlotOverrides } from '../state.ts';
 import { openTileConfigModal } from '../components/tile-config-modal.ts';
 import { fetchUnifiedExploreStories } from '../lib/db.ts';
 
-function mapUserStoryToStory(us: UserStory): Story {
-  return {
-    id: us.id,
-    title: us.title,
-    author: us.author_name || 'DRiVE Author',
-    genre: us.genre,
-    format: us.format,
-    synopsis: us.synopsis || '',
-    coverImage: us.coverImage || us.pages?.[0]?.image || us.live_pages?.[0]?.image || '',
-    readCount: us.readCount || 0,
-    isFeatured: us.isFeatured || false,
-    isEditorPick: us.isEditorsPick || false,
-    panels: (us.live_pages || us.pages || []).map(p => p.image).filter(Boolean) as string[],
-  };
-}
+/** Exact number of slots to always display on Explore (8 slots = 4 rows of 2) */
+export const EXPLORE_SLOT_COUNT = 8;
 
 function renderGrid(filteredStories: Story[]): string {
-  if (filteredStories.length === 0) {
-    return `<div class="empty-state text-center text-muted fade-in" style="padding: 2rem; grid-column: 1 / -1;">No stories found.</div>`;
+  const count = EXPLORE_SLOT_COUNT;
+  const cards: string[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const override = getSlotOverride('explore-grid', i);
+    if (override === null) {
+      // Explicitly removed by admin: show empty tile on all devices
+      cards.push(renderEmptySlot('explore-grid', i, 'full'));
+      continue;
+    }
+    if (typeof override === 'string') {
+      const story = filteredStories.find(s => s.id === override) || staticStories.find(s => s.id === override);
+      if (story && !story.id.startsWith('placeholder-') && !story.id.startsWith('empty-')) {
+        cards.push(renderStoryCard(story, 'full'));
+      } else {
+        cards.push(renderEmptySlot('explore-grid', i, 'full'));
+      }
+      continue;
+    }
+
+    const current = filteredStories[i];
+    if (current && !current.id.startsWith('placeholder-') && !current.id.startsWith('empty-')) {
+      cards.push(renderStoryCard(current, 'full'));
+    } else {
+      cards.push(renderEmptySlot('explore-grid', i, 'full'));
+    }
   }
-  return filteredStories.map(story => renderStoryCard(story, 'full')).join('');
+
+  return cards.join('');
 }
 
 export function render(): string {
@@ -93,27 +105,29 @@ export async function init(): Promise<void> {
       );
     }
     
-    gridContainer.innerHTML = renderGrid(filtered);
-    initVideoCovers(gridContainer);
+    const newHtml = renderGrid(filtered);
+    // Prevent screen flash / refresh pop-in if HTML is already identical
+    if (gridContainer.innerHTML.trim() !== newHtml.trim()) {
+      gridContainer.innerHTML = newHtml;
+      initVideoCovers(gridContainer);
+    }
   };
 
   // Wire events immediately so UI is responsive
-  searchInput.addEventListener('input', (e) => {
-    currentSearch = (e.target as HTMLInputElement).value;
+  searchInput.addEventListener('input', () => {
+    currentSearch = searchInput.value.trim();
     updateGrid();
   });
 
   genresContainer.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement;
-    const pill = target.closest('.genre-pill');
+    const pill = (e.target as HTMLElement).closest('.genre-pill');
+    if (!pill) return;
     
-    if (pill) {
-      genresContainer.querySelectorAll('.genre-pill').forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      
-      currentGenre = pill.getAttribute('data-genre') || 'All';
-      updateGrid();
-    }
+    genresContainer.querySelectorAll('.genre-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    
+    currentGenre = pill.getAttribute('data-genre') || 'All';
+    updateGrid();
   });
 
   gridContainer.addEventListener('click', (e) => {
@@ -121,33 +135,39 @@ export async function init(): Promise<void> {
     const card = target.closest('.story-card');
     if (card) {
       const storyId = card.getAttribute('data-story-id');
-      if (storyId) {
-        if (isContentManagementMode()) {
-          e.preventDefault();
-          const titleEl = card.querySelector('.story-title');
-          const allCards = Array.from(gridContainer.querySelectorAll('.story-card'));
-          const slotIndex = allCards.indexOf(card as Element);
-          openTileConfigModal({
-            storyId,
-            slotType: 'explore-grid',
-            slotIndex: slotIndex >= 0 ? slotIndex : 0,
-            storyTitle: titleEl?.textContent || undefined,
-          });
-        } else {
+      if (isContentManagementMode()) {
+        e.preventDefault();
+        const titleEl = card.querySelector('.story-title');
+        const allCards = Array.from(gridContainer.querySelectorAll('.story-card'));
+        const slotIndex = allCards.indexOf(card as Element);
+        const isPlaceholder = !storyId || storyId.startsWith('placeholder-') || storyId.startsWith('empty-');
+
+        openTileConfigModal({
+          storyId: isPlaceholder ? null : storyId,
+          slotType: 'explore-grid',
+          slotIndex: slotIndex >= 0 ? slotIndex : 0,
+          storyTitle: isPlaceholder ? undefined : (titleEl?.textContent || undefined),
+        });
+      } else {
+        if (storyId && !storyId.startsWith('placeholder-') && !storyId.startsWith('empty-')) {
           navigate('story/' + storyId);
         }
       }
     }
   });
 
-  // Fetch live published stories in background and update grid
-  fetchUnifiedExploreStories().then(unifiedStories => {
+  // Sync slot overrides and fetch live stories in background without layout shifts
+  try {
+    await initSlotOverrides();
+    const unifiedStories = await fetchUnifiedExploreStories();
     if (unifiedStories && unifiedStories.length > 0) {
       registerStories(unifiedStories);
-      allStories = [...unifiedStories, ...staticStories];
-      updateGrid();
+      allStories = [...new Map([...unifiedStories, ...staticStories].map(s => [s.id, s])).values()];
     }
-  }).catch(err => {
-    console.error('Failed to fetch explore stories:', err);
-  });
+    // Update grid only if there are genuine differences
+    updateGrid();
+  } catch (err) {
+    console.error('Failed to sync explore stories:', err);
+    updateGrid();
+  }
 }

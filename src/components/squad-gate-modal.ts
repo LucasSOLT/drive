@@ -196,6 +196,18 @@ function renderTabContent(options: SquadGateOptions): string {
           <input type="text" class="squad-join-input" id="sg-join-input" placeholder="Have a friend's squad code? (e.g. DRV-824)" maxlength="10" />
           <button class="squad-join-btn" id="sg-join-btn">Join Squad</button>
         </div>
+
+        <!-- Open Full Squad Lobby Button -->
+        <button class="squad-open-lobby-btn" id="sg-open-lobby-btn" style="
+          width: 100%; margin-top: 14px; padding: 12px 18px; border-radius: var(--radius-lg);
+          background: linear-gradient(135deg, var(--color-purple) 0%, #7c3aed 100%);
+          color: white; font-family: var(--font-heading); font-size: 0.95rem; font-weight: 700;
+          border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+          box-shadow: 0 4px 14px rgba(138,43,226,0.35);
+        ">
+          <span>🛡️ Enter Squad Mission Lobby & Ready Up</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
       </div>
     `;
   } else {
@@ -330,6 +342,15 @@ function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLEle
     }
   });
 
+  // Open Squad Lobby & Ready Up
+  overlay.querySelector('#sg-open-lobby-btn')?.addEventListener('click', () => {
+    closeSquadGateModal();
+    if (currentSquad) {
+      localStorage.setItem('drive_active_squad_id', currentSquad.id);
+    }
+    navigate('squad-lobby' + (currentSquad ? `/${currentSquad.id}` : ''));
+  });
+
   // Matchmaking
   overlay.querySelector('#sg-btn-matchmake')?.addEventListener('click', (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
@@ -338,8 +359,11 @@ function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLEle
 
     setTimeout(() => {
       currentSquad = joinGlobalMatchmaking(options.storyId, options.storyTitle, options.storyCoverImage);
-      activeTab = 'friends';
-      refreshBody(options, overlay);
+      closeSquadGateModal();
+      if (currentSquad) {
+        localStorage.setItem('drive_active_squad_id', currentSquad.id);
+      }
+      navigate('squad-lobby' + (currentSquad ? `/${currentSquad.id}` : ''));
     }, 1200);
   });
 }

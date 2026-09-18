@@ -99,6 +99,19 @@ export const stories: Story[] = [
     readCount: 0,
     coverImage: '',
     panels: []
+  },
+  {
+    id: 'placeholder-7',
+    title: '',
+    author: '',
+    genre: 'Fantasy',
+    format: 'book',
+    synopsis: '',
+    isFeatured: false,
+    isEditorPick: false,
+    readCount: 0,
+    coverImage: '',
+    panels: []
   }
 ];
 

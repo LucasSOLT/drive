@@ -7,7 +7,7 @@ import { addFriendByCode, findUserByFriendCode } from './lib/friends.ts';
 import { getGearButtonHtml, openSettings } from './components/settings-drawer.ts';
 import { applyTheme, applyTextSize } from './lib/settings.ts';
 import { MONSTER_AVATARS } from './data/avatars.ts';
-import { getSelectedAvatar, isContentManagementMode, setContentManagementMode } from './state.ts';
+import { getSelectedAvatar, isContentManagementMode, setContentManagementMode, initSlotOverrides } from './state.ts';
 import { initAuth, isAuthenticated, onAuthChange } from './lib/auth.ts';
 import { loadUserData, migrateLocalData, clearCache } from './lib/db.ts';
 
@@ -56,6 +56,9 @@ async function initApp() {
   applyTheme();
   applyTextSize();
 
+  // Sync cloud slot overrides so all devices see the same homepage/feed layout
+  initSlotOverrides().catch(() => {});
+
   // Initialize auth and wait for session check
   const user = await initAuth();
 
@@ -65,8 +68,17 @@ async function initApp() {
     await migrateLocalData(); // One-time migration of localStorage data
   }
 
-  // Listen for auth changes (login/logout)
+  // Listen for auth changes (login/logout).
+  // Skip the FIRST callback — Supabase emits a SIGNED_IN event on session
+  // restore which is redundant because initAuth() already resolved the user.
+  // Without this guard, the app would do two full renderView() calls on boot.
+  let authCallbackReady = false;
   onAuthChange(async (authUser) => {
+    if (!authCallbackReady) {
+      authCallbackReady = true;
+      return; // Skip the initial SIGNED_IN / session-restore event
+    }
+
     // Don't re-render on beta invite route — it manages its own auth flow
     const currentBase = getCurrentRoute().split('/')[0];
     if (currentBase === 'beta') return;
@@ -81,65 +93,41 @@ async function initApp() {
     renderView(getCurrentRoute());
   });
   
-  app.innerHTML = `
-    <div class="app-shell">
-      <!-- Menu drawer + backdrop -->
-      ${renderMenu()}
-      
-      <!-- Main content area -->
-      <main class="app-content" id="app-content">
-        <!-- View header (hidden for reader) -->
-        <header class="view-header" id="view-header">
-          <button class="hamburger-btn" id="hamburger-btn" aria-label="Open menu" style="background:none; border:none; cursor:pointer;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="3" y1="12" x2="21" y2="12"></line>
-              <line x1="3" y1="6" x2="21" y2="6"></line>
-              <line x1="3" y1="18" x2="21" y2="18"></line>
-            </svg>
-          </button>
-          <button class="cm-back-btn" id="cm-back-btn" aria-label="Exit Content Management" style="display:none;" title="Return to Content Management Dashboard">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12"/>
-              <polyline points="12 19 5 12 12 5"/>
-            </svg>
-            <span class="cm-back-btn-text">Admin</span>
-          </button>
-          <h1 class="view-title" id="view-title">Home</h1>
-          <div class="header-right-group">
-            ${getGearButtonHtml()}
-            <button class="header-avatar" id="header-avatar-btn" aria-label="Profile">
-              <div class="header-avatar__img" id="header-avatar-img">
-                ${getHeaderAvatarHtml()}
-              </div>
-            </button>
-          </div>
-        </header>
+  // ── Hydrate the pre-rendered shell (injected via index.html) ──
+  // Instead of overwriting app.innerHTML (which would destroy the static shell
+  // and cause a layout shift), we inject dynamic parts into existing containers.
 
-        <!-- Content Management View Top Indicator Banner -->
-        <div id="cm-top-banner" class="cm-top-banner" style="display:none;">
-          <div class="cm-top-banner-content">
-            <span class="cm-pulse-dot"></span>
-            <span class="cm-top-banner-pill">🔮 CONTENT MANAGEMENT VIEW</span>
-            <span class="cm-top-banner-desc">Live Story Tile Preview (Home · Featured · Explore)</span>
-          </div>
-          <button id="cm-banner-exit-btn" class="cm-banner-exit-btn" title="Exit to Admin Creation Dashboard">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-            <span>Exit to Admin</span>
-          </button>
+  // 1. Inject the menu drawer into the app-shell (before app-content)
+  const appShell = app.querySelector('.app-shell');
+  if (appShell) {
+    const menuFragment = document.createElement('div');
+    menuFragment.innerHTML = renderMenu();
+    // Insert each child of the menu HTML before <main>
+    const appContentEl = document.getElementById('app-content');
+    while (menuFragment.firstChild) {
+      appShell.insertBefore(menuFragment.firstChild, appContentEl);
+    }
+  }
+
+  // 2. Inject gear + avatar buttons into the header-right-group
+  const headerRightGroup = app.querySelector('.header-right-group');
+  if (headerRightGroup) {
+    headerRightGroup.innerHTML = `
+      ${getGearButtonHtml()}
+      <button class="header-avatar" id="header-avatar-btn" aria-label="Profile">
+        <div class="header-avatar__img" id="header-avatar-img">
+          ${getHeaderAvatarHtml()}
         </div>
-        
-        <!-- Dynamic view container -->
-        <div id="view-container"></div>
-      </main>
-      
-      <!-- Bottom navigation -->
-      <div id="nav-container"></div>
-      
-      <!-- Modal container -->
-      ${renderModalContainer()}
-    </div>
-  `;
-  
+      </button>
+    `;
+  }
+
+  // 3. Set up modal container
+  const modalContainer = document.getElementById('modal-container');
+  if (modalContainer) {
+    modalContainer.outerHTML = renderModalContainer();
+  }
+
   initMenu();
 
   // Apply saved theme
@@ -181,7 +169,6 @@ async function initApp() {
   });
 }
 
-let isFirstRender = true;
 
 function renderView(route: string) {
   const container = document.getElementById('view-container');
@@ -271,11 +258,7 @@ function renderView(route: string) {
   }
 
   // ── Phase 4: Inject content (single main reflow) ──
-  let html = viewModule.render();
-  if (isFirstRender) {
-    html = html.replace(/\bfade-in\b/g, 'fade-in no-initial-fade');
-    isFirstRender = false;
-  }
+  const html = viewModule.render();
 
   container.innerHTML = html;
   viewModule.init();

@@ -23,6 +23,13 @@ let storyAuthorName = '';
 let storyCustomGenre = '';
 let storyContentRating: 'All Ages' | 'PG-13' | 'Mature' = 'All Ages';
 
+export const isDesktopScreen = (): boolean => {
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  if (isMobile) return false;
+  return window.innerWidth >= 768;
+};
+let activeEditorMode: 'storyboard' | 'mobile' = isDesktopScreen() ? 'storyboard' : 'mobile';
+
 // Endless Scroll state
 interface TextOverlay {
   id: string;
@@ -510,7 +517,7 @@ function renderCanvasToolbar(formatLabel: string): string {
       </div>
       <span class="canvas-toolbar__title">${formatLabel}</span>
       <div class="canvas-toolbar__right" style="position:relative; display:flex; align-items:center; gap:8px;">
-        ${isBook ? `
+        ${(isBook && !isDesktopScreen()) ? `
           <button class="canvas-toolbar__btn-storyboard" id="btn-toolbar-switch-storyboard" type="button" title="Switch to Content Storyboard desktop view">
             🖥️ Storyboard View
           </button>
@@ -528,10 +535,12 @@ function renderCanvasToolbar(formatLabel: string): string {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Page
             </button>
-            <button class="canvas-toolbar__dd-item" id="btn-dd-storyboard">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              Storyboard View
-            </button>
+            ${!isDesktopScreen() ? `
+              <button class="canvas-toolbar__dd-item" id="btn-dd-storyboard">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                Storyboard View
+              </button>
+            ` : ''}
           ` : `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1301,8 +1310,7 @@ function closePageFullscreen(overlay: HTMLElement): void {
 //  STORYBOARD — Wide Desktop View
 // ═══════════════════════════════════════
 
-const isDesktopScreen = (): boolean => window.innerWidth >= 1024;
-let activeEditorMode: 'storyboard' | 'mobile' = isDesktopScreen() ? 'storyboard' : 'mobile';
+
 
 function showDesktopRequiredModal(): void {
   showModal({
@@ -1411,9 +1419,11 @@ function openStoryboard(): void {
       </div>
       <div class="sb-topbar__right">
         <span class="sb-topbar__counter">${bookPages.length} Pages</span>
-        <button class="sb-topbar__btn-switch" id="sb-switch-mobile" type="button" title="Switch to mobile phone preview">
-          📱 Mobile View
-        </button>
+        ${!isDesktopScreen() ? `
+          <button class="sb-topbar__btn-switch" id="sb-switch-mobile" type="button" title="Switch to mobile phone preview">
+            📱 Mobile View
+          </button>
+        ` : ''}
         <button class="sb-topbar__btn-action" id="sb-story-settings" type="button" title="Edit story title, cover, and metadata">
           ⚙️ Settings
         </button>
@@ -1421,9 +1431,15 @@ function openStoryboard(): void {
           💾 Save Draft
         </button>
         <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
-        <button class="sb-topbar__close" id="sb-close" type="button" title="Close and return to mobile editor">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        ${!isDesktopScreen() ? `
+          <button class="sb-topbar__close" id="sb-close" type="button" title="Close and return to mobile editor">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        ` : `
+          <button class="sb-topbar__close" id="sb-close" type="button" title="Save and exit to library" style="margin-left:8px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        `}
       </div>
     </div>
     <div class="sb-track" id="sb-track">
@@ -1446,11 +1462,26 @@ function openStoryboard(): void {
   };
 
   document.getElementById('sb-switch-mobile')?.addEventListener('click', switchToMobileView);
-  document.getElementById('sb-close')?.addEventListener('click', switchToMobileView);
+
+  document.getElementById('sb-close')?.addEventListener('click', async () => {
+    if (isDesktopScreen()) {
+      if (!storyTitle.trim()) storyTitle = 'Untitled';
+      saveDraft();
+      try { await saveUserStory(buildStory()); } catch {}
+      overlay.remove();
+      navigate('library');
+    } else {
+      switchToMobileView();
+    }
+  });
 
   document.getElementById('sb-story-settings')?.addEventListener('click', () => {
+    // Keep activeEditorMode = 'storyboard' on desktop so that pressing "Back" in settings
+    // returns directly to the storyboard view (updateView checks activeEditorMode).
     overlay.remove();
-    openStorySettingsGlobal?.();
+    if (openStorySettingsGlobal) {
+      openStorySettingsGlobal();
+    }
   });
 
   document.getElementById('sb-save-draft')?.addEventListener('click', () => {
@@ -1993,6 +2024,8 @@ export function init(): void {
   const wizard = document.getElementById('create-wizard');
   if (!wizard) return;
 
+  openStorySettingsGlobal = openStorySettings;
+
   const updateView = () => {
     // Persist phase, format, and draft ID so page refresh restores state
     sessionStorage.setItem('drive_create_phase', phase);
@@ -2010,7 +2043,8 @@ export function init(): void {
     wizard.innerHTML = renderPhase();
     attachListeners();
     saveDraft();
-    if (phase === 'canvas' && selectedFormat === 'book' && isDesktopScreen() && activeEditorMode === 'storyboard') {
+    if (phase === 'canvas' && selectedFormat === 'book' && isDesktopScreen()) {
+      activeEditorMode = 'storyboard';
       openStoryboard();
     }
   };

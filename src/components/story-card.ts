@@ -1,6 +1,6 @@
 import type { Story } from '../types.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
-import { isBookmarked, toggleBookmark } from '../state.ts';
+import { isBookmarked, toggleBookmark, isContentManagementMode } from '../state.ts';
 
 const FORMAT_ICONS: Record<string, string> = {
   'scroll': '📜 Waterfall Storyboard',
@@ -9,6 +9,37 @@ const FORMAT_ICONS: Record<string, string> = {
 
 const BOOKMARK_SVG_OFF = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
 const BOOKMARK_SVG_ON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+
+/**
+ * Render a dedicated empty slot tile.
+ * In Content Management mode: interactive dashed slot with a '+' to insert stories.
+ * In Normal Visitor mode (all devices): a styled 'Empty Slot' placeholder tile.
+ */
+export function renderEmptySlot(slotType: string, slotIndex: number, variant: 'full' | 'compact' | 'hero' = 'full'): string {
+  const inCM = isContentManagementMode();
+  const variantClass = variant === 'hero' ? 'story-card--hero' : variant === 'compact' ? 'story-card--compact' : 'story-card--full';
+  const minHeight = variant === 'hero' ? 'min-height:220px;' : 'min-height:160px;';
+
+  if (inCM) {
+    return `
+      <div class="story-card ${variantClass} story-card--cm-empty fade-in" data-story-id="placeholder-${slotIndex}" data-slot-type="${slotType}" data-slot-index="${slotIndex}" style="display:flex; flex-direction:column; justify-content:center; align-items:center; background:rgba(139,92,246,0.06); border:2px dashed rgba(139,92,246,0.4); cursor:pointer; ${minHeight} border-radius:var(--radius-lg); text-align:center; padding:16px; transition:all 0.2s;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-purple, #8b5cf6)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px;">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        <span style="font-size:0.75rem; font-weight:700; color:var(--color-purple, #8b5cf6); text-transform:uppercase; letter-spacing:0.5px;">Empty Slot • Insert</span>
+      </div>
+    `;
+  }
+
+  // Normal viewer mode on all devices:
+  return `
+    <div class="story-card ${variantClass} story-card--empty fade-in" data-story-id="empty-${slotType}-${slotIndex}" style="display:flex; flex-direction:column; justify-content:center; align-items:center; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.08); ${minHeight} border-radius:var(--radius-lg); text-align:center; padding:16px; opacity:0.6; pointer-events:none;">
+      <span style="font-size:1.8rem; margin-bottom:4px; opacity:0.5;">📖</span>
+      <span style="font-size:0.75rem; color:var(--color-text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Empty Slot</span>
+    </div>
+  `;
+}
 
 function renderCover(story: Story, cssClass: string = 'story-card__cover', eager: boolean = false): string {
   // Determine if there is a cover video: explicit coverVideo, or coverImage is video, or panels[0] is video
@@ -46,18 +77,8 @@ function renderBookmarkBtn(story: Story): string {
 }
 
 export function renderStoryCard(story: Story, variant: 'full' | 'compact' | 'hero' = 'full'): string {
-  if (story.id.startsWith('placeholder-')) {
-    const variantClass = variant === 'hero' ? 'story-card--hero' : variant === 'compact' ? 'story-card--compact' : 'story-card--full';
-    const minHeight = variant === 'hero' ? 'min-height:200px;' : '';
-
-    return `
-      <div class="story-card ${variantClass} fade-in" style="display:flex; justify-content:center; align-items:center; background:var(--color-surface); border:2px dashed var(--color-border); cursor:pointer; ${minHeight}" onclick="window.location.hash='create'">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.6;">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
-      </div>
-    `;
+  if (story.id.startsWith('placeholder-') || story.id.startsWith('empty-')) {
+    return renderEmptySlot('default', 0, variant);
   }
 
   if (variant === 'hero') {
