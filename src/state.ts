@@ -5,7 +5,7 @@ import {
   getCachedSubscription, getCachedPlan, getCachedCredits, getCachedTokens,
   isCachedLibraryUnlocked, getCachedStories, getCachedStoryById,
   getCachedUsername, getCachedAvatarIndex, getCachedSocialLinks,
-  isCachedBookmarked, hasUserLikedCached, getCachedLikeCount,
+  isCachedBookmarked, getCachedBookmarkIds, hasUserLikedCached, getCachedLikeCount,
   saveUserStory, removeUserStory, updateProfile,
   consumeTokenServer, deductCreditsServer,
   toggleBookmarkServer, toggleLikeServer,
@@ -333,6 +333,11 @@ export function toggleBookmark(storyId: string): boolean {
   if (set.has(storyId)) { set.delete(storyId); } else { set.add(storyId); }
   localStorage.setItem(BOOKMARKS_KEY, JSON.stringify([...set]));
   return set.has(storyId);
+}
+
+export function getBookmarkedStoryIds(): string[] {
+  if (isAuthenticated()) return getCachedBookmarkIds();
+  return [...getBookmarkSet()];
 }
 
 // ─── Content Management View Mode ───

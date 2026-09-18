@@ -1,10 +1,12 @@
 import type { UserStory, Story } from '../types.ts';
 import { getTrackedStories, removeTrackedStory, type TrackedStory } from '../lib/reading-tracker.ts';
-import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteUserStory, getUserPlan, getUserSubscription, canCreateStory, getTokensRemaining, getCreditsBalance } from '../state.ts';
+import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteUserStory, getUserPlan, getUserSubscription, canCreateStory, getTokensRemaining, getCreditsBalance, getBookmarkedStoryIds, isBookmarked, toggleBookmark } from '../state.ts';
 import { navigate } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory } from '../lib/db.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
+import { getStoryById } from '../data/stories.ts';
+import { renderStoryCard, initVideoCovers, initBookmarkButtons } from '../components/story-card.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -343,7 +345,31 @@ export function render(): string {
           })()}
         </div>
 
-        <!-- Section 2: My Created Stories -->
+        <!-- Section 2: Saved Bookmarks -->
+        <div class="section__header slide-up stagger-2b" style="display: flex; justify-content: space-between; align-items: center; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:1.2rem;">🔖</span>
+            <h2 class="section__title" style="margin: 0;">Saved Bookmarks</h2>
+          </div>
+        </div>
+        <div class="library-unlocked__content slide-up stagger-2c" id="lib-bookmarks-shelf" style="margin-top: 1rem; margin-bottom: 2rem;">
+          ${(() => {
+            const bmIds = getBookmarkedStoryIds();
+            if (bmIds.length > 0) {
+              const bmCards = bmIds.map(id => {
+                const story = getStoryById(id);
+                if (story) return renderStoryCard(story, 'compact');
+                return '';
+              }).filter(Boolean);
+              if (bmCards.length > 0) {
+                return '<div class="lib-bookmark-row" style="display:flex; gap:12px; overflow-x:auto; padding-bottom:8px;">' + bmCards.join('') + '</div>';
+              }
+            }
+            return '<div style="padding:1.5rem; text-align:center; color:var(--color-text-muted); font-size:0.85rem; background:var(--color-surface); border-radius:var(--radius-xl); border:1px dashed var(--color-border);">Tap the 🔖 bookmark icon on any story card to save it here for quick access.</div>';
+          })()}
+        </div>
+
+        <!-- Section 3: My Created Stories -->
         <div class="section__header slide-up stagger-3" style="display: flex; justify-content: space-between; align-items: center; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:1.2rem;">✍️</span>
@@ -903,4 +929,18 @@ export function init(): void {
   container.querySelectorAll<HTMLVideoElement>('video.lib-card__cover-img').forEach(v => {
     ensureVideoPlayback(v);
   });
+
+  // Wire bookmark buttons and video covers in the bookmarks shelf
+  const bmShelf = document.getElementById('lib-bookmarks-shelf');
+  if (bmShelf) {
+    initBookmarkButtons(bmShelf);
+    initVideoCovers(bmShelf);
+    // Wire story card clicks in bookmarks shelf
+    bmShelf.querySelectorAll('[data-story-id]').forEach(card => {
+      card.addEventListener('click', () => {
+        const storyId = (card as HTMLElement).getAttribute('data-story-id');
+        if (storyId) navigate(`story/${storyId}`);
+      });
+    });
+  }
 }

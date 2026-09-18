@@ -1,7 +1,7 @@
 import { navigate } from '../router.ts';
 import { isContentManagementMode } from '../state.ts';
 import { openTileConfigModal } from '../components/tile-config-modal.ts';
-import { renderStoryCard, initVideoCovers } from '../components/story-card.ts';
+import { renderStoryCard, initVideoCovers, initBookmarkButtons } from '../components/story-card.ts';
 import { stories, getFeaturedStories, getEditorPicks } from '../data/stories.ts';
 import { fetchFeaturedStories, fetchUnifiedExploreStories } from '../lib/db.ts';
 import type { Story } from '../types.ts';
@@ -176,6 +176,8 @@ export function init(): void {
 
   // Enable hover-to-play on video covers
   initVideoCovers(container);
+  // Wire bookmark toggle buttons
+  initBookmarkButtons(container);
 
   // Fetch live stories and update sections
   (async () => {
@@ -193,6 +195,7 @@ export function init(): void {
         const allCards = [...new Map([...featuredLive, ...editorPicks, ...staticFeatured].map(s => [s.id, s])).values()];
         featuredGrid.innerHTML = renderFeaturedRows(allCards);
         initVideoCovers(featuredGrid);
+        initBookmarkButtons(featuredGrid);
       }
 
       const bestGrid = document.getElementById('home-bestselling-grid');
@@ -202,6 +205,7 @@ export function init(): void {
           .sort((a, b) => b.readCount - a.readCount);
         bestGrid.innerHTML = allBestselling.map(story => renderStoryCard(story, 'full')).join('');
         initVideoCovers(bestGrid);
+        initBookmarkButtons(bestGrid);
       }
     } catch (err) {
       console.error('Failed to fetch live home stories:', err);

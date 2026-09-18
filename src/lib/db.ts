@@ -382,6 +382,13 @@ export function isCachedBookmarked(storyId: string): boolean {
   } catch { return false; }
 }
 
+export function getCachedBookmarkIds(): string[] {
+  if (_dataLoaded) return [..._bookmarks];
+  try {
+    return JSON.parse(localStorage.getItem('drive_bookmarks') || '[]');
+  } catch { return []; }
+}
+
 export async function toggleBookmarkServer(storyId: string): Promise<boolean> {
   const userId = getUserId();
   const wasBookmarked = _bookmarks.has(storyId);
