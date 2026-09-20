@@ -239,24 +239,45 @@ function saveDraft() {
     sparcPromptText,
     sparcPromptMediaUrls,
   };
+  
+  // Pre-check: strip base64 data URLs to keep under localStorage limit
+  const stripped = stripBase64FromDraft(entry);
+  
   try {
-    localStorage.setItem('drive_admin_create_draft', JSON.stringify(entry));
+    localStorage.setItem('drive_admin_create_draft', JSON.stringify(stripped));
   } catch {
+    // If still too large, strip ALL images
     try {
-      const sanitized = {
-        ...entry,
-        coverThumbnail: entry.coverThumbnail && entry.coverThumbnail.length > 500000 ? '' : entry.coverThumbnail,
-        bookPages: entry.bookPages.map(p => ({
+      const aggressive = {
+        ...stripped,
+        coverThumbnail: (stripped.coverThumbnail && stripped.coverThumbnail.startsWith('data:')) ? '' : stripped.coverThumbnail,
+        bookPages: stripped.bookPages.map(p => ({
           ...p,
-          image: p.image && p.image.length > 500000 ? (isVideoMedia(p.image) ? '' : p.image) : p.image
-        }))
+          image: (p.image && p.image.startsWith('data:')) ? '' : p.image,
+        })),
       };
-      localStorage.setItem('drive_admin_create_draft', JSON.stringify(sanitized));
+      localStorage.setItem('drive_admin_create_draft', JSON.stringify(aggressive));
     } catch (e) {
       console.warn('Failed to save admin draft to localStorage (quota exceeded)', e);
     }
   }
 }
+
+function stripBase64FromDraft(entry: DraftEntry): DraftEntry {
+  return {
+    ...entry,
+    coverThumbnail: (entry.coverThumbnail && entry.coverThumbnail.startsWith('data:') && entry.coverThumbnail.length > 100000) ? '' : entry.coverThumbnail,
+    bookPages: entry.bookPages.map(p => ({
+      ...p,
+      image: (p.image && p.image.startsWith('data:') && p.image.length > 100000) ? '' : p.image,
+    })),
+    scrollPanels: entry.scrollPanels.map(p => ({
+      ...p,
+      image: (p.image && p.image.startsWith('data:') && p.image.length > 100000) ? '' : p.image,
+    })),
+  };
+}
+
 
 function loadDraft(draft: DraftEntry) {
   activeDraftId = draft.id;
@@ -869,12 +890,52 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   });
 
+  async function preUploadBase64Images() {
+    if (_coverThumbnail && _coverThumbnail.startsWith('data:')) {
+      try {
+        const blob = await fetch(_coverThumbnail).then(r => r.blob());
+        const file = new File([blob], `cover.jpg`, { type: 'image/jpeg' });
+        const res = await uploadMedia(file, 'stories');
+        _coverThumbnail = res.url;
+      } catch (err) {
+        console.warn(`[AdminCreate] Failed to pre-upload cover thumbnail:`, err);
+      }
+    }
+
+    for (let i = 0; i < bookPages.length; i++) {
+      if (bookPages[i].image && bookPages[i].image!.startsWith('data:')) {
+        try {
+          const blob = await fetch(bookPages[i].image!).then(r => r.blob());
+          const file = new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' });
+          const res = await uploadMedia(file, 'stories');
+          bookPages[i].image = res.url;
+        } catch (err) {
+          console.warn(`[AdminCreate] Failed to pre-upload page ${i} image:`, err);
+        }
+      }
+    }
+
+    for (let i = 0; i < scrollPanels.length; i++) {
+      if (scrollPanels[i].image && scrollPanels[i].image!.startsWith('data:')) {
+        try {
+          const blob = await fetch(scrollPanels[i].image!).then(r => r.blob());
+          const file = new File([blob], `panel-${i}.jpg`, { type: 'image/jpeg' });
+          const res = await uploadMedia(file, 'stories');
+          scrollPanels[i].image = res.url;
+        } catch (err) {
+          console.warn(`[AdminCreate] Failed to pre-upload panel ${i} image:`, err);
+        }
+      }
+    }
+  }
+
   document.getElementById('ss-save-draft-btn')?.addEventListener('click', async (e) => {
     stopBgmAudioPreview();
     const btn = e.currentTarget as HTMLButtonElement;
     btn.disabled = true;
     btn.textContent = 'Saving...';
     try {
+      await preUploadBase64Images();
       await saveOfficialStory(buildStory('draft'));
       clearDraft();
       navigate('admin');
@@ -902,6 +963,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     btn.disabled = true;
     btn.textContent = 'Publishing...';
     try {
+      await preUploadBase64Images();
       await saveOfficialStory(buildStory('live'));
       clearDraft();
       navigate('admin');
@@ -1897,7 +1959,13 @@ function openPageFullscreen(pageIndex: number): void {
   fileInput?.addEventListener('change', async () => {
     const file = fileInput.files?.[0];
     if (file) {
-      bookPages[pageIndex].image = await fileToDataUrl(file);
+      const dataUrl = await fileToDataUrl(file);
+      const blob = await fetch(dataUrl).then(r => r.blob());
+      const compressed = new File([blob], file.name, { type: file.type || 'image/jpeg' });
+      
+      const res = await uploadMedia(compressed, 'stories');
+      bookPages[pageIndex].image = res.url;
+      
       closePageFullscreen(overlay);
       const wizard = document.getElementById('create-wizard');
       if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }

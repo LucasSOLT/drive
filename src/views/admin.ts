@@ -432,208 +432,161 @@ function renderOriginalsContent(area: HTMLElement): void {
   });
   if (storyGroups.length > 0) {
     attachOfficialCardListeners();
-    attachStackListeners();
+    attachExpandCollapseListeners();
   }
 }
 
-/** Renders a stack of episode tiles that look like pages of a book */
+/** Renders a group of episode tiles using an expand/collapse design */
 function renderStoryStack(episodes: Story[], groupIndex: number): string {
-  const first = episodes[0];
-  const soloEpCount = first.soloEpisodeCount || 1;
-  const formatBadge = first.format === 'book' ? '📖 Book' : '📜 Waterfall';
-  const groupId = first.storyGroupId || first.id;
-  const PEEK_OFFSET = 48; // 48px visible lip per cascading layer
+  const ep1 = episodes[0];
+  const groupId = ep1.storyGroupId || ep1.id;
+  const totalEps = episodes.length;
+  
+  const coverSrc = ep1.coverImage || (ep1.panels?.[0]) || '';
+  const isLive = ep1.officialStatus === 'live';
+  const statusLabel = isLive ? '🟢 LIVE' : '🔴 DRAFT';
+  const formatBadge = ep1.format === 'book' ? '📖 Book' : '📜 Waterfall';
 
-  const episodeCards = episodes.map((story, epIdx) => {
-    const coverSrc = story.coverImage || (story.panels?.[0]) || '';
-    const isLive = story.officialStatus === 'live';
-    const statusColor = isLive ? '#10b981' : '#ef4444';
-    const statusBorder = isLive ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)';
-    const statusBg = isLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
-    const statusLabel = isLive ? '🟢 LIVE' : '🔴 DRAFT';
+  let coverHtml = '';
+  const rawVid = (ep1.coverVideo && isVideoMedia(ep1.coverVideo))
+    ? ep1.coverVideo
+    : (coverSrc && isVideoMedia(coverSrc))
+      ? coverSrc
+      : null;
+  const posterImg = (!isVideoMedia(coverSrc) && coverSrc) || (!isVideoMedia(ep1.coverImage) && ep1.coverImage) || '';
+  if (rawVid) {
+    coverHtml = `<video src="${rawVid}"${posterImg ? ` poster="${posterImg}"` : ''} preload="auto" autoplay loop muted playsinline webkit-playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>`;
+  } else if (coverSrc) {
+    coverHtml = `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" loading="eager" fetchpriority="high" />`;
+  } else {
+    coverHtml = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;background:var(--color-bg);">No Cover</div>`;
+  }
+
+  const episodeRows = episodes.map((story, epIdx) => {
+    const epCover = story.coverImage || (story.panels?.[0]) || '';
+    const epIsLive = story.officialStatus === 'live';
+    const epStatus = epIsLive ? '🟢 LIVE' : '🔴 DRAFT';
     const epNum = story.episodeNumber || (epIdx + 1);
-    const isFirst = epIdx === 0;
-    const topOffset = epIdx * PEEK_OFFSET;
-    const zIndex = episodes.length - epIdx;
+    
+    let epCoverHtml = '';
+    const epRawVid = (story.coverVideo && isVideoMedia(story.coverVideo))
+      ? story.coverVideo
+      : (epCover && isVideoMedia(epCover))
+        ? epCover
+        : null;
+    const epPosterImg = (!isVideoMedia(epCover) && epCover) || (!isVideoMedia(story.coverImage) && story.coverImage) || '';
+    if (epRawVid) {
+      epCoverHtml = `<video src="${epRawVid}"${epPosterImg ? ` poster="${epPosterImg}"` : ''} preload="auto" autoplay loop muted playsinline webkit-playsinline style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;"></video>`;
+    } else if (epCover) {
+      epCoverHtml = `<img src="${epCover}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" />`;
+    } else {
+      epCoverHtml = `<div style="width:40px;height:40px;background:var(--color-bg);border-radius:4px;"></div>`;
+    }
 
     return `
-      <div class="episode-tile ${isFirst ? 'episode-tile--front' : ''}"
-           data-episode-id="${story.id}"
-           data-episode-index="${epIdx}"
-           data-group-id="${groupId}"
-           style="
-             background: var(--color-surface);
-             border: 2px solid ${statusBorder};
-             border-radius: 16px;
-             overflow: hidden;
-             box-shadow: ${isFirst ? '0 12px 32px rgba(0,0,0,0.5), 0 0 20px rgba(139,92,246,0.2)' : 'var(--shadow-sm)'};
-             transition: box-shadow 0.38s ease, filter 0.38s ease, border-color 0.38s ease;
-             position: ${isFirst ? 'relative' : 'absolute'};
-             top: ${topOffset}px;
-             left: 0;
-             right: 0;
-             z-index: ${zIndex};
-             cursor: pointer;
-             filter: brightness(${isFirst ? '1' : '0.78'});
-           ">
-        <div style="position: relative; aspect-ratio: 16/10; background: var(--color-bg); overflow: hidden;">
-          ${(() => {
-            const rawVid = (story.coverVideo && isVideoMedia(story.coverVideo))
-              ? story.coverVideo
-              : (coverSrc && isVideoMedia(coverSrc))
-                ? coverSrc
-                : null;
-            const posterImg = (!isVideoMedia(coverSrc) && coverSrc) || (!isVideoMedia(story.coverImage) && story.coverImage) || '';
-            if (rawVid) {
-              return `<video src="${rawVid}"${posterImg ? ` poster="${posterImg}"` : ''} preload="auto" autoplay loop muted playsinline webkit-playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>`;
-            }
-            if (coverSrc) {
-              return `<img src="${coverSrc}" style="width: 100%; height: 100%; object-fit: cover;" loading="eager" fetchpriority="high" />`;
-            }
-            return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`;
-          })()}
-          <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
-            <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; text-transform: uppercase;">${statusLabel}</span>
-            <span style="background: rgba(139,92,246,0.9); color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">EP ${epNum}</span>
-            ${epNum <= soloEpCount 
-              ? `<span style="font-size:0.65rem; background:rgba(16,185,129,0.12); color:#10b981; padding:2px 8px; border-radius:9999px; font-weight:700;">🟢 SOLO</span>`
-              : `<span style="font-size:0.65rem; background:rgba(139,92,246,0.12); color:var(--color-purple); padding:2px 8px; border-radius:9999px; font-weight:700;">🟣 SQUAD</span>`}
-            ${story.isFeatured ? `<span style="background: #F59E0B; color: #000; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">⭐ FEATURED</span>` : ''}
-            ${story.isEditorPick ? `<span style="background: #10b981; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">🏆 PICK</span>` : ''}
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--color-border); gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+          ${epCoverHtml}
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="font-weight: 700; font-size: 0.9rem; color: var(--color-text-primary);">EP ${epNum}</span>
+              <span style="font-size: 0.75rem; color: var(--color-text-muted);">${story.panels?.length || 0} pages</span>
+              <span style="font-size: 0.7rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: ${epIsLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color: ${epIsLive ? '#10b981' : '#ef4444'};">${epStatus}</span>
+            </div>
+            ${story.title && story.title !== ep1.title ? `<div style="font-size: 0.8rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(story.title)}</div>` : ''}
           </div>
-          <div style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; padding: 3px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 700;">${formatBadge}</div>
         </div>
-        <div style="padding: 12px 14px;">
-          <h3 style="margin: 0 0 4px 0; font-family: var(--font-heading); font-size: 0.95rem; color: var(--color-text-primary);">${escapeHtml(story.title)}</h3>
-          <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 8px;">
-            ${escapeHtml(story.author)} · ${story.genre} · ${story.panels?.length || 0} pages · ${formatNumber(story.readCount)} reads
-          </div>
-          ${story.sparcPrompt?.text 
-            ? `<div style="font-size:0.7rem; color:var(--color-purple); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">⚡ SPARC: "${story.sparcPrompt.text.substring(0, 35)}${story.sparcPrompt.text.length > 35 ? '...' : ''}"</div>`
-            : `<div style="font-size:0.7rem; color:var(--color-text-muted); margin-top:4px;">⚡ No SPARC prompt</div>`}
-          ${story.synopsis ? `<p style="margin: 0 0 10px 0; margin-top: 8px; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(story.synopsis)}</p>` : ''}
-          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
-            <button data-edit-official="${story.id}" style="flex: 2; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
-              ${ICON.eye} Edit
-            </button>
-            <button data-move-up="${story.id}" title="Move up" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">↑</button>
-            <button data-move-down="${story.id}" title="Move down" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 700;">↓</button>
-            <button data-delete-official="${story.id}" style="padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-muted); cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='var(--color-text-muted)';this.style.borderColor='var(--color-border)'">
-              ${ICON.trash}
-            </button>
-          </div>
-          <!-- Status Action Bar -->
-          <div style="background: ${statusBg}; border: 1px solid ${statusBorder}; border-radius: 10px; padding: 8px; display: flex; gap: 6px; align-items: center;">
-            ${isLive ? `
-              <button data-toggle-featured="${story.id}" data-is-featured="${story.isFeatured}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: ${story.isFeatured ? '#F59E0B' : 'var(--color-bg)'}; color: ${story.isFeatured ? '#000' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
-                ⭐ ${story.isFeatured ? 'Unfeature' : 'Feature'}
-              </button>
-              <button data-toggle-pick="${story.id}" data-is-pick="${story.isEditorPick}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: ${story.isEditorPick ? 'var(--color-purple)' : 'var(--color-bg)'}; color: ${story.isEditorPick ? '#fff' : 'var(--color-text-secondary)'}; cursor: pointer; font-size: 0.7rem; font-weight: 600;">
-                🏆 ${story.isEditorPick ? 'Unpick' : 'Pick'}
-              </button>
-              <button data-take-offline="${story.id}" style="flex: 1; padding: 5px 8px; border-radius: 6px; border: none; background: #ef4444; color: white; cursor: pointer; font-size: 0.7rem; font-weight: 700;">
-                📴 Offline
-              </button>
-            ` : `
-              <button data-go-live="${story.id}" style="flex: 1; padding: 8px; border-radius: 8px; border: none; background: #10b981; color: white; cursor: pointer; font-size: 0.8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                🚀 Go Live
-              </button>
-            `}
-          </div>
+        <div style="display: flex; gap: 6px;">
+          <button data-edit-official="${story.id}" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600;">Edit</button>
+          <button data-move-up="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem;">↑</button>
+          <button data-move-down="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem;">↓</button>
+          <button data-delete-official="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-muted); cursor: pointer; font-size: 0.8rem;">🗑</button>
         </div>
       </div>
     `;
   }).join('');
 
-  // Container height: first card height is auto, plus peeking space for subsequent episodes
-  const peekingHeight = (episodes.length - 1) * PEEK_OFFSET;
-
-  const soloCount = Math.min(soloEpCount, episodes.length);
-  const squadCount = Math.max(0, episodes.length - soloEpCount);
-  const summaryText = `${episodes.length} Ep${episodes.length > 1 ? 's' : ''} · ${soloCount} Solo + ${squadCount} Squad`;
-
   return `
-    <div class="story-stack" data-stack-group="${groupId}" style="position: relative; padding-bottom: ${peekingHeight}px; margin-bottom: 20px;">
-      <div style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-        <span>${summaryText}</span>
+    <div class="story-group" data-group-id="${groupId}" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative;">
+      <!-- Collapsed Card (Episode 1) -->
+      <div style="display: flex; padding: 16px; gap: 16px; align-items: flex-start; position: relative;">
+        <div style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; padding: 3px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 700;">${formatBadge}</div>
+        <div style="width: 80px; height: 120px; border-radius: 8px; overflow: hidden; flex-shrink: 0; border: 1px solid var(--color-border);">
+          ${coverHtml}
+        </div>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; height: 120px;">
+          <h3 style="margin: 0 0 6px 0; font-family: var(--font-heading); font-size: 1.1rem; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(ep1.title)}</h3>
+          <div style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 6px;">
+            ${escapeHtml(ep1.author)} · ${ep1.genre}
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: auto;">
+            <span style="font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: ${isLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color: ${isLive ? '#10b981' : '#ef4444'};">${statusLabel}</span>
+            <span style="font-size: 0.75rem; color: var(--color-text-secondary); font-weight: 600;">${totalEps} Episode${totalEps > 1 ? 's' : ''}</span>
+          </div>
+          <div class="collapsed-actions" style="display: flex; gap: 8px; align-items: center; margin-top: auto;">
+            <button class="expand-episodes-btn" style="flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">▼ Show All Episodes</button>
+            <button data-edit-official="${ep1.id}" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.8rem; font-weight: 600;">🔧 Edit</button>
+          </div>
+          <div class="expanded-actions" style="display: none; align-items: center; margin-top: auto;">
+            <button class="collapse-episodes-btn" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">▲ Collapse</button>
+          </div>
+        </div>
       </div>
-      ${episodeCards}
-      <button data-add-episode="${groupId}" data-group-format="${first.format}" data-group-title="${escapeHtml(first.title)}" data-next-ep="${episodes.length + 1}"
-              style="
-                display: flex; align-items: center; justify-content: center; gap: 6px;
-                width: 100%;
-                padding: 10px;
-                margin-top: 10px;
-                border: 2px dashed var(--color-border);
-                border-radius: 12px;
-                background: transparent;
-                color: var(--color-text-muted);
-                cursor: pointer;
-                font-size: 0.8rem;
-                font-weight: 600;
-                transition: all 0.2s;
-                position: relative;
-                z-index: 0;
-              "
-              onmouseover="this.style.borderColor='var(--color-purple)';this.style.color='var(--color-purple)';this.style.background='rgba(139,92,246,0.05)'"
-              onmouseout="this.style.borderColor='var(--color-border)';this.style.color='var(--color-text-muted)';this.style.background='transparent'">
-        ${ICON.plus} Add New Episode
-      </button>
+
+      <!-- Expanded Section (Hidden by default) -->
+      <div class="expanded-episodes" style="display: none; border-top: 1px solid var(--color-border); padding: 0 16px 16px 16px; background: var(--color-bg);">
+        <div style="display: flex; flex-direction: column;">
+          ${episodeRows}
+        </div>
+        <button data-add-episode="${groupId}" data-group-format="${ep1.format}" data-group-title="${escapeHtml(ep1.title)}" data-next-ep="${episodes.length + 1}"
+                style="
+                  display: flex; align-items: center; justify-content: center; gap: 6px;
+                  width: 100%;
+                  padding: 12px;
+                  margin-top: 16px;
+                  border: 2px dashed var(--color-border);
+                  border-radius: 8px;
+                  background: transparent;
+                  color: var(--color-text-muted);
+                  cursor: pointer;
+                  font-size: 0.85rem;
+                  font-weight: 600;
+                  transition: all 0.2s;
+                "
+                onmouseover="this.style.borderColor='var(--color-purple)';this.style.color='var(--color-purple)';this.style.background='rgba(139,92,246,0.05)'"
+                onmouseout="this.style.borderColor='var(--color-border)';this.style.color='var(--color-text-muted)';this.style.background='transparent'">
+          ${ICON.plus} Add New Episode
+        </button>
+      </div>
     </div>
   `;
 }
 
-/** Attach hover-to-reveal listeners for stacked episode tiles (Zero X/Y movement, pure z-index elevation) */
-function attachStackListeners(): void {
-  document.querySelectorAll('.story-stack').forEach(stack => {
-    const tiles = stack.querySelectorAll('.episode-tile') as NodeListOf<HTMLElement>;
-    if (tiles.length <= 1) return;
 
-    let activeIndex = 0;
+/** Attach expand/collapse listeners for story groups */
+function attachExpandCollapseListeners(): void {
+  document.querySelectorAll('.story-group').forEach(group => {
+    const expandBtn = group.querySelector('.expand-episodes-btn') as HTMLElement | null;
+    const collapseBtn = group.querySelector('.collapse-episodes-btn') as HTMLElement | null;
+    const expandedSection = group.querySelector('.expanded-episodes') as HTMLElement | null;
+    const collapsedActions = group.querySelector('.collapsed-actions') as HTMLElement | null;
+    const expandedActions = group.querySelector('.expanded-actions') as HTMLElement | null;
 
-    const resetStack = () => {
-      tiles.forEach((tile, idx) => {
-        tile.style.zIndex = String(tiles.length - idx);
-        if (idx === 0) {
-          tile.style.filter = 'brightness(1)';
-          tile.style.boxShadow = '0 12px 32px rgba(0,0,0,0.5), 0 0 20px rgba(139,92,246,0.2)';
-        } else {
-          tile.style.filter = 'brightness(0.78)';
-          tile.style.boxShadow = 'var(--shadow-sm)';
-        }
+    if (expandBtn && expandedSection && collapsedActions && expandedActions) {
+      expandBtn.addEventListener('click', () => {
+        expandedSection.style.display = 'block';
+        collapsedActions.style.display = 'none';
+        expandedActions.style.display = 'flex';
       });
-      activeIndex = 0;
-    };
+    }
 
-    const bringToFront = (targetIdx: number) => {
-      activeIndex = targetIdx;
-      tiles.forEach((tile, idx) => {
-        if (idx === targetIdx) {
-          // Front active layer (no X/Y movement, stays at its cascaded top offset)
-          tile.style.zIndex = '100';
-          tile.style.filter = 'brightness(1)';
-          tile.style.boxShadow = '0 18px 48px rgba(0,0,0,0.75), 0 0 32px rgba(139,92,246,0.35)';
-        } else {
-          // Back layers: distance determines sub-layer stacking
-          const distance = Math.abs(idx - targetIdx);
-          tile.style.zIndex = String(50 - distance);
-          tile.style.filter = 'brightness(0.75)';
-          tile.style.boxShadow = 'var(--shadow-sm)';
-        }
+    if (collapseBtn && expandedSection && collapsedActions && expandedActions) {
+      collapseBtn.addEventListener('click', () => {
+        expandedSection.style.display = 'none';
+        collapsedActions.style.display = 'flex';
+        expandedActions.style.display = 'none';
       });
-    };
-
-    tiles.forEach((tile, idx) => {
-      const handler = (e: Event) => {
-        e.preventDefault();
-        bringToFront(idx);
-      };
-      tile.addEventListener('mouseenter', () => bringToFront(idx));
-      tile.addEventListener('click', handler);
-      tile.addEventListener('touchstart', handler);
-    });
-
-    (stack as HTMLElement).addEventListener('mouseleave', () => resetStack());
+    }
   });
 
   document.querySelectorAll('[data-add-episode]').forEach(btn => {
@@ -730,38 +683,6 @@ function attachOfficialCardListeners(): void {
     });
   });
 
-  // Go Live
-  document.querySelectorAll('[data-go-live]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.goLive!;
-      const story = currentOfficialStories.find(s => s.id === id);
-      showModal({
-        title: `🚀 Go Live: "${story?.title || 'Story'}"`,
-        content: `
-          <div style="text-align: center; padding: 8px 0;">
-            <p style="margin: 0 0 16px;">This story will become visible on the Explore feed and (if Featured/Picked) on the Featured page.</p>
-            <div style="display: flex; flex-direction: column; gap: 10px; text-align: left;">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="golive-featured" /> ⭐ Also mark as <strong>Featured</strong> (Home hero carousel)
-              </label>
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="golive-pick" /> 🏆 Also mark as <strong>Editor's Pick</strong>
-              </label>
-            </div>
-          </div>
-        `,
-        confirmText: '🚀 Go Live Now',
-        cancelText: 'Cancel',
-        onConfirm: async () => {
-          const isFeatured = (document.getElementById('golive-featured') as HTMLInputElement)?.checked || false;
-          const isEditorPick = (document.getElementById('golive-pick') as HTMLInputElement)?.checked || false;
-          await goOfficialStoryLive(id, { isFeatured, isEditorPick });
-          loadAllMetrics();
-          loadTabContent();
-        },
-      });
-    });
-  });
 
   // Take Offline
   document.querySelectorAll('[data-take-offline]').forEach(btn => {
