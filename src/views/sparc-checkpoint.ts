@@ -7,7 +7,11 @@ import {
   submitSparcResponse, 
   markSparcCompleted, 
   checkAllSparcCompleted, 
-  getSquadMembers 
+  getSquadMembers,
+  toggleSparcReaction,
+  getSparcReactions,
+  submitSparcReply,
+  getSparcReplies
 } from '../lib/db.ts';
 import { tryAdvanceSquad } from '../lib/squad-engine.ts';
 import { uploadMedia } from '../lib/storage.ts';
@@ -24,6 +28,15 @@ let attachments: { type: 'photo' | 'link'; url: string }[] = [];
 let hasSubmitted = false;
 let posts: SparcPost[] = [];
 let members: SquadMemberState[] = [];
+let reactions: Record<string, Array<{ emoji: string; count: number; userReacted: boolean }>> = {};
+let replies: Record<string, Array<{ id: string; userId: string; username: string; avatarIndex: number; content: string; createdAt: string }>> = {};
+
+const REACTION_EMOJIS: { key: string; emoji: string; label: string }[] = [
+  { key: 'fire', emoji: '🔥', label: 'Fire' },
+  { key: 'lightbulb', emoji: '💡', label: 'Great Idea' },
+  { key: 'mindblown', emoji: '🤯', label: 'Mind Blown' },
+  { key: 'heart', emoji: '❤️', label: 'Love' },
+];
 
 function escapeHtml(str: string): string {
   return str
@@ -50,14 +63,42 @@ function getTimeAgo(dateStr: string): string {
 
 function renderFeed(posts: SparcPost[], members: SquadMemberState[]): string {
   const postedUserIds = new Set(posts.map(p => p.userId));
-  
+
   let html = '';
-  // Render actual posts
   for (const post of posts) {
     const avatar = MONSTER_AVATARS[post.avatarIndex % MONSTER_AVATARS.length] || MONSTER_AVATARS[0];
     const timeAgo = getTimeAgo(post.createdAt);
+    const postReactions = reactions[post.id] || [];
+    const postReplies = replies[post.id] || [];
+
+    // Build reaction buttons
+    const reactionHtml = REACTION_EMOJIS.map(r => {
+      const found = postReactions.find(pr => pr.emoji === r.key);
+      const count = found?.count || 0;
+      const active = found?.userReacted ? ' sparc-reaction-btn--active' : '';
+      return `<button class="sparc-reaction-btn${active}" data-emoji="${r.key}" data-response-id="${post.id}" title="${r.label}">
+        <span>${r.emoji}</span>${count > 0 ? `<span class="sparc-reaction-count">${count}</span>` : ''}
+      </button>`;
+    }).join('');
+
+    // Build replies
+    const repliesHtml = postReplies.map(reply => {
+      const rAvatar = MONSTER_AVATARS[reply.avatarIndex % MONSTER_AVATARS.length] || MONSTER_AVATARS[0];
+      return `
+        <div class="sparc-reply">
+          <div class="sparc-reply__avatar">${rAvatar}</div>
+          <div class="sparc-reply__body">
+            <span class="sparc-reply__username">${escapeHtml(reply.username)}</span>
+            <span class="sparc-reply__time">${getTimeAgo(reply.createdAt)}</span>
+            <p class="sparc-reply__content">${escapeHtml(reply.content)}</p>
+          </div>
+        </div>`;
+    }).join('');
+
+    const replyCount = postReplies.length;
+
     html += `
-      <div class="sparc-feed__post">
+      <div class="sparc-feed__post" data-post-id="${post.id}">
         <div class="sparc-feed__post-header">
           <div class="sparc-feed__avatar">${avatar}</div>
           <div class="sparc-feed__meta">
@@ -72,10 +113,27 @@ function renderFeed(posts: SparcPost[], members: SquadMemberState[]): string {
             ${post.mediaUrls.map(url => `<img src="${url}" class="sparc-feed__media-img" alt="Attachment">`).join('')}
           </div>
         ` : ''}
+
+        <div class="sparc-reactions" style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;">
+          ${reactionHtml}
+        </div>
+
+        <div class="sparc-reply-section" style="margin-top:10px;">
+          <button class="sparc-reply-toggle" data-response-id="${post.id}" style="background:none; border:none; color:var(--color-text-muted); font-size:0.78rem; cursor:pointer; padding:4px 0; display:flex; align-items:center; gap:4px;">
+            💬 ${replyCount > 0 ? `${replyCount} repl${replyCount === 1 ? 'y' : 'ies'}` : 'Reply'}
+          </button>
+          <div class="sparc-replies-thread" data-thread-id="${post.id}" style="display:none; margin-top:8px; padding-left:12px; border-left:2px solid var(--color-border);">
+            ${repliesHtml}
+            <div class="sparc-reply-composer" style="display:flex; gap:6px; margin-top:8px;">
+              <input type="text" class="sparc-reply-input" data-response-id="${post.id}" placeholder="Reply to ${escapeHtml(post.username)}..." maxlength="500" style="flex:1; padding:8px 12px; border:1px solid var(--color-border); border-radius:var(--radius-md); font-size:0.82rem; background:var(--color-bg); color:var(--color-text-primary);">
+              <button class="sparc-reply-send" data-response-id="${post.id}" style="padding:8px 14px; background:var(--color-purple); color:white; border:none; border-radius:var(--radius-md); font-size:0.78rem; font-weight:700; cursor:pointer; white-space:nowrap;">Send</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
   }
-  
+
   // Render "hasn't replied" for missing members
   for (const member of members) {
     if (!postedUserIds.has(member.userId)) {
@@ -91,7 +149,7 @@ function renderFeed(posts: SparcPost[], members: SquadMemberState[]): string {
       `;
     }
   }
-  
+
   return html || '<p style="text-align:center; color:var(--color-text-muted); padding:24px;">No responses yet. Be the first to reply!</p>';
 }
 
@@ -203,6 +261,20 @@ export async function init(): Promise<void> {
     members = membersData || [];
     posts = postsData || [];
 
+    // Fetch reactions and replies for all posts
+    const responseIds = posts.map(p => p.id);
+    if (responseIds.length > 0) {
+      const [reactionsData, repliesData] = await Promise.all([
+        getSparcReactions(responseIds),
+        getSparcReplies(responseIds),
+      ]);
+      reactions = reactionsData;
+      replies = repliesData;
+    } else {
+      reactions = {};
+      replies = {};
+    }
+
     // Render prompt
     const promptTextEl = document.getElementById('sparc-prompt-text');
     const promptMediaEl = document.getElementById('sparc-prompt-media');
@@ -243,10 +315,21 @@ export async function init(): Promise<void> {
     pollInterval = window.setInterval(async () => {
       try {
         const newPosts = await getSparcResponses(currentSquadId, currentStoryGroupId, currentEpisodeNumber);
-        if (newPosts.length !== posts.length) {
-          posts = newPosts;
-          refreshFeedUI();
+        const postsChanged = newPosts.length !== posts.length;
+        posts = newPosts;
+
+        // Always refresh reactions and replies
+        const responseIds = posts.map(p => p.id);
+        if (responseIds.length > 0) {
+          const [reactionsData, repliesData] = await Promise.all([
+            getSparcReactions(responseIds),
+            getSparcReplies(responseIds),
+          ]);
+          reactions = reactionsData;
+          replies = repliesData;
         }
+
+        refreshFeedUI();
       } catch (err) {
         console.error('Polling error', err);
       }
@@ -279,16 +362,95 @@ function refreshFeedUI() {
   const feedEl = document.getElementById('sparc-feed');
   if (feedEl) {
     feedEl.innerHTML = renderFeed(posts, members);
+    attachFeedInteractionListeners(feedEl);
   }
   updateProgressBar();
-  
+
   const postedCount = new Set(posts.map(p => p.userId)).size;
   const allGreenlit = postedCount === members.length && members.length > 0;
-  
+
   const nextBtn = document.getElementById('btn-next-episode') as HTMLButtonElement;
   if (nextBtn) {
     nextBtn.disabled = !allGreenlit;
   }
+}
+
+function attachFeedInteractionListeners(feedEl: HTMLElement) {
+  // Reaction buttons
+  feedEl.querySelectorAll('.sparc-reaction-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const el = e.currentTarget as HTMLElement;
+      const emoji = el.dataset.emoji || '';
+      const responseId = el.dataset.responseId || '';
+      if (!emoji || !responseId) return;
+
+      // Optimistic toggle
+      el.classList.toggle('sparc-reaction-btn--active');
+
+      try {
+        await toggleSparcReaction(responseId, emoji);
+        // Refresh reactions data
+        const responseIds = posts.map(p => p.id);
+        reactions = await getSparcReactions(responseIds);
+        refreshFeedUI();
+      } catch (err) {
+        console.error('Reaction error:', err);
+      }
+    });
+  });
+
+  // Reply toggle buttons
+  feedEl.querySelectorAll('.sparc-reply-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const responseId = (btn as HTMLElement).dataset.responseId || '';
+      const thread = feedEl.querySelector(`[data-thread-id="${responseId}"]`) as HTMLElement;
+      if (thread) {
+        thread.style.display = thread.style.display === 'none' ? 'block' : 'none';
+      }
+    });
+  });
+
+  // Reply send buttons
+  feedEl.querySelectorAll('.sparc-reply-send').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const el = btn as HTMLElement;
+      const responseId = el.dataset.responseId || '';
+      const input = feedEl.querySelector(`.sparc-reply-input[data-response-id="${responseId}"]`) as HTMLInputElement;
+      const content = input?.value?.trim();
+      if (!content || !responseId) return;
+
+      el.textContent = '...';
+      try {
+        await submitSparcReply(responseId, content);
+        input.value = '';
+        // Refresh replies
+        const responseIds = posts.map(p => p.id);
+        replies = await getSparcReplies(responseIds);
+        refreshFeedUI();
+        // Auto-open the thread after sending
+        setTimeout(() => {
+          const thread = feedEl.querySelector(`[data-thread-id="${responseId}"]`) as HTMLElement;
+          if (thread) thread.style.display = 'block';
+        }, 50);
+      } catch (err) {
+        console.error('Reply error:', err);
+        alert('Failed to send reply');
+      }
+    });
+  });
+
+  // Reply send on Enter key
+  feedEl.querySelectorAll('.sparc-reply-input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') {
+        e.preventDefault();
+        const responseId = (input as HTMLElement).dataset.responseId || '';
+        const sendBtn = feedEl.querySelector(`.sparc-reply-send[data-response-id="${responseId}"]`) as HTMLElement;
+        sendBtn?.click();
+      }
+    });
+  });
 }
 
 function setupEventListeners() {

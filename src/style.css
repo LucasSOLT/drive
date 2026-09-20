@@ -13595,3 +13595,76 @@ body.content-management-mode .story-card:hover {
   color: var(--color-text-muted);
   cursor: not-allowed; transform: none;
 }
+
+/* ===== SPARC Reactions ===== */
+.sparc-reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background: var(--color-bg);
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: all 0.15s ease;
+  color: var(--color-text-muted);
+}
+.sparc-reaction-btn:hover {
+  background: var(--color-eggshell);
+  border-color: var(--color-purple);
+}
+.sparc-reaction-btn--active {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: var(--color-purple);
+  color: var(--color-purple);
+}
+.sparc-reaction-count {
+  font-weight: 700;
+  font-size: 0.72rem;
+}
+
+/* ===== SPARC Replies ===== */
+.sparc-reply {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+}
+.sparc-reply + .sparc-reply {
+  border-top: 1px solid var(--color-border);
+}
+.sparc-reply__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-eggshell);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.sparc-reply__avatar svg {
+  width: 18px;
+  height: 18px;
+}
+.sparc-reply__body {
+  flex: 1;
+  min-width: 0;
+}
+.sparc-reply__username {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--color-text-primary);
+  margin-right: 6px;
+}
+.sparc-reply__time {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+.sparc-reply__content {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  margin: 2px 0 0;
+  line-height: 1.4;
+}

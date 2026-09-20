@@ -1961,6 +1961,130 @@ export async function getSparcResponses(
   }));
 }
 
+/** Toggle an emoji reaction on a SPARC post */
+export async function toggleSparcReaction(
+  responseId: string,
+  emoji: string
+): Promise<{ added: boolean }> {
+  const userId = getUserId();
+  if (!userId) throw new Error('Must be logged in');
+
+  // Check if reaction already exists
+  const { data: existing } = await supabase
+    .from('sparc_reactions')
+    .select('id')
+    .eq('response_id', responseId)
+    .eq('user_id', userId)
+    .eq('emoji', emoji)
+    .maybeSingle();
+
+  if (existing) {
+    // Remove it
+    await supabase.from('sparc_reactions').delete().eq('id', existing.id);
+    return { added: false };
+  } else {
+    // Add it
+    await supabase.from('sparc_reactions').insert({
+      response_id: responseId,
+      user_id: userId,
+      emoji,
+    });
+    return { added: true };
+  }
+}
+
+/** Get all reactions for a set of SPARC response IDs */
+export async function getSparcReactions(
+  responseIds: string[]
+): Promise<Record<string, Array<{ emoji: string; count: number; userReacted: boolean }>>> {
+  if (responseIds.length === 0) return {};
+  const userId = getUserId();
+
+  const { data, error } = await supabase
+    .from('sparc_reactions')
+    .select('response_id, emoji, user_id')
+    .in('response_id', responseIds);
+
+  if (error || !data) return {};
+
+  // Group by response_id and emoji
+  const result: Record<string, Array<{ emoji: string; count: number; userReacted: boolean }>> = {};
+  const grouped: Record<string, Record<string, { count: number; userReacted: boolean }>> = {};
+
+  for (const row of data) {
+    const rid = row.response_id;
+    const em = row.emoji;
+    if (!grouped[rid]) grouped[rid] = {};
+    if (!grouped[rid][em]) grouped[rid][em] = { count: 0, userReacted: false };
+    grouped[rid][em].count++;
+    if (row.user_id === userId) grouped[rid][em].userReacted = true;
+  }
+
+  for (const [rid, emojis] of Object.entries(grouped)) {
+    result[rid] = Object.entries(emojis).map(([emoji, data]) => ({
+      emoji,
+      count: data.count,
+      userReacted: data.userReacted,
+    }));
+  }
+
+  return result;
+}
+
+/** Submit a reply to a SPARC post */
+export async function submitSparcReply(
+  responseId: string,
+  content: string
+): Promise<void> {
+  const userId = getUserId();
+  if (!userId) throw new Error('Must be logged in');
+
+  const { error } = await supabase
+    .from('sparc_replies')
+    .insert({
+      response_id: responseId,
+      user_id: userId,
+      content,
+    });
+
+  if (error) {
+    console.error('[DB] Error submitting SPARC reply:', error);
+    throw error;
+  }
+}
+
+/** Get all replies for a set of SPARC response IDs */
+export async function getSparcReplies(
+  responseIds: string[]
+): Promise<Record<string, Array<{ id: string; userId: string; username: string; avatarIndex: number; content: string; createdAt: string }>>> {
+  if (responseIds.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from('sparc_replies')
+    .select('*, profiles:user_id(username, avatar_index)')
+    .in('response_id', responseIds)
+    .order('created_at', { ascending: true });
+
+  if (error || !data) return {};
+
+  const result: Record<string, Array<{ id: string; userId: string; username: string; avatarIndex: number; content: string; createdAt: string }>> = {};
+
+  for (const row of data as any[]) {
+    const rid = row.response_id;
+    if (!result[rid]) result[rid] = [];
+    result[rid].push({
+      id: row.id,
+      userId: row.user_id,
+      username: row.profiles?.username || 'Unknown',
+      avatarIndex: row.profiles?.avatar_index ?? 0,
+      content: row.content,
+      createdAt: row.created_at,
+    });
+  }
+
+  return result;
+}
+
 /** Mark a user as having completed SPARC for a specific episode */
 export async function markSparcCompleted(
   squadId: string,
