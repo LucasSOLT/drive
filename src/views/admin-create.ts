@@ -541,26 +541,37 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
           </div>
         </div>
 
-        <div class="ss-section" id="ss-squad-gate-section">
-          <div class="ss-section__label">🛡️ Squad Gate Configuration</div>
-          <div class="ss-field">
-            <label class="ss-field__label">Episodes Playable Solo BEFORE Squad Gate Hits</label>
-            <div class="ss-gate-selector" id="ss-gate-selector" style="display: flex; gap: 10px; margin-top: 8px;">
-              <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? 'btn-gate-option--active' : ''}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
-                1 Episode
-              </button>
-              <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? 'btn-gate-option--active' : ''}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
-                2 Episodes
-              </button>
-              <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? 'btn-gate-option--active' : ''}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 3 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
-                3 Episodes
-              </button>
+        ${(episodeNumber > 1 || (episodeStoryGroupId && episodeNumber > 1)) ? `
+          <div class="ss-section">
+            <div class="ss-section__label">🚨 Squad Gate Configuration</div>
+            <p style="font-size:0.82rem; color:var(--color-text-muted); margin:4px 0 8px;">Episodes Playable Solo BEFORE Squad Gate Hits</p>
+            <div style="display:flex; gap:8px;">
+              <div style="padding:10px 20px; border-radius:var(--radius-md); background:var(--color-purple); color:white; font-weight:700; font-size:0.88rem;">${soloEpisodeCount} Episode${soloEpisodeCount > 1 ? 's' : ''}</div>
             </div>
-            <div class="ss-field__hint" id="ss-gate-hint" style="font-size: 0.76rem; color: var(--color-text-muted); margin-top: 8px; line-height: 1.45;">
-              ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.
+            <p style="font-size:0.72rem; color:var(--color-text-muted); margin:8px 0 0;">ℹ️ Squad gate is configured on Episode 1. Edit Episode 1's settings to change this.</p>
+          </div>
+        ` : `
+          <div class="ss-section" id="ss-squad-gate-section">
+            <div class="ss-section__label">🛡️ Squad Gate Configuration</div>
+            <div class="ss-field">
+              <label class="ss-field__label">Episodes Playable Solo BEFORE Squad Gate Hits</label>
+              <div class="ss-gate-selector" id="ss-gate-selector" style="display: flex; gap: 10px; margin-top: 8px;">
+                <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? 'btn-gate-option--active' : ''}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  1 Episode
+                </button>
+                <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? 'btn-gate-option--active' : ''}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  2 Episodes
+                </button>
+                <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? 'btn-gate-option--active' : ''}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 3 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  3 Episodes
+                </button>
+              </div>
+              <div class="ss-field__hint" id="ss-gate-hint" style="font-size: 0.76rem; color: var(--color-text-muted); margin-top: 8px; line-height: 1.45;">
+                ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.
+              </div>
             </div>
           </div>
-        </div>
+        `}
 
         <div class="ss-section">
           <div class="ss-section__label">Audio Experience Mode</div>
@@ -2563,6 +2574,14 @@ export function init(): void {
         }
       }
     } else if (groupIdMatch) {
+      // Check for existing draft first — preserve work on page refresh
+      const existingDraft = getDraft();
+      if (existingDraft && existingDraft.bookPages && existingDraft.bookPages.length > 1) {
+        // Draft has real content — load it instead of resetting
+        loadDraft(existingDraft);
+        updateView();
+        return;
+      }
       // Adding a brand new episode to an existing story group
       // Only clear draft if user explicitly clicked "+ Add Episode" (new=true in URL)
       // Don't clear when just loading an existing draft that happens to have storyGroupId
@@ -2600,6 +2619,7 @@ export function init(): void {
           if (!ratingParam && ep1.contentRating) storyContentRating = ep1.contentRating;
           if (!audioModeParam && ep1.audioMode) storyAudioMode = ep1.audioMode;
           if (!voiceIdParam && ep1.narratorVoiceId) storyNarratorVoiceId = ep1.narratorVoiceId;
+          if (!soloEpParam && ep1.soloEpisodeCount) soloEpisodeCount = ep1.soloEpisodeCount as 1 | 2 | 3;
         }
       } catch (err) {
         console.warn('[AdminCreate] Could not fetch Episode 1 for settings inheritance:', err);

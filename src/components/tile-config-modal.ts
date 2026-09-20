@@ -179,33 +179,38 @@ function renderStoryGrid(stories: Story[]): void {
     return;
   }
 
-  grid.innerHTML = stories.map(story => {
-    const formatLabel = story.format === 'book' ? '\uD83D\uDCD6 Book' : '\uD83D\uDCDC Waterfall';
-    const statusLabel = story.officialStatus === 'live'
-      ? '<span style="color:#22c55e; font-weight:700;">LIVE</span>'
-      : '<span style="color:#f59e0b; font-weight:700;">DRAFT</span>';
-    const coverHtml = story.coverImage
-      ? `<img src="${story.coverImage}" alt="" style="width:100%; height:100%; object-fit:cover; border-radius:8px;" />`
-      : `<div style="width:100%; height:100%; background:linear-gradient(135deg, rgba(139,92,246,0.2), rgba(168,85,247,0.1)); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">\uD83D\uDCD6</div>`;
-    const epBadge = story.episodeNumber ? `EP ${story.episodeNumber}` : 'EP 1';
+  // Group by storyGroupId
+  const groupMap = new Map<string, Story[]>();
+  for (const story of stories) {
+    const gid = story.storyGroupId || story.id;
+    if (!groupMap.has(gid)) groupMap.set(gid, []);
+    groupMap.get(gid)!.push(story);
+  }
+
+  // Sort episodes within each group
+  for (const eps of groupMap.values()) {
+    eps.sort((a, b) => (a.episodeNumber || 1) - (b.episodeNumber || 1));
+  }
+
+  const groups = Array.from(groupMap.values());
+
+  grid.innerHTML = groups.map(episodes => {
+    const ep1 = episodes[0];
+    const totalEps = episodes.length;
+    const cover = ep1.coverImage || ep1.coverVideo || '';
+    const isLive = ep1.officialStatus === 'live';
+    const statusBadge = isLive ? '<span style="color:#10b981; font-weight:700;">LIVE</span>' : '<span style="color:#ef4444; font-weight:700;">DRAFT</span>';
 
     return `
-      <div class="tile-config-story-card" data-insert-story-id="${story.id}">
-        <div class="tile-config-story-cover">
-          ${coverHtml}
-          <span class="tile-config-ep-badge">${epBadge}</span>
+      <div class="tile-config-story-card" style="display:flex; gap:12px; padding:12px; border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-surface); cursor:pointer; align-items:center;" data-insert-story-id="${ep1.id}">
+        <div style="width:60px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:var(--color-bg);">
+          ${cover ? `<img src="${cover}" style="width:100%; height:100%; object-fit:cover;" alt="">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">📚</div>'}
         </div>
-        <div class="tile-config-story-info">
-          <div class="tile-config-story-title">${escapeHtml(story.title)}</div>
-          <div class="tile-config-story-meta">
-            <span>${formatLabel}</span>
-            <span>\u2022</span>
-            ${statusLabel}
-            <span>\u2022</span>
-            <span>${story.genre}</span>
-          </div>
-          <button class="tile-config-select-btn" data-select-story-id="${story.id}">Insert</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:0.88rem; color:var(--color-text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(ep1.title) || 'Untitled'}</div>
+          <div style="font-size:0.75rem; color:var(--color-text-muted); margin-top:2px;">${ep1.genre || 'Unknown'} · ${totalEps} Ep${totalEps > 1 ? 's' : ''} · ${statusBadge}</div>
         </div>
+        <button class="tile-config-select-btn" data-select-story-id="${ep1.id}" style="padding:8px 14px; background:var(--color-purple); color:white; border:none; border-radius:var(--radius-md); font-size:0.78rem; font-weight:700; cursor:pointer; white-space:nowrap;">Insert</button>
       </div>
     `;
   }).join('');
@@ -225,29 +230,32 @@ function handleStoryInserted(storyId: string): void {
   const story = allStories.find(s => s.id === storyId);
   if (!story) return;
 
-  setSlotOverride(currentSlotType, currentSlotIndex, storyId);
-  currentSlotStoryId = storyId;
+  try {
+    setSlotOverride(currentSlotType, currentSlotIndex, storyId);
+    currentSlotStoryId = storyId;
 
-  const currentEl = document.getElementById('tile-config-current');
-  if (currentEl) {
-    currentEl.innerHTML = `
-      <div class="tile-config-current-info">
-        <span class="tile-config-current-title" style="color:var(--color-purple);">✓ ${escapeHtml(story.title)}</span>
-        <span class="tile-config-current-id" style="font-size:0.7rem; color:var(--color-text-muted);">Assigned to slot</span>
-      </div>
-    `;
+    updateGridSlotInView(currentSlotType, currentSlotIndex, story);
+    console.log(`[CM] Inserted story "${story.title}" (${story.id}) into slot ${currentSlotType}[${currentSlotIndex}]`);
+
+    // Show success feedback
+    const modal = document.getElementById('tile-config-modal');
+    if (modal) {
+      modal.innerHTML = `
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px; text-align:center; height:100%;">
+          <div style="font-size:3rem; margin-bottom:12px;">✅</div>
+          <p style="font-size:1.2rem; font-weight:700; color:var(--color-text-primary);">Story Placed!</p>
+          <p style="font-size:0.9rem; color:var(--color-text-muted); margin:8px 0 20px;">The tile will update when you return to the home page.</p>
+          <button id="tile-config-done" style="padding:10px 24px; background:var(--color-purple); color:white; border:none; border-radius:var(--radius-md); font-weight:700; cursor:pointer;">Done</button>
+        </div>
+      `;
+      document.getElementById('tile-config-done')?.addEventListener('click', () => {
+        modal.remove();
+      });
+    }
+  } catch (err) {
+    console.error('Failed to place story on tile:', err);
+    alert('Failed to place story on tile. Please try again.');
   }
-
-  const drawer = document.getElementById('tile-config-drawer');
-  if (drawer) drawer.style.display = 'none';
-  isInsertDrawerOpen = false;
-
-  updateGridSlotInView(currentSlotType, currentSlotIndex, story);
-  console.log(`[CM] Inserted story "${story.title}" (${story.id}) into slot ${currentSlotType}[${currentSlotIndex}]`);
-
-  setTimeout(() => {
-    document.getElementById('tile-config-modal')?.remove();
-  }, 600);
 }
 
 function updateGridSlotInView(slotType: string, slotIndex: number, story: Story | null): void {
