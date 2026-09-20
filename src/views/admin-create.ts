@@ -861,6 +861,14 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     stopBgmAudioPreview();
   });
 
+  // Auto-save on text field changes
+  ['ss-title', 'ss-author', 'ss-synopsis'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => {
+      getFormData();
+      saveDraft();
+    });
+  });
+
   document.getElementById('ss-save-draft-btn')?.addEventListener('click', async (e) => {
     stopBgmAudioPreview();
     const btn = e.currentTarget as HTMLButtonElement;
@@ -2461,6 +2469,14 @@ export function init(): void {
 
   const loadData = async () => {
     if (editId) {
+      // Check for local draft first
+      const existingDraft = getDraft();
+      if (existingDraft && existingDraft.editStoryId === editId) {
+        // Local draft exists for this story — use it (preserves unsaved changes)
+        loadDraft(existingDraft);
+        return;
+      }
+      
       const stories = await fetchOfficialStories();
       const storyToEdit = stories.find(s => s.id === editId);
       if (storyToEdit) {
@@ -2508,8 +2524,9 @@ export function init(): void {
         }
       }
     } else if (groupIdMatch) {
-      // Adding a brand new episode to an existing story group - start 100% blank
-      clearDraft();
+      // Adding a brand new episode to an existing story group
+      // Only clear draft if user explicitly clicked "+ Add Episode" (new=true in URL)
+      // Don't clear when just loading an existing draft that happens to have storyGroupId
       editStoryId = null;
       selectedFormat = (qFormat as StoryFormat) || 'book';
       storyTitle = episodeParentTitle || '';
@@ -3817,4 +3834,27 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
 
   // Run attachListeners after render
   attachListeners();
+
+  // Auto-save every 15 seconds
+  const autoSaveInterval = setInterval(() => {
+    getFormData();
+    saveDraft();
+  }, 15000);
+
+  // Save on page unload
+  const handleBeforeUnload = () => {
+    getFormData();
+    saveDraft();
+  };
+  window.addEventListener('beforeunload', handleBeforeUnload);
+
+  // Cleanup on navigation away
+  const handleHashChange = () => {
+    getFormData();
+    saveDraft();
+    clearInterval(autoSaveInterval);
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.removeEventListener('hashchange', handleHashChange);
+  };
+  window.addEventListener('hashchange', handleHashChange, { once: true });
 }
