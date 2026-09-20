@@ -1,331 +1,127 @@
-import { MONSTER_AVATARS } from '../data/avatars.ts';
-
-export interface PlayerQueueItem {
-  id: string;
-  username: string;
-  avatarIndex: number;
-  bio: string;
-  timezone: string;
-  availability: string[];
-}
-
-const DEMO_PLAYERS: PlayerQueueItem[] = [
-  {
-    id: 'demo-player-1',
-    username: 'CyberKnight',
-    avatarIndex: 1,
-    bio: 'Love fast-paced sci-fi choices and mystery stories. Usually available for evening squad runs!',
-    timezone: 'US/Eastern (EST)',
-    availability: ['Evening', 'Late Night'],
-  },
-  {
-    id: 'demo-player-2',
-    username: 'StarGazer_99',
-    avatarIndex: 4,
-    bio: 'Casual reader exploring fantasy adventures. Always down to join a new squad and share decisions with cool people.',
-    timezone: 'US/Pacific (PST)',
-    availability: ['Afternoon', 'Evening'],
-  },
-  {
-    id: 'demo-player-3',
-    username: 'BookWorm_Sam',
-    avatarIndex: 7,
-    bio: 'Voracious reader looking for active drivers. Ready to dive into action, thrillers, and deep lore.',
-    timezone: 'US/Central (CST)',
-    availability: ['Morning', 'Afternoon'],
-  },
-];
-
-const invitedIds = new Set<string>();
-
-function truncateBio(bio: string, maxLen: number = 80): string {
-  if (bio.length <= maxLen) return bio;
-  return bio.substring(0, maxLen).trim() + '...';
-}
-
-function renderPlayerCard(player: PlayerQueueItem): string {
-  const isInvited = invitedIds.has(player.id);
-  const avatarSvg = MONSTER_AVATARS[player.avatarIndex % MONSTER_AVATARS.length] || MONSTER_AVATARS[0];
-  const truncatedBio = truncateBio(player.bio, 80);
-
-  const availTagsHtml = player.availability
-    .map(
-      tag => `<span style="
-        font-size: 0.72rem;
-        background: var(--color-eggshell);
-        color: var(--color-text-secondary);
-        border: 1px solid var(--color-border);
-        padding: 2px 8px;
-        border-radius: var(--radius-lg);
-        font-weight: 500;
-      ">${tag}</span>`
-    )
-    .join('');
-
-  return `
-    <div class="player-card" data-player-id="${player.id}" style="
-      background: var(--color-surface);
-      border: 1.5px solid var(--color-border);
-      border-radius: var(--radius-lg);
-      padding: var(--space-md);
-      box-shadow: var(--shadow-sm);
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-sm);
-    ">
-      <div style="display: flex; align-items: flex-start; gap: var(--space-md);">
-        <!-- Avatar -->
-        <div style="
-          width: 52px;
-          height: 52px;
-          min-width: 52px;
-          border-radius: 50%;
-          background: var(--color-eggshell);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          overflow: hidden;
-          border: 1px solid var(--color-border);
-          padding: 2px;
-          flex-shrink: 0;
-        ">
-          ${avatarSvg}
-        </div>
-
-        <!-- Info -->
-        <div style="flex: 1; min-width: 0;">
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); flex-wrap: wrap; margin-bottom: 4px;">
-            <h3 style="
-              font-family: var(--font-heading);
-              font-size: 1.05rem;
-              font-weight: 700;
-              color: var(--color-text-primary);
-              margin: 0;
-            ">${player.username}</h3>
-            
-            <span style="
-              font-size: 0.72rem;
-              background: rgba(139, 92, 246, 0.12);
-              color: var(--color-purple);
-              font-weight: 600;
-              padding: 2px 8px;
-              border-radius: var(--radius-lg);
-            ">${player.timezone}</span>
-          </div>
-
-          <p style="
-            font-family: var(--font-body);
-            font-size: 0.88rem;
-            color: var(--color-text-secondary);
-            margin: 0 0 8px 0;
-            line-height: 1.4;
-          ">${truncatedBio}</p>
-
-          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-            ${availTagsHtml}
-          </div>
-        </div>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; align-items: center; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--color-border);">
-        <button class="btn send-invite-btn" data-player-id="${player.id}" ${isInvited ? 'disabled' : ''} style="
-          background: ${isInvited ? 'var(--color-border)' : 'linear-gradient(135deg, var(--color-purple) 0%, #7c3aed 100%)'};
-          color: ${isInvited ? 'var(--color-text-muted)' : '#ffffff'};
-          border: none;
-          border-radius: var(--radius-lg);
-          padding: 8px 16px;
-          font-family: var(--font-heading);
-          font-size: 0.85rem;
-          font-weight: 600;
-          cursor: ${isInvited ? 'default' : 'pointer'};
-          transition: opacity 0.2s ease, transform 0.1s ease;
-          box-shadow: ${isInvited ? 'none' : 'var(--shadow-sm)'};
-        ">
-          ${isInvited ? 'Invite Sent ✓' : 'Send Invite'}
-        </button>
-      </div>
-    </div>
-  `;
-}
-
-function renderPlayerList(players: PlayerQueueItem[]): string {
-  if (players.length === 0) {
-    return `
-      <div style="
-        text-align: center;
-        padding: var(--space-xl);
-        background: var(--color-surface);
-        border: 1px dashed var(--color-border);
-        border-radius: var(--radius-lg);
-        color: var(--color-text-muted);
-        font-family: var(--font-body);
-      ">
-        <p style="margin: 0; font-size: 0.9rem;">No players found matching your filters.</p>
-      </div>
-    `;
-  }
-  return players.map(player => renderPlayerCard(player)).join('');
-}
+import { navigate } from '../router';
+import { joinSquadByCode } from '../lib/db';
+import { isAuthenticated } from '../lib/auth';
 
 export function render(): string {
   return `
-    <div class="view-lfg-browse fade-in" id="lfg-browse-container" style="
-      padding: var(--space-md);
-      max-width: 600px;
-      margin: 0 auto;
-      min-height: 100%;
-      box-sizing: border-box;
-      background-color: var(--color-eggshell);
-    ">
-      <!-- Title Section -->
-      <div class="section__header slide-up stagger-1" style="margin-bottom: var(--space-md);">
-        <h1 style="
-          font-family: var(--font-heading);
-          font-size: 1.6rem;
-          font-weight: 700;
-          color: var(--color-text-primary);
-          margin: 0 0 4px 0;
-        ">Find Players</h1>
-        <p style="
-          font-family: var(--font-body);
-          font-size: 0.9rem;
-          color: var(--color-text-secondary);
-          margin: 0;
-        ">Browse the LFG queue to recruit players for your squad</p>
-      </div>
-
-      <!-- Filter Bar -->
-      <div class="lfg-filter-bar slide-up stagger-2" style="
-        background: var(--color-surface);
-        border: 1.5px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        padding: var(--space-sm) var(--space-md);
-        box-shadow: var(--shadow-sm);
-        margin-bottom: var(--space-lg);
-        display: flex;
-        gap: var(--space-sm);
-        flex-wrap: wrap;
-      ">
-        <!-- Timezone Filter -->
-        <div style="flex: 1; min-width: 140px;">
-          <label for="lfg-filter-timezone" style="
-            display: block;
-            font-family: var(--font-heading);
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: var(--color-text-muted);
-            margin-bottom: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          ">Timezone</label>
-          <select id="lfg-filter-timezone" style="
-            width: 100%;
-            padding: 8px 12px;
-            font-family: var(--font-body);
-            font-size: 0.85rem;
-            background: var(--color-eggshell);
-            color: var(--color-text-primary);
-            border: 1px solid var(--color-border);
-            border-radius: var(--radius-lg);
-            outline: none;
-            cursor: pointer;
-          ">
-            <option value="All">All Timezones</option>
-            <option value="US/Pacific (PST)">US/Pacific (PST)</option>
-            <option value="US/Mountain (MST)">US/Mountain (MST)</option>
-            <option value="US/Central (CST)">US/Central (CST)</option>
-            <option value="US/Eastern (EST)">US/Eastern (EST)</option>
-            <option value="Europe (GMT/CET)">Europe (GMT/CET)</option>
-            <option value="Asia/Pacific (JST/AEST)">Asia/Pacific (JST/AEST)</option>
-          </select>
+    <div style="max-width: 430px; margin: 0 auto; padding: 2rem 1rem;">
+      <h1 style="color: var(--color-text-primary); font-size: 2rem; margin-bottom: 0.5rem; text-align: center;">Find Your Squad</h1>
+      <p style="color: var(--color-text-secondary); text-align: center; margin-bottom: 2rem;">Join an existing squad using a room code or invite link</p>
+      
+      <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        
+        <div style="margin-bottom: 1rem;">
+          <input type="text" id="lfg-room-code" placeholder="Enter room code (e.g. DRV-ABC)" maxlength="10" style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-text-primary); margin-bottom: 0.5rem; box-sizing: border-box; font-size: 1rem;" />
+          <button id="lfg-join-code-btn" style="width: 100%; padding: 0.75rem; background: var(--color-purple); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 1rem;">Join</button>
         </div>
-
-        <!-- Availability Filter -->
-        <div style="flex: 1; min-width: 140px;">
-          <label for="lfg-filter-avail" style="
-            display: block;
-            font-family: var(--font-heading);
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: var(--color-text-muted);
-            margin-bottom: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          ">Availability</label>
-          <select id="lfg-filter-avail" style="
-            width: 100%;
-            padding: 8px 12px;
-            font-family: var(--font-body);
-            font-size: 0.85rem;
-            background: var(--color-eggshell);
-            color: var(--color-text-primary);
-            border: 1px solid var(--color-border);
-            border-radius: var(--radius-lg);
-            outline: none;
-            cursor: pointer;
-          ">
-            <option value="All">All</option>
-            <option value="Morning">Morning</option>
-            <option value="Afternoon">Afternoon</option>
-            <option value="Evening">Evening</option>
-            <option value="Late Night">Late Night</option>
-          </select>
+        
+        <div style="display: flex; align-items: center; margin: 1.5rem 0;">
+          <div style="flex-grow: 1; height: 1px; background: var(--color-border);"></div>
+          <span style="padding: 0 1rem; color: var(--color-text-secondary); font-size: 0.9rem;">or</span>
+          <div style="flex-grow: 1; height: 1px; background: var(--color-border);"></div>
+        </div>
+        
+        <div style="margin-bottom: 0.5rem;">
+          <input type="text" id="lfg-invite-link" placeholder="Paste a DRiVE invite link" style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-text-primary); margin-bottom: 0.5rem; box-sizing: border-box; font-size: 1rem;" />
+          <button id="lfg-join-link-btn" style="width: 100%; padding: 0.75rem; background: var(--color-purple); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 1rem;">Join from Link</button>
+        </div>
+        
+        <div id="lfg-error" style="color: #ff6b6b; margin-top: 1rem; text-align: center; display: none;"></div>
+      </div>
+      
+      <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; position: relative; overflow: hidden;">
+        <h2 style="color: var(--color-text-primary); font-size: 1.2rem; margin-top: 0; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+          🌐 ONLINE MATCHMAKING
+        </h2>
+        <div style="font-family: monospace; color: var(--color-text-secondary); background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 4px; line-height: 1.5;">
+          ┌────────────────────────────────────┐<br>
+          │ 🚧 Coming Soon!                    │<br>
+          │                                    │<br>
+          │ Online matchmaking with readers    │<br>
+          │ around the world is in             │<br>
+          │ development. For now, share your   │<br>
+          │ invite link with friends to form   │<br>
+          │ a squad!                           │<br>
+          └────────────────────────────────────┘
         </div>
       </div>
-
-      <!-- Player Cards Container -->
-      <div id="lfg-player-list" class="slide-up stagger-3" style="
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-md);
-      ">
-        ${renderPlayerList(DEMO_PLAYERS)}
-      </div>
+      
+      <button id="lfg-back-btn" style="background: transparent; color: var(--color-text-secondary); border: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 1rem; padding: 0;">
+        ← Back to Stories
+      </button>
     </div>
   `;
 }
 
 export function init(): void {
-  const timezoneSelect = document.getElementById('lfg-filter-timezone') as HTMLSelectElement | null;
-  const availSelect = document.getElementById('lfg-filter-avail') as HTMLSelectElement | null;
-  const playerListContainer = document.getElementById('lfg-player-list');
+  const codeInput = document.getElementById('lfg-room-code') as HTMLInputElement;
+  const joinCodeBtn = document.getElementById('lfg-join-code-btn') as HTMLButtonElement;
+  
+  const linkInput = document.getElementById('lfg-invite-link') as HTMLInputElement;
+  const joinLinkBtn = document.getElementById('lfg-join-link-btn') as HTMLButtonElement;
+  
+  const errorContainer = document.getElementById('lfg-error') as HTMLDivElement;
+  const backBtn = document.getElementById('lfg-back-btn') as HTMLButtonElement;
 
-  function updateList(): void {
-    if (!playerListContainer) return;
+  const showError = (msg: string) => {
+    errorContainer.textContent = msg;
+    errorContainer.style.display = 'block';
+  };
 
-    const tzValue = timezoneSelect?.value || 'All';
-    const availValue = availSelect?.value || 'All';
+  const handleJoin = async (code: string, btn: HTMLButtonElement) => {
+    if (!isAuthenticated()) {
+      localStorage.setItem('drive_pending_squad_join', code);
+      alert('You need an account to join a squad');
+      navigate('login');
+      return;
+    }
 
-    const filtered = DEMO_PLAYERS.filter(player => {
-      const matchTz = tzValue === 'All' || player.timezone.toLowerCase().includes(tzValue.toLowerCase());
-      const matchAvail = availValue === 'All' || player.availability.includes(availValue);
-      return matchTz && matchAvail;
-    });
+    try {
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = 'Joining...';
+      
+      const result = await joinSquadByCode(code);
+      if (result) {
+        localStorage.setItem('drive_active_squad_id', result.squadId);
+        navigate('squad-lobby/' + result.squadId);
+      }
+    } catch (err: any) {
+      showError(err.message || 'Failed to join squad');
+      btn.disabled = false;
+      btn.textContent = btn.id === 'lfg-join-code-btn' ? 'Join' : 'Join from Link';
+    }
+  };
 
-    playerListContainer.innerHTML = renderPlayerList(filtered);
-    bindInviteButtons();
-  }
+  joinCodeBtn?.addEventListener('click', () => {
+    errorContainer.style.display = 'none';
+    const code = codeInput.value.trim().toUpperCase();
+    if (!code) {
+      showError('Please enter a room code');
+      return;
+    }
+    handleJoin(code, joinCodeBtn);
+  });
 
-  function bindInviteButtons(): void {
-    const inviteButtons = document.querySelectorAll<HTMLButtonElement>('.send-invite-btn');
-    inviteButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const playerId = btn.getAttribute('data-player-id');
-        if (playerId) {
-          invitedIds.add(playerId);
-          btn.disabled = true;
-          btn.textContent = 'Invite Sent ✓';
-          btn.style.background = 'var(--color-border)';
-          btn.style.color = 'var(--color-text-muted)';
-          btn.style.cursor = 'default';
-          btn.style.boxShadow = 'none';
-        }
-      });
-    });
-  }
+  joinLinkBtn?.addEventListener('click', () => {
+    errorContainer.style.display = 'none';
+    const link = linkInput.value.trim();
+    if (!link) {
+      showError('Please enter an invite link');
+      return;
+    }
 
-  timezoneSelect?.addEventListener('change', updateList);
-  availSelect?.addEventListener('change', updateList);
+    const match = link.match(/squad=([^&]+)/);
+    if (!match || !match[1]) {
+      showError('Invalid invite link format');
+      return;
+    }
 
-  bindInviteButtons();
+    const code = match[1].toUpperCase();
+    handleJoin(code, joinLinkBtn);
+  });
+
+  backBtn?.addEventListener('click', () => {
+    navigate('explore');
+  });
 }

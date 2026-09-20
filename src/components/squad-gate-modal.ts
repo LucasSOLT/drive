@@ -2,15 +2,15 @@
 
 import { navigate } from '../router.ts';
 import { getStoryById } from '../data/stories.ts';
-import { isAuthenticated, getUser } from '../lib/auth.ts';
+import { isAuthenticated, getUser, getUserId } from '../lib/auth.ts';
 import {
-  type Squad,
-  createSquad,
-  getSquadByCode,
-  joinSquadByCode,
-  joinGlobalMatchmaking,
-  getActiveSquadForStory
-} from '../lib/squad.ts';
+  createSquad as dbCreateSquad,
+  joinSquadByCode as dbJoinSquadByCode,
+  fetchSquadById,
+  fetchSquadByCode,
+  getSquadMembers,
+} from '../lib/db.ts';
+import { MONSTER_AVATARS } from '../data/avatars.ts';
 
 export interface SquadGateOptions {
   storyId: string;
@@ -21,19 +21,99 @@ export interface SquadGateOptions {
   onClose?: () => void;
 }
 
-let currentSquad: Squad | null = null;
-let activeTab: 'friends' | 'global' = 'friends';
+let currentSquadId: string | null = null;
+let currentInviteCode: string | null = null;
+let currentSquadName: string | null = null;
+let currentMembers: Array<{ userId: string; username: string; avatarIndex: number; role: string; isReady: boolean }> = [];
 
-export function openSquadGateModal(options: SquadGateOptions): void {
-  // Check if squad already exists for this story, or create one
-  currentSquad = getActiveSquadForStory(options.storyId);
-  if (!currentSquad) {
-    currentSquad = createSquad({
-      storyId: options.storyId,
-      storyTitle: options.storyTitle,
-      storyCoverImage: options.storyCoverImage,
-    });
+export async function openSquadGateModal(options: SquadGateOptions): Promise<void> {
+  if (!isAuthenticated()) {
+    // Show Auth Required Overlay
+    const authOverlay = document.createElement('div');
+    authOverlay.id = 'squad-auth-overlay';
+    authOverlay.style.cssText = 'position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); display:flex; align-items:center; justify-content:center; padding:20px;';
+    authOverlay.innerHTML = `
+      <div style="background:var(--color-surface); border-radius:var(--radius-xl); max-width:420px; width:100%; padding:32px; text-align:center; border:1.5px solid var(--color-border);">
+        <div style="font-size:2.5rem; margin-bottom:12px;">🔒</div>
+        <h2 style="font-family:var(--font-heading); font-size:1.3rem; margin:0 0 8px;">Account Required</h2>
+        <p style="color:var(--color-text-secondary); font-size:0.9rem; line-height:1.6; margin:0 0 24px;">
+          To join or create a DRiVE squad, you need a free account. We don't sell your data or show ads — it's just to save your reading progress.
+        </p>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <button id="squad-auth-signup" style="padding:14px; background:linear-gradient(135deg, var(--color-purple), #7c3aed); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer;">Create Free Account</button>
+          <button id="squad-auth-login" style="padding:12px; background:var(--color-eggshell); color:var(--color-text-primary); border:1px solid var(--color-border); border-radius:var(--radius-lg); font-weight:600; font-size:0.9rem; cursor:pointer;">Log In</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(authOverlay);
+
+    const saveAndNavigate = (route: string) => {
+      localStorage.setItem('drive_pending_squad_join', JSON.stringify({
+        storyId: options.storyId,
+        storyTitle: options.storyTitle,
+        squadCode: '',
+        timestamp: Date.now()
+      }));
+      authOverlay.remove();
+      navigate(route);
+    };
+
+    document.getElementById('squad-auth-signup')?.addEventListener('click', () => saveAndNavigate('signup'));
+    document.getElementById('squad-auth-login')?.addEventListener('click', () => saveAndNavigate('login'));
+    return;
   }
+
+  // Show loading spinner
+  const loadingOverlay = document.createElement('div');
+  loadingOverlay.id = 'squad-gate-loading';
+  loadingOverlay.className = 'squad-gate-overlay open';
+  loadingOverlay.innerHTML = `
+    <div class="squad-gate-card" style="display:flex; align-items:center; justify-content:center; min-height:300px;">
+      <div style="text-align:center;">
+        <div class="spinner" style="margin-bottom:16px;"></div>
+        <p style="color:var(--color-text-secondary);">Initializing Squad...</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(loadingOverlay);
+
+  try {
+    const activeSquadId = localStorage.getItem('drive_active_squad_id');
+    let found = false;
+
+    if (activeSquadId) {
+      const squad = await fetchSquadById(activeSquadId);
+      if (squad && squad.storyId === options.storyId && squad.status === 'forming') {
+        currentSquadId = squad.id;
+        currentInviteCode = squad.inviteCode;
+        currentSquadName = squad.name;
+        found = true;
+      }
+    }
+
+    if (!found) {
+      const username = localStorage.getItem('drive_username') || getUser()?.user_metadata?.username || 'Player';
+      const squadName = `${username}'s Squad`;
+      const result = await dbCreateSquad(options.storyId, squadName);
+      if (result) {
+        currentSquadId = result.squadId;
+        currentInviteCode = result.inviteCode;
+        currentSquadName = squadName;
+        localStorage.setItem('drive_active_squad_id', currentSquadId);
+      }
+    }
+
+    if (currentSquadId) {
+      currentMembers = await getSquadMembers(currentSquadId);
+    }
+  } catch (err) {
+    console.error('Error initializing squad:', err);
+    alert('Failed to initialize squad. Please try again.');
+    loadingOverlay.remove();
+    return;
+  }
+
+  loadingOverlay.remove();
 
   // Remove any existing squad gate modal
   const existing = document.getElementById('squad-gate-modal');
@@ -45,23 +125,8 @@ export function openSquadGateModal(options: SquadGateOptions): void {
 
   overlay.innerHTML = `
     <div class="squad-gate-card">
-      <!-- Glow effect top border -->
       <div class="squad-gate-glow"></div>
-
-      ${!isAuthenticated() ? `
-      <!-- Auth Required Banner -->
-      <div class="squad-auth-banner">
-        <div class="squad-auth-banner-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        </div>
-        <p class="squad-auth-banner-text">To join this squad, you must first log in or create an account. This is required to prevent authentication issues during this story session. <em>This data is not being sold or shared.</em></p>
-        <div class="squad-auth-banner-actions">
-          <button class="squad-auth-btn squad-auth-btn--login" id="sg-auth-login-btn">Log into an existing account</button>
-          <button class="squad-auth-btn squad-auth-btn--signup" id="sg-auth-signup-btn">Sign up for this session</button>
-        </div>
-      </div>
-      ` : ''}
-
+      
       <!-- Header -->
       <div class="squad-gate-header">
         <div class="squad-gate-badge">
@@ -79,21 +144,9 @@ export function openSquadGateModal(options: SquadGateOptions): void {
         </p>
       </div>
 
-      <!-- Path Selector Tabs -->
-      <div class="squad-gate-tabs">
-        <button class="squad-gate-tab ${activeTab === 'friends' ? 'active' : ''}" id="sg-tab-friends">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          Play with Friends
-        </button>
-        <button class="squad-gate-tab ${activeTab === 'global' ? 'active' : ''}" id="sg-tab-global">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          Play Globally
-        </button>
-      </div>
-
-      <!-- Tab Content Area -->
+      <!-- Content Area -->
       <div class="squad-gate-body" id="squad-gate-body">
-        ${renderTabContent(options)}
+        ${renderBody(options)}
       </div>
 
       <!-- Footer Sub-actions -->
@@ -117,123 +170,96 @@ export function openSquadGateModal(options: SquadGateOptions): void {
     overlay.classList.add('open');
   });
 
-  attachSquadGateListeners(options, overlay);
+  attachListeners(options, overlay);
 }
 
-function renderTabContent(options: SquadGateOptions): string {
-  if (activeTab === 'friends') {
-    const code = currentSquad?.roomCode || 'DRV-777';
-    const members = currentSquad?.members || [];
-    const minMembers = currentSquad?.minMembers || 3;
-    const maxMembers = currentSquad?.maxMembers || 5;
+function renderBody(options: SquadGateOptions): string {
+  const code = currentInviteCode || '...';
+  const minMembers = 3;
+  const maxMembers = 5;
 
-    const slots = [];
-    for (let i = 0; i < maxMembers; i++) {
-      const member = members[i];
-      if (member) {
-        // Check if this is the current user and they're not authenticated
-        const isCurrentUserUnauthed = member.id.startsWith('unauthed_') || (!isAuthenticated() && (member.isHost || !member.id.startsWith('user_auth_')));
-        const statusBadge = isCurrentUserUnauthed
-          ? `<span class="squad-slot-status pending" title="This user must first log in or sign up for an account. This is required to prevent authentication issues during this story session. This data is not being sold or shared.">Account Pending</span>`
-          : `<span class="squad-slot-status ready">Ready</span>`;
-
-        slots.push(`
-          <div class="squad-slot filled ${isCurrentUserUnauthed ? 'unauthed' : ''}">
-            <div class="squad-slot-avatar">${member.username.charAt(0).toUpperCase()}</div>
-            <div class="squad-slot-info">
-              <span class="squad-slot-name">${member.username}</span>
-              <span class="squad-slot-role">${member.isHost ? 'Squad Leader' : 'Member'}</span>
-            </div>
-            ${statusBadge}
+  const slots = [];
+  for (let i = 0; i < maxMembers; i++) {
+    const member = currentMembers[i];
+    if (member) {
+      const avatarSvg = MONSTER_AVATARS[member.avatarIndex] || MONSTER_AVATARS[0];
+      const roleText = member.role === 'driver' ? 'DRiVER' : 'Player';
+      slots.push(`
+        <div class="squad-slot filled">
+          <div class="squad-slot-avatar">${avatarSvg}</div>
+          <div class="squad-slot-info">
+            <span class="squad-slot-name">${member.username}</span>
+            <span class="squad-slot-role">${roleText}</span>
           </div>
-        `);
-      } else {
-        const isRequired = i < minMembers;
-        slots.push(`
-          <div class="squad-slot empty ${isRequired ? 'required' : 'optional'}">
-            <div class="squad-slot-avatar empty">+</div>
-            <div class="squad-slot-info">
-              <span class="squad-slot-name">Open Slot ${i + 1}</span>
-              <span class="squad-slot-role">${isRequired ? 'Required (Min 3)' : 'Optional (Max 5)'}</span>
-            </div>
-            <span class="squad-slot-status waiting">Waiting...</span>
+          <span class="squad-slot-status ${member.isReady ? 'ready' : 'waiting'}">${member.isReady ? 'Ready' : 'Waiting...'}</span>
+        </div>
+      `);
+    } else {
+      const isRequired = i < minMembers;
+      slots.push(`
+        <div class="squad-slot empty ${isRequired ? 'required' : 'optional'}">
+          <div class="squad-slot-avatar empty">+</div>
+          <div class="squad-slot-info">
+            <span class="squad-slot-name">Open Slot ${i + 1}</span>
+            <span class="squad-slot-role">${isRequired ? 'Required (Min 3)' : 'Optional (Max 5)'}</span>
           </div>
-        `);
-      }
+          <span class="squad-slot-status waiting">Waiting...</span>
+        </div>
+      `);
     }
+  }
 
-    return `
-      <div class="squad-friends-view">
-        <!-- Room Code & Share Card -->
-        <div class="squad-code-card">
-          <div class="squad-code-label">YOUR SQUAD ROOM CODE</div>
-          <div class="squad-code-display">
-            <span class="squad-code-value" id="sg-room-code-val">${code}</span>
-            <button class="squad-code-copy-btn" id="sg-btn-copy-code" title="Copy code">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              <span id="sg-copy-code-text">Copy</span>
-            </button>
-          </div>
-          <button class="squad-link-share-btn" id="sg-btn-share-link">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-            <span id="sg-share-link-text">Share Deep Link</span>
+  return `
+    <div class="squad-friends-view">
+      <!-- Room Code & Share Card -->
+      <div class="squad-code-card">
+        <div class="squad-code-label">YOUR SQUAD ROOM CODE</div>
+        <div class="squad-code-display">
+          <span class="squad-code-value" id="sg-room-code-val">${code}</span>
+          <button class="squad-code-copy-btn" id="sg-btn-copy-code" title="Copy code">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="sg-copy-code-text">Copy</span>
           </button>
         </div>
-
-        <!-- Squad Member Slots (3 to 5 players) -->
-        <div class="squad-slots-container">
-          <div class="squad-slots-header">
-            <span>Squad Members (${members.length}/${maxMembers})</span>
-            <span class="squad-slots-rule">${members.length >= minMembers ? '✅ Ready to Launch' : `Need ${minMembers - members.length} more to start`}</span>
-          </div>
-          <div class="squad-slots-list">
-            ${slots.join('')}
-          </div>
-        </div>
-
-        <!-- Join existing squad row -->
-        <div class="squad-join-row">
-          <input type="text" class="squad-join-input" id="sg-join-input" placeholder="Have a friend's squad code? (e.g. DRV-824)" maxlength="10" />
-          <button class="squad-join-btn" id="sg-join-btn">Join Squad</button>
-        </div>
-
-        <!-- Open Full Squad Lobby Button -->
-        <button class="squad-open-lobby-btn" id="sg-open-lobby-btn" style="
-          width: 100%; margin-top: 14px; padding: 12px 18px; border-radius: var(--radius-lg);
-          background: linear-gradient(135deg, var(--color-purple) 0%, #7c3aed 100%);
-          color: white; font-family: var(--font-heading); font-size: 0.95rem; font-weight: 700;
-          border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
-          box-shadow: 0 4px 14px rgba(138,43,226,0.35);
-        ">
-          <span>🛡️ Enter Squad Mission Lobby & Ready Up</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        <button class="squad-link-share-btn" id="sg-btn-share-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          <span id="sg-share-link-text">Share Deep Link</span>
         </button>
       </div>
-    `;
-  } else {
-    return `
-      <div class="squad-global-view">
-        <div class="squad-radar-container">
-          <div class="squad-radar-pulse"></div>
-          <div class="squad-radar-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          </div>
+
+      <!-- Squad Member Slots (3 to 5 players) -->
+      <div class="squad-slots-container">
+        <div class="squad-slots-header">
+          <span>Squad Members (${currentMembers.length}/${maxMembers})</span>
+          <span class="squad-slots-rule">${currentMembers.length >= minMembers ? '✅ Ready to Launch' : `Need ${minMembers - currentMembers.length} more to start`}</span>
         </div>
-        <h3 class="squad-global-headline">Finding a Squad Cohort</h3>
-        <p class="squad-global-desc">
-          We're grouping you with 2 to 4 active readers exploring <strong>${options.storyTitle}</strong>. As soon as quorum is reached, Episode 2 will unlock for your team.
-        </p>
-        <button class="squad-global-launch-btn" id="sg-btn-matchmake">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Enter Matchmaking Pool
-        </button>
+        <div class="squad-slots-list">
+          ${slots.join('')}
+        </div>
       </div>
-    `;
-  }
+
+      <!-- Join existing squad row -->
+      <div class="squad-join-row">
+        <input type="text" class="squad-join-input" id="sg-join-input" placeholder="Have a friend's squad code? (e.g. DRV-824)" maxlength="10" />
+        <button class="squad-join-btn" id="sg-join-btn">Join Squad</button>
+      </div>
+
+      <!-- Open Full Squad Lobby Button -->
+      <button class="squad-open-lobby-btn" id="sg-open-lobby-btn" style="
+        width: 100%; margin-top: 14px; padding: 12px 18px; border-radius: var(--radius-lg);
+        background: linear-gradient(135deg, var(--color-purple) 0%, #7c3aed 100%);
+        color: white; font-family: var(--font-heading); font-size: 0.95rem; font-weight: 700;
+        border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+        box-shadow: 0 4px 14px rgba(138,43,226,0.35);
+      ">
+        <span>🛡️ Enter Squad Mission Lobby & Ready Up</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  `;
 }
 
-function attachSquadGateListeners(options: SquadGateOptions, overlay: HTMLElement): void {
-  // Close
+function attachListeners(options: SquadGateOptions, overlay: HTMLElement): void {
   const close = () => {
     overlay.classList.remove('open');
     document.body.style.overflow = '';
@@ -242,74 +268,25 @@ function attachSquadGateListeners(options: SquadGateOptions, overlay: HTMLElemen
   };
 
   overlay.querySelector('#squad-gate-close-btn')?.addEventListener('click', close);
-
-  // Tab switching
-  overlay.querySelector('#sg-tab-friends')?.addEventListener('click', () => {
-    activeTab = 'friends';
-    refreshBody(options, overlay);
-  });
-  overlay.querySelector('#sg-tab-global')?.addEventListener('click', () => {
-    activeTab = 'global';
-    refreshBody(options, overlay);
-  });
-
-  // Replay
+  
   overlay.querySelector('#sg-btn-replay')?.addEventListener('click', () => {
     close();
     if (options.onReplay) options.onReplay();
   });
 
-  // Catalog
   overlay.querySelector('#sg-btn-catalog')?.addEventListener('click', () => {
     close();
     navigate('home');
   });
 
   attachBodySpecificListeners(options, overlay);
-
-  // Auth banner buttons (only rendered for unauthenticated users)
-  overlay.querySelector('#sg-auth-login-btn')?.addEventListener('click', () => {
-    // Save pending squad info so auth.ts can redirect back
-    localStorage.setItem('drive_pending_squad_join', JSON.stringify({
-      storyId: options.storyId,
-      storyTitle: options.storyTitle,
-      squadCode: currentSquad?.roomCode || '',
-      timestamp: Date.now()
-    }));
-    close();
-    navigate('login');
-  });
-
-  overlay.querySelector('#sg-auth-signup-btn')?.addEventListener('click', () => {
-    localStorage.setItem('drive_pending_squad_join', JSON.stringify({
-      storyId: options.storyId,
-      storyTitle: options.storyTitle,
-      squadCode: currentSquad?.roomCode || '',
-      timestamp: Date.now()
-    }));
-    close();
-    navigate('signup');
-  });
-}
-
-function refreshBody(options: SquadGateOptions, overlay: HTMLElement): void {
-  const tabs = overlay.querySelectorAll('.squad-gate-tab');
-  tabs.forEach(t => t.classList.remove('active'));
-  if (activeTab === 'friends') overlay.querySelector('#sg-tab-friends')?.classList.add('active');
-  if (activeTab === 'global') overlay.querySelector('#sg-tab-global')?.classList.add('active');
-
-  const body = overlay.querySelector('#squad-gate-body');
-  if (body) {
-    body.innerHTML = renderTabContent(options);
-    attachBodySpecificListeners(options, overlay);
-  }
 }
 
 function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLElement): void {
   // Copy room code
   overlay.querySelector('#sg-btn-copy-code')?.addEventListener('click', () => {
-    const code = currentSquad?.roomCode || '';
-    navigator.clipboard?.writeText(code).then(() => {
+    if (!currentInviteCode) return;
+    navigator.clipboard?.writeText(currentInviteCode).then(() => {
       const txt = overlay.querySelector('#sg-copy-code-text');
       if (txt) txt.textContent = 'Copied!';
       setTimeout(() => { if (txt) txt.textContent = 'Copy'; }, 2000);
@@ -318,8 +295,8 @@ function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLEle
 
   // Copy share link
   overlay.querySelector('#sg-btn-share-link')?.addEventListener('click', () => {
-    const code = currentSquad?.roomCode || '';
-    const shareUrl = `${window.location.origin}/#join?squad=${code}&story=${options.storyId}`;
+    if (!currentInviteCode) return;
+    const shareUrl = `${window.location.origin}/#join?squad=${currentInviteCode}&story=${options.storyId}`;
     navigator.clipboard?.writeText(shareUrl).then(() => {
       const txt = overlay.querySelector('#sg-share-link-text');
       if (txt) txt.textContent = 'Link Copied!';
@@ -328,43 +305,46 @@ function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLEle
   });
 
   // Join squad via code input
-  overlay.querySelector('#sg-join-btn')?.addEventListener('click', () => {
+  overlay.querySelector('#sg-join-btn')?.addEventListener('click', async () => {
     const input = overlay.querySelector('#sg-join-input') as HTMLInputElement | null;
     const code = input?.value.trim().toUpperCase() || '';
     if (!code) return;
+    
+    const btn = overlay.querySelector('#sg-join-btn') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = 'Joining...';
 
-    const res = joinSquadByCode(code);
-    if (res.success && res.squad) {
-      currentSquad = res.squad;
-      refreshBody(options, overlay);
-    } else {
-      alert(res.message);
+    try {
+      const res = await dbJoinSquadByCode(code);
+      if (res) {
+        currentSquadId = res.squadId;
+        currentInviteCode = code;
+        currentSquadName = res.name;
+        localStorage.setItem('drive_active_squad_id', currentSquadId);
+        
+        // Refresh members and re-render body
+        currentMembers = await getSquadMembers(currentSquadId);
+        const body = overlay.querySelector('#squad-gate-body');
+        if (body) {
+          body.innerHTML = renderBody(options);
+          attachBodySpecificListeners(options, overlay);
+        }
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to join squad.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Join Squad';
     }
   });
 
   // Open Squad Lobby & Ready Up
   overlay.querySelector('#sg-open-lobby-btn')?.addEventListener('click', () => {
     closeSquadGateModal();
-    if (currentSquad) {
-      localStorage.setItem('drive_active_squad_id', currentSquad.id);
+    if (currentSquadId) {
+      localStorage.setItem('drive_active_squad_id', currentSquadId);
+      navigate('squad-lobby/' + currentSquadId);
     }
-    navigate('squad-lobby' + (currentSquad ? `/${currentSquad.id}` : ''));
-  });
-
-  // Matchmaking
-  overlay.querySelector('#sg-btn-matchmake')?.addEventListener('click', (e) => {
-    const btn = e.currentTarget as HTMLButtonElement;
-    btn.disabled = true;
-    btn.textContent = 'Matching you with a squad...';
-
-    setTimeout(() => {
-      currentSquad = joinGlobalMatchmaking(options.storyId, options.storyTitle, options.storyCoverImage);
-      closeSquadGateModal();
-      if (currentSquad) {
-        localStorage.setItem('drive_active_squad_id', currentSquad.id);
-      }
-      navigate('squad-lobby' + (currentSquad ? `/${currentSquad.id}` : ''));
-    }, 1200);
   });
 }
 
@@ -377,37 +357,29 @@ export function closeSquadGateModal(): void {
   }
 }
 
-
-/** Open Squad Gate from a deep link join URL. Called from main.ts when #join route is detected. */
 export function openSquadGateFromDeepLink(storyId: string, storyTitle: string, squadCode: string): void {
-  const story = storyId ? getStoryById(storyId) : undefined;
-  const resolvedTitle = story?.title || storyTitle || 'Story Journey';
-  const resolvedCover = story?.coverImage;
-
-  // First try to join the squad
-  const joinResult = joinSquadByCode(squadCode);
-  if (joinResult.success && joinResult.squad) {
-    currentSquad = joinResult.squad;
-  } else {
-    // If join failed (squad not found), still create/find one for this story
-    const existing = getActiveSquadForStory(storyId);
-    if (existing) {
-      currentSquad = existing;
-    }
-  }
-
-  // Save pending squad join info for auth redirect
   localStorage.setItem('drive_pending_squad_join', JSON.stringify({
     storyId,
-    storyTitle: resolvedTitle,
+    storyTitle,
     squadCode,
     timestamp: Date.now()
   }));
 
-  openSquadGateModal({
-    storyId,
-    storyTitle: resolvedTitle,
-    storyCoverImage: resolvedCover,
-    onReplay: () => { /* no replay from deep link */ },
-  });
+  if (isAuthenticated()) {
+    dbJoinSquadByCode(squadCode)
+      .then(result => {
+        if (result) {
+          localStorage.setItem('drive_active_squad_id', result.squadId);
+          navigate('squad-lobby/' + result.squadId);
+        }
+      })
+      .catch(err => {
+        console.error('Deep link join error:', err);
+        alert(err.message || 'Failed to join squad via deep link.');
+        navigate('home');
+      });
+  } else {
+    // Rely on the welcome overlay logic in main.ts which handles unauthenticated deep links
+    navigate('home');
+  }
 }

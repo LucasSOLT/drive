@@ -2509,9 +2509,41 @@ export function init(): void {
       storyCoverVideo = '';
       storySynopsis = '';
       currentPage = 0;
+
+      // Parse inherited settings from URL params
+      const genreParam = window.location.hash.match(/genre=([^&]+)/);
+      const ratingParam = window.location.hash.match(/contentRating=([^&]+)/);
+      const audioModeParam = window.location.hash.match(/audioMode=([^&]+)/);
+      const voiceIdParam = window.location.hash.match(/narratorVoiceId=([^&]+)/);
+      const soloEpParam = window.location.hash.match(/soloEpisodeCount=([^&]+)/);
+
+      if (genreParam) storyGenre = decodeURIComponent(genreParam[1]) as typeof storyGenre;
+      if (ratingParam) storyContentRating = decodeURIComponent(ratingParam[1]) as typeof storyContentRating;
+      if (audioModeParam) storyAudioMode = decodeURIComponent(audioModeParam[1]) as typeof storyAudioMode;
+      if (voiceIdParam) storyNarratorVoiceId = decodeURIComponent(voiceIdParam[1]);
+      if (soloEpParam) soloEpisodeCount = parseInt(soloEpParam[1], 10) as 1 | 2 | 3;
+
+      // Fetch characters and BGM from Episode 1 of this group
+      try {
+        const groupStories = await fetchOfficialStories();
+        const ep1 = groupStories.find(s => (s.storyGroupId || s.id) === episodeStoryGroupId && (s.episodeNumber || 1) === 1);
+        if (ep1) {
+          if (ep1.characters && ep1.characters.length > 0) storyCharacters = [...ep1.characters];
+          if (ep1.bgmUrl) storyBgmUrl = ep1.bgmUrl;
+          if (typeof ep1.bgmVolume === 'number') storyBgmVolume = ep1.bgmVolume;
+          // Inherit genre/rating/etc from episode 1 if not already set via URL params
+          if (!genreParam && ep1.genre) storyGenre = ep1.genre;
+          if (!ratingParam && ep1.contentRating) storyContentRating = ep1.contentRating;
+          if (!audioModeParam && ep1.audioMode) storyAudioMode = ep1.audioMode;
+          if (!voiceIdParam && ep1.narratorVoiceId) storyNarratorVoiceId = ep1.narratorVoiceId;
+        }
+      } catch (err) {
+        console.warn('[AdminCreate] Could not fetch Episode 1 for settings inheritance:', err);
+      }
+
       if (selectedFormat === 'book') {
         bookPages = [{
-          image: '', text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null
+          image: '', text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [], focalPosition: 'center', audioFileName: null
         }];
       } else {
         scrollPanels = [{

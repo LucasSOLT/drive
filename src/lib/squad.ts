@@ -1,3 +1,7 @@
+// ⚠️ DEPRECATED: This localStorage-based squad system has been replaced by
+// Supabase cloud squads in src/lib/db.ts. Do not import from this file.
+// Kept temporarily for reference. Will be deleted in a future cleanup.
+
 // ─── SQUAD SERVICE & STATE ENGINE (Engine A - Module 2) ───
 
 import { getUser } from './auth.ts';

@@ -3,16 +3,16 @@ import { getCurrentRoute, onRouteChange, navigate, requireAuth } from './router.
 import { renderNav, initNav } from './components/nav.ts';
 import { renderMenu, initMenu } from './components/menu.ts';
 import { renderModalContainer, showModal } from './components/modal.ts';
+import { openSquadGateFromDeepLink } from './components/squad-gate-modal.ts';
 import { addFriendByCode, findUserByFriendCode } from './lib/friends.ts';
 import { getGearButtonHtml, openSettings } from './components/settings-drawer.ts';
 import { applyTheme, applyTextSize } from './lib/settings.ts';
 import { MONSTER_AVATARS } from './data/avatars.ts';
 import { getSelectedAvatar, isContentManagementMode, setContentManagementMode, initSlotOverrides } from './state.ts';
 import { initAuth, isAuthenticated, onAuthChange } from './lib/auth.ts';
-import { loadUserData, migrateLocalData, clearCache } from './lib/db.ts';
+import { loadUserData, migrateLocalData, clearCache, joinSquadByCode, fetchSquadByCode, getSquadMembers } from './lib/db.ts';
 
 // Lazy import views
-import { openSquadGateFromDeepLink } from './components/squad-gate-modal.ts';
 import * as homeView from './views/home.ts';
 import * as featuredView from './views/featured.ts';
 import * as exploreView from './views/explore.ts';
@@ -339,8 +339,66 @@ function renderView(route: string) {
       const squadCode = squadMatch[1];
       const storyId = storyMatch ? storyMatch[1] : '';
       // Small delay to let home view render first
-      setTimeout(() => {
-        openSquadGateFromDeepLink(storyId, 'Story Journey', squadCode);
+      setTimeout(async () => {
+        if (isAuthenticated()) {
+          try {
+            const result = await joinSquadByCode(squadCode);
+            if (result) {
+              navigate('squad-lobby/' + result.squadId);
+            }
+          } catch (err: any) {
+            console.error('Failed to join squad:', err);
+            alert(err.message || 'Failed to join squad');
+          }
+        } else {
+          // Render welcome overlay
+          const overlay = document.createElement('div');
+          overlay.id = 'invite-welcome-overlay';
+          overlay.style.cssText = 'position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); display:flex; align-items:center; justify-content:center; padding:20px;';
+          overlay.innerHTML = `
+            <div style="background:var(--color-surface); border-radius:var(--radius-xl); max-width:420px; width:100%; padding:32px; text-align:center; border:1.5px solid var(--color-border);">
+              <div style="font-size:2.5rem; margin-bottom:12px;">👋</div>
+              <h2 style="font-family:var(--font-heading); font-size:1.3rem; margin:0 0 8px;">You've Been Invited!</h2>
+              <p style="color:var(--color-text-secondary); font-size:0.9rem; line-height:1.6; margin:0 0 20px;">
+                <strong id="invite-driver-name">A DRiVER</strong> has invited you to a DRiVE Story Squad!
+              </p>
+              <p style="color:var(--color-text-muted); font-size:0.82rem; line-height:1.5; margin:0 0 24px;">
+                To keep your progress through this experience, you must create a free account below.
+                We don't use your account to sell anything or advertise.
+              </p>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <button id="invite-signup-btn" style="padding:14px; background:linear-gradient(135deg, var(--color-purple), #7c3aed); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer;">Create Free Account</button>
+                <button id="invite-login-btn" style="padding:12px; background:var(--color-eggshell); color:var(--color-text-primary); border:1px solid var(--color-border); border-radius:var(--radius-lg); font-weight:600; font-size:0.9rem; cursor:pointer;">Already have one? Log In</button>
+              </div>
+              <p style="color:var(--color-text-muted); font-size:0.75rem; margin-top:16px; line-height:1.4;">
+                ℹ️ You'll start at Episode 1 to experience the story hook before joining your squad for the full journey.
+              </p>
+            </div>
+          `;
+          document.body.appendChild(overlay);
+
+          // Fetch driver name asynchronously
+          fetchSquadByCode(squadCode).then(squad => {
+            if (squad) {
+              getSquadMembers(squad.id).then(members => {
+                const driver = members.find(m => m.role === 'driver');
+                if (driver) {
+                  const nameEl = document.getElementById('invite-driver-name');
+                  if (nameEl) nameEl.textContent = driver.username;
+                }
+              });
+            }
+          }).catch(err => console.error('Error fetching driver:', err));
+
+          const handleAuth = (route: string) => {
+            localStorage.setItem('drive_pending_squad_join', JSON.stringify({ squadCode, storyId, timestamp: Date.now() }));
+            overlay.remove();
+            navigate(route);
+          };
+
+          document.getElementById('invite-signup-btn')?.addEventListener('click', () => handleAuth('signup'));
+          document.getElementById('invite-login-btn')?.addEventListener('click', () => handleAuth('login'));
+        }
       }, 200);
     }
   }

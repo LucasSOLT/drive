@@ -439,6 +439,7 @@ function renderOriginalsContent(area: HTMLElement): void {
 /** Renders a stack of episode tiles that look like pages of a book */
 function renderStoryStack(episodes: Story[], groupIndex: number): string {
   const first = episodes[0];
+  const soloEpCount = first.soloEpisodeCount || 1;
   const formatBadge = first.format === 'book' ? '📖 Book' : '📜 Waterfall';
   const groupId = first.storyGroupId || first.id;
   const PEEK_OFFSET = 48; // 48px visible lip per cascading layer
@@ -491,9 +492,12 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
             }
             return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.8rem;">No Cover</div>`;
           })()}
-          <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
+          <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
             <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; text-transform: uppercase;">${statusLabel}</span>
             <span style="background: rgba(139,92,246,0.9); color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">EP ${epNum}</span>
+            ${epNum <= soloEpCount 
+              ? `<span style="font-size:0.65rem; background:rgba(16,185,129,0.12); color:#10b981; padding:2px 8px; border-radius:9999px; font-weight:700;">🟢 SOLO</span>`
+              : `<span style="font-size:0.65rem; background:rgba(139,92,246,0.12); color:var(--color-purple); padding:2px 8px; border-radius:9999px; font-weight:700;">🟣 SQUAD</span>`}
             ${story.isFeatured ? `<span style="background: #F59E0B; color: #000; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">⭐ FEATURED</span>` : ''}
             ${story.isEditorPick ? `<span style="background: #10b981; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800;">🏆 PICK</span>` : ''}
           </div>
@@ -504,7 +508,10 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
           <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 8px;">
             ${escapeHtml(story.author)} · ${story.genre} · ${story.panels?.length || 0} pages · ${formatNumber(story.readCount)} reads
           </div>
-          ${story.synopsis ? `<p style="margin: 0 0 10px 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(story.synopsis)}</p>` : ''}
+          ${story.sparcPrompt?.text 
+            ? `<div style="font-size:0.7rem; color:var(--color-purple); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">⚡ SPARC: "${story.sparcPrompt.text.substring(0, 35)}${story.sparcPrompt.text.length > 35 ? '...' : ''}"</div>`
+            : `<div style="font-size:0.7rem; color:var(--color-text-muted); margin-top:4px;">⚡ No SPARC prompt</div>`}
+          ${story.synopsis ? `<p style="margin: 0 0 10px 0; margin-top: 8px; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(story.synopsis)}</p>` : ''}
           <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
             <button data-edit-official="${story.id}" style="flex: 2; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
               ${ICON.eye} Edit
@@ -541,8 +548,15 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
   // Container height: first card height is auto, plus peeking space for subsequent episodes
   const peekingHeight = (episodes.length - 1) * PEEK_OFFSET;
 
+  const soloCount = Math.min(soloEpCount, episodes.length);
+  const squadCount = Math.max(0, episodes.length - soloEpCount);
+  const summaryText = `${episodes.length} Ep${episodes.length > 1 ? 's' : ''} · ${soloCount} Solo + ${squadCount} Squad`;
+
   return `
     <div class="story-stack" data-stack-group="${groupId}" style="position: relative; padding-bottom: ${peekingHeight}px; margin-bottom: 20px;">
+      <div style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <span>${summaryText}</span>
+      </div>
       ${episodeCards}
       <button data-add-episode="${groupId}" data-group-format="${first.format}" data-group-title="${escapeHtml(first.title)}" data-next-ep="${episodes.length + 1}"
               style="
@@ -623,7 +637,13 @@ function attachStackListeners(): void {
       const format = el.dataset.groupFormat!;
       const title = el.dataset.groupTitle!;
       const nextEp = el.dataset.nextEp!;
-      navigate(`admin-create?format=${format}&storyGroupId=${groupId}&episodeNumber=${nextEp}&storyTitle=${encodeURIComponent(title)}`);
+      
+      const firstEpData = currentOfficialStories.find(s => (s.storyGroupId || s.id) === groupId && (s.episodeNumber || 1) === 1);
+      const extraParams = firstEpData 
+        ? `&genre=${encodeURIComponent(firstEpData.genre)}&contentRating=${encodeURIComponent(firstEpData.contentRating || 'All Ages')}&audioMode=${encodeURIComponent(firstEpData.audioMode || 'make_audio')}&narratorVoiceId=${encodeURIComponent(firstEpData.narratorVoiceId || '')}&soloEpisodeCount=${firstEpData.soloEpisodeCount || 1}` 
+        : '';
+      
+      navigate(`admin-create?format=${format}&storyGroupId=${groupId}&episodeNumber=${nextEp}&storyTitle=${encodeURIComponent(title)}${extraParams}`);
     });
   });
 }

@@ -1,7 +1,8 @@
 import { supabase } from '../lib/supabase.ts';
-import { openSquadGateFromDeepLink } from '../components/squad-gate-modal.ts';
+import { joinSquadByCode as dbJoinSquadByCode } from '../lib/db.ts';
 import { navigate } from '../router.ts';
 import { loadUserData } from '../lib/db.ts';
+import { openSquadGateFromDeepLink } from '../components/squad-gate-modal.ts';
 
 export function render(): string {
   return `
@@ -281,13 +282,17 @@ export function init(): void {
           if (pendingSquad) {
             try {
               const pending = JSON.parse(pendingSquad);
-              // Only use if less than 30 minutes old
               if (Date.now() - pending.timestamp < 30 * 60 * 1000) {
                 localStorage.removeItem('drive_pending_squad_join');
-                navigate('home');
-                setTimeout(() => {
-                  openSquadGateFromDeepLink(pending.storyId, pending.storyTitle || 'Story Journey', pending.squadCode);
-                }, 300);
+                dbJoinSquadByCode(pending.squadCode)
+                  .then(result => {
+                    if (result) navigate('squad-lobby/' + result.squadId);
+                    else navigate('home');
+                  })
+                  .catch(err => {
+                    console.warn('Failed to join squad after auth:', err);
+                    navigate('home');
+                  });
                 return;
               }
             } catch { /* ignore invalid JSON */ }
@@ -328,10 +333,15 @@ export function init(): void {
                 const pending = JSON.parse(pendingSquadSignup);
                 if (Date.now() - pending.timestamp < 30 * 60 * 1000) {
                   localStorage.removeItem('drive_pending_squad_join');
-                  navigate('home');
-                  setTimeout(() => {
-                    openSquadGateFromDeepLink(pending.storyId, pending.storyTitle || 'Story Journey', pending.squadCode);
-                  }, 300);
+                  dbJoinSquadByCode(pending.squadCode)
+                    .then(result => {
+                      if (result) navigate('squad-lobby/' + result.squadId);
+                      else navigate('home');
+                    })
+                    .catch(err => {
+                      console.warn('Failed to join squad after auth:', err);
+                      navigate('home');
+                    });
                   return;
                 }
               } catch { /* ignore invalid JSON */ }
@@ -382,10 +392,15 @@ export function init(): void {
                       const pending = JSON.parse(pendingSquadPoll);
                       if (Date.now() - pending.timestamp < 30 * 60 * 1000) {
                         localStorage.removeItem('drive_pending_squad_join');
-                        navigate('home');
-                        setTimeout(() => {
-                          openSquadGateFromDeepLink(pending.storyId, pending.storyTitle || 'Story Journey', pending.squadCode);
-                        }, 300);
+                        dbJoinSquadByCode(pending.squadCode)
+                          .then(result => {
+                            if (result) navigate('squad-lobby/' + result.squadId);
+                            else navigate('home');
+                          })
+                          .catch(err => {
+                            console.warn('Failed to join squad after auth:', err);
+                            navigate('home');
+                          });
                         return;
                       }
                     } catch { /* ignore invalid JSON */ }
