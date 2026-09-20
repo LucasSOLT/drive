@@ -1456,6 +1456,74 @@ export async function updateSquadStatus(squadId: string, status: 'forming' | 'in
   }
 }
 
+/** Fetch all squads that the current user is a member of, with full details */
+export async function getUserSquads(): Promise<Array<{
+  squad: { id: string; driverId: string; storyId: string; name: string; inviteCode: string; status: 'forming' | 'in-progress' | 'completed' };
+  members: Array<{ userId: string; username: string; avatarIndex: number; role: 'driver' | 'player'; isReady: boolean }>;
+  session: SquadSession | null;
+  sparcGreenlitCount: number;
+}>> {
+  const userId = getUserId();
+  if (!userId) return [];
+
+  // 1. Get all squad_ids this user belongs to
+  const { data: memberRows, error: mErr } = await supabase
+    .from('squad_members')
+    .select('squad_id')
+    .eq('user_id', userId);
+
+  if (mErr || !memberRows || memberRows.length === 0) return [];
+
+  const squadIds = memberRows.map((r: any) => r.squad_id);
+
+  // 2. Fetch all those squads
+  const { data: squads, error: sErr } = await supabase
+    .from('squads')
+    .select('*')
+    .in('id', squadIds)
+    .order('updated_at', { ascending: false });
+
+  if (sErr || !squads) return [];
+
+  // 3. For each squad, get members, session, and SPARC greenlit count
+  const results = await Promise.all(squads.map(async (sq: any) => {
+    const members = await getSquadMembers(sq.id);
+    const session = await getSquadSession(sq.id);
+
+    // Count how many members have completed SPARC for the current episode
+    let sparcGreenlitCount = 0;
+    if (session) {
+      const { data: memberData } = await supabase
+        .from('squad_members')
+        .select('sparc_completed_episodes')
+        .eq('squad_id', sq.id);
+
+      if (memberData) {
+        sparcGreenlitCount = memberData.filter((m: any) => {
+          const completed: number[] = m.sparc_completed_episodes || [];
+          return completed.includes(session.currentEpisodeNumber);
+        }).length;
+      }
+    }
+
+    return {
+      squad: {
+        id: sq.id,
+        driverId: sq.driver_id,
+        storyId: sq.story_id || '',
+        name: sq.name || 'DRiVE Squad',
+        inviteCode: sq.invite_code,
+        status: sq.status as 'forming' | 'in-progress' | 'completed',
+      },
+      members,
+      session,
+      sparcGreenlitCount,
+    };
+  }));
+
+  return results;
+}
+
 // ═══════════════════════════════════════════════
 // AUTO-MATCH ENGINE
 // ═══════════════════════════════════════════════

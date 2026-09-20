@@ -3,7 +3,10 @@ import { getTrackedStories, removeTrackedStory, type TrackedStory } from '../lib
 import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteUserStory, getUserPlan, getUserSubscription, canCreateStory, getTokensRemaining, getCreditsBalance, getBookmarkedStoryIds, isBookmarked, toggleBookmark } from '../state.ts';
 import { navigate } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory } from '../lib/db.ts';
+import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory, getUserSquads, getSquadMembers } from '../lib/db.ts';
+import { getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
+import { MONSTER_AVATARS } from '../data/avatars.ts';
+import { getUserId } from '../lib/auth.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { getStoryById } from '../data/stories.ts';
 import { renderStoryCard, initVideoCovers, initBookmarkButtons } from '../components/story-card.ts';
@@ -249,6 +252,212 @@ function renderTrackedReadingCard(story: TrackedStory): string {
   `;
 }
 
+async function loadActiveSquads(): Promise<void> {
+  const container = document.getElementById('active-squads-content');
+  if (!container) return;
+
+  const userId = getUserId();
+  if (!userId) {
+    container.innerHTML = `
+      <div style="padding:20px; text-align:center; background:var(--color-surface); border-radius:var(--radius-xl); border:1px dashed var(--color-border);">
+        <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0;">Log in to see your active squad missions</p>
+      </div>
+    `;
+    return;
+  }
+
+  try {
+    const userSquads = await getUserSquads();
+
+    // Filter to only non-completed squads
+    const activeSquads = userSquads.filter(s => s.squad.status !== 'completed');
+
+    if (activeSquads.length === 0) {
+      container.innerHTML = `
+        <div style="padding:24px; text-align:center; background:var(--color-surface); border-radius:var(--radius-xl); border:1px dashed var(--color-border);">
+          <div style="font-size:1.5rem; margin-bottom:8px;">🛡️</div>
+          <h3 style="font-family:var(--font-heading); font-size:0.95rem; margin:0 0 4px; color:var(--color-text-primary);">No active squad missions</h3>
+          <p style="font-size:0.82rem; color:var(--color-text-muted); margin:0;">Start reading a story past the squad gate to begin your first squad mission!</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = activeSquads.map(({ squad, members, session, sparcGreenlitCount }) => {
+      const storyData = getStoryById(squad.storyId);
+      const storyTitle = storyData?.title || squad.name;
+      const coverImage = storyData?.coverImage || '';
+      const memberCount = members.length;
+      const isDriver = squad.driverId === userId;
+
+      // Timer info
+      let timerHtml = '';
+      if (session && session.status === 'reading') {
+        const remaining = getEpisodeTimeRemaining(session);
+        if (remaining > 0) {
+          timerHtml = `
+            <div style="display:flex; align-items:center; gap:5px; font-size:0.72rem; font-weight:600; color:var(--color-purple);">
+              <span>⏱️</span>
+              <span>${formatTimeRemaining(remaining)}</span>
+            </div>
+          `;
+        } else {
+          timerHtml = `<span style="font-size:0.72rem; font-weight:600; color:#ef4444;">⏱️ Timer expired</span>`;
+        }
+      }
+
+      // Status badge
+      let statusBadge = '';
+      if (squad.status === 'forming') {
+        statusBadge = `<span style="font-size:0.65rem; background:rgba(245,158,11,0.12); color:#f59e0b; padding:2px 8px; border-radius:9999px; font-weight:700;">⏳ FORMING</span>`;
+      } else if (session?.status === 'sparc') {
+        statusBadge = `<span style="font-size:0.65rem; background:rgba(139,92,246,0.12); color:var(--color-purple); padding:2px 8px; border-radius:9999px; font-weight:700;">⚡ SPARC ${sparcGreenlitCount}/${memberCount}</span>`;
+      } else if (session?.status === 'reading') {
+        statusBadge = `<span style="font-size:0.65rem; background:rgba(16,185,129,0.12); color:#10b981; padding:2px 8px; border-radius:9999px; font-weight:700;">📖 READING</span>`;
+      } else {
+        statusBadge = `<span style="font-size:0.65rem; background:rgba(139,92,246,0.08); color:var(--color-purple); padding:2px 8px; border-radius:9999px; font-weight:700;">🛡️ ACTIVE</span>`;
+      }
+
+      // Episode info
+      const episodeText = session ? `Episode ${session.currentEpisodeNumber}` : 'Lobby';
+
+      // Member avatar strip (show up to 5 small avatars)
+      const avatarStrip = members.slice(0, 5).map((m, i) => {
+        const avatar = MONSTER_AVATARS[m.avatarIndex % MONSTER_AVATARS.length] || MONSTER_AVATARS[0];
+        return `<div style="
+          width:28px; height:28px; border-radius:50%; background:var(--color-eggshell);
+          display:flex; align-items:center; justify-content:center; overflow:hidden;
+          border:2px solid ${m.isReady ? '#10b981' : 'var(--color-border)'};
+          margin-left:${i > 0 ? '-8px' : '0'}; position:relative; z-index:${5 - i};
+          flex-shrink:0;
+        " title="${m.username}">${avatar}</div>`;
+      }).join('');
+
+      // Action button
+      let actionBtn = '';
+      if (squad.status === 'forming') {
+        actionBtn = `<button class="squad-hub-action" data-squad-action="lobby" data-squad-id="${squad.id}" style="
+          padding:8px 16px; background:linear-gradient(135deg, var(--color-purple), #7c3aed);
+          color:white; border:none; border-radius:var(--radius-lg); font-size:0.78rem; font-weight:700;
+          cursor:pointer; white-space:nowrap;
+        ">Enter Lobby</button>`;
+      } else if (session?.status === 'sparc') {
+        actionBtn = `<button class="squad-hub-action" data-squad-action="sparc" data-squad-id="${squad.id}" data-story-group="${session.storyGroupId}" data-episode="${session.currentEpisodeNumber}" style="
+          padding:8px 16px; background:linear-gradient(135deg, var(--color-purple), var(--color-blue));
+          color:white; border:none; border-radius:var(--radius-lg); font-size:0.78rem; font-weight:700;
+          cursor:pointer; white-space:nowrap;
+        ">Open SPARC</button>`;
+      } else {
+        actionBtn = `<button class="squad-hub-action" data-squad-action="read" data-squad-id="${squad.id}" data-story-id="${squad.storyId}" style="
+          padding:8px 16px; background:linear-gradient(135deg, #10b981, #059669);
+          color:white; border:none; border-radius:var(--radius-lg); font-size:0.78rem; font-weight:700;
+          cursor:pointer; white-space:nowrap;
+        ">Resume Reading</button>`;
+      }
+
+      // Invite code copy button
+      const inviteCopyBtn = `<button class="squad-hub-copy" data-copy-code="${squad.inviteCode}" title="Copy invite code" style="
+        width:28px; height:28px; border-radius:50%; border:1px solid var(--color-border);
+        background:var(--color-eggshell); cursor:pointer; display:flex; align-items:center; justify-content:center;
+        flex-shrink:0; font-size:0.7rem;
+      ">📋</button>`;
+
+      return `
+        <div class="squad-hub-card" style="
+          background:var(--color-surface); border:1.5px solid var(--color-border);
+          border-radius:var(--radius-xl); padding:14px; margin-bottom:10px;
+          box-shadow:var(--shadow-sm);
+        ">
+          <div style="display:flex; gap:12px;">
+            <!-- Cover thumbnail -->
+            ${coverImage ? `
+              <div style="width:56px; height:72px; border-radius:var(--radius-md); overflow:hidden; flex-shrink:0; background:var(--color-bg);">
+                <img src="${coverImage}" style="width:100%; height:100%; object-fit:cover;" alt="${storyTitle}">
+              </div>
+            ` : `
+              <div style="width:56px; height:72px; border-radius:var(--radius-md); flex-shrink:0; background:var(--color-eggshell); display:flex; align-items:center; justify-content:center;">
+                <span style="font-size:1.5rem;">📖</span>
+              </div>
+            `}
+
+            <!-- Info -->
+            <div style="flex:1; min-width:0;">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                <h3 style="font-family:var(--font-heading); font-size:0.92rem; font-weight:700; color:var(--color-text-primary); margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${storyTitle}</h3>
+                ${statusBadge}
+              </div>
+
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                <span style="font-size:0.78rem; color:var(--color-text-secondary); font-weight:600;">${episodeText}</span>
+                ${isDriver ? '<span style="font-size:0.6rem; background:linear-gradient(135deg, var(--color-purple), #7c3aed); color:white; padding:1px 6px; border-radius:9999px; font-weight:800;">DRiVER</span>' : ''}
+                ${timerHtml}
+              </div>
+
+              <!-- Member avatars + action row -->
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <div style="display:flex; align-items:center;">
+                  ${avatarStrip}
+                  <span style="font-size:0.72rem; color:var(--color-text-muted); margin-left:6px;">${memberCount}/5</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  ${inviteCopyBtn}
+                  ${actionBtn}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach event handlers
+    container.querySelectorAll('.squad-hub-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const el = e.currentTarget as HTMLElement;
+        const action = el.dataset.squadAction;
+        const squadId = el.dataset.squadId || '';
+
+        if (action === 'lobby') {
+          localStorage.setItem('drive_active_squad_id', squadId);
+          navigate('squad-lobby/' + squadId);
+        } else if (action === 'sparc') {
+          const storyGroup = el.dataset.storyGroup || '';
+          const episode = el.dataset.episode || '1';
+          navigate(`sparc/${squadId}/${storyGroup}/${episode}`);
+        } else if (action === 'read') {
+          const storyId = el.dataset.storyId || '';
+          localStorage.setItem('drive_active_squad_id', squadId);
+          navigate('story/' + storyId);
+        }
+      });
+    });
+
+    container.querySelectorAll('.squad-hub-copy').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const el = e.currentTarget as HTMLElement;
+        const code = el.dataset.copyCode || '';
+        try {
+          await navigator.clipboard.writeText(code);
+          el.textContent = '✅';
+          setTimeout(() => { el.textContent = '📋'; }, 1500);
+        } catch {
+          el.textContent = '❌';
+          setTimeout(() => { el.textContent = '📋'; }, 1500);
+        }
+      });
+    });
+
+  } catch (err) {
+    console.error('[Library] Error loading active squads:', err);
+    container.innerHTML = `
+      <div style="padding:16px; text-align:center; color:var(--color-text-muted); font-size:0.82rem;">
+        Could not load squads. <button id="retry-squads-btn" style="color:var(--color-purple); background:none; border:none; cursor:pointer; font-weight:600;">Retry</button>
+      </div>
+    `;
+    document.getElementById('retry-squads-btn')?.addEventListener('click', () => loadActiveSquads());
+  }
+}
+
 export function render(): string {
   const unlocked = isLibraryUnlocked();
 
@@ -308,6 +517,21 @@ export function render(): string {
             <span style="font-family:var(--font-body); font-size:0.72rem; color:var(--color-text-muted);">${getUserPlan() === 'creator' ? 'Unlimited stories' : getTokensRemaining() + ' token' + (getTokensRemaining() !== 1 ? 's' : '') + ' remaining'}</span>
           </div>
           <button class="btn btn--ghost btn--sm" id="manage-plan-btn" style="font-size:0.72rem; padding:4px 10px; border-radius:20px;">Manage</button>
+        </div>
+
+        <!-- Section 0: Active Squad Missions -->
+        <div id="active-squads-section" style="margin-bottom: 1.5rem;">
+          <div class="section__header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:1.2rem;">🛡️</span>
+              <h2 class="section__title" style="margin: 0;">Active Squad Missions</h2>
+            </div>
+          </div>
+          <div id="active-squads-content" style="margin-top: 0.75rem;">
+            <div style="padding:16px; text-align:center; color:var(--color-text-muted); font-size:0.82rem;">
+              Loading your squads...
+            </div>
+          </div>
         </div>
 
         <!-- Section 1: Active Reading Journeys (Auto-tracked when opening any Ep. 1) -->
@@ -943,4 +1167,7 @@ export function init(): void {
       });
     });
   }
+
+  // ── Active Squads Section ──
+  loadActiveSquads();
 }
