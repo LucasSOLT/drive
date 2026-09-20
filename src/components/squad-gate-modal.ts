@@ -77,6 +77,104 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
   `;
   document.body.appendChild(loadingOverlay);
 
+  // Check if user already has an active squad for this story
+  const userId = getUserId();
+  if (userId) {
+    try {
+      // Import getUserSquads dynamically to check existing squads
+      const { getUserSquads } = await import('../lib/db.ts');
+      const userSquads = await getUserSquads();
+      const existingSquad = userSquads.find(s => 
+        s.squad.storyId === options.storyId && s.squad.status !== 'completed'
+      );
+
+      if (existingSquad) {
+        // Remove loading overlay
+        loadingOverlay.remove();
+
+        // Show "Your squad is waiting!" overlay
+        const waitingOverlay = document.createElement('div');
+        waitingOverlay.className = 'squad-gate-overlay open';
+        waitingOverlay.id = 'squad-gate-modal';
+        document.body.style.overflow = 'hidden';
+
+        const memberAvatars = existingSquad.members.slice(0, 5).map((m: any, i: number) => {
+          const avatar = MONSTER_AVATARS[m.avatarIndex % MONSTER_AVATARS.length] || MONSTER_AVATARS[0];
+          return `<div style="width:40px; height:40px; border-radius:50%; background:var(--color-eggshell); display:flex; align-items:center; justify-content:center; overflow:hidden; border:2px solid ${m.isReady ? '#10b981' : 'var(--color-border)'}; margin-left:${i > 0 ? '-10px' : '0'}; position:relative; z-index:${5-i};">${avatar}</div>`;
+        }).join('');
+
+        const sessionEp = existingSquad.session?.currentEpisodeNumber || 2;
+
+        waitingOverlay.innerHTML = `
+          <div class="squad-gate-card" style="text-align:center;">
+            <div class="squad-gate-glow"></div>
+            <div style="padding:32px 24px;">
+              <div style="font-size:2.5rem; margin-bottom:12px;">🛡️</div>
+              <h2 style="font-family:var(--font-heading); font-size:1.3rem; font-weight:700; color:var(--color-text-primary); margin:0 0 8px;">Your Squad Is Waiting!</h2>
+              <p style="color:var(--color-text-secondary); font-size:0.9rem; line-height:1.5; margin:0 0 20px;">
+                You're already part of <strong>${existingSquad.squad.name}</strong>. 
+                ${existingSquad.squad.status === 'forming' 
+                  ? 'Head to the lobby to ready up with your team!'
+                  : `Your squad is on Episode ${sessionEp}. Jump in!`
+                }
+              </p>
+
+              <div style="display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
+                ${memberAvatars}
+                <span style="font-size:0.78rem; color:var(--color-text-muted); margin-left:8px;">${existingSquad.members.length}/5 members</span>
+              </div>
+
+              ${existingSquad.squad.status === 'forming' ? `
+                <button id="sg-existing-lobby" style="width:100%; padding:14px; background:linear-gradient(135deg, var(--color-purple), #7c3aed); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer; margin-bottom:10px;">🛡️ Enter Squad Lobby</button>
+              ` : `
+                <button id="sg-existing-read" style="width:100%; padding:14px; background:linear-gradient(135deg, #10b981, #059669); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer; margin-bottom:10px;">📚 Resume Episode ${sessionEp}</button>
+              `}
+              <button id="sg-existing-close" style="width:100%; padding:10px; background:var(--color-eggshell); color:var(--color-text-secondary); border:1px solid var(--color-border); border-radius:var(--radius-lg); font-size:0.85rem; cursor:pointer;">Close</button>
+            </div>
+          </div>
+        `;
+
+        document.body.appendChild(waitingOverlay);
+
+        const closeExisting = () => {
+          waitingOverlay.classList.remove('open');
+          document.body.style.overflow = '';
+          setTimeout(() => waitingOverlay.remove(), 300);
+        };
+
+        document.getElementById('sg-existing-lobby')?.addEventListener('click', () => {
+          closeExisting();
+          localStorage.setItem('drive_active_squad_id', existingSquad.squad.id);
+          navigate('squad-lobby/' + existingSquad.squad.id);
+        });
+
+        document.getElementById('sg-existing-read')?.addEventListener('click', async () => {
+          closeExisting();
+          localStorage.setItem('drive_active_squad_id', existingSquad.squad.id);
+          // Find the correct episode story ID
+          if (existingSquad.session) {
+            const { fetchStoryByGroupAndEpisode } = await import('../lib/db.ts');
+            const epData = await fetchStoryByGroupAndEpisode(
+              existingSquad.session.storyGroupId,
+              existingSquad.session.currentEpisodeNumber
+            );
+            if (epData) {
+              navigate('story/' + epData.id);
+              return;
+            }
+          }
+          navigate('story/' + existingSquad.squad.storyId);
+        });
+
+        document.getElementById('sg-existing-close')?.addEventListener('click', closeExisting);
+        return;
+      }
+    } catch (err) {
+      console.warn('[SquadGate] Error checking existing squads:', err);
+      // Continue with normal flow if check fails
+    }
+  }
+
   try {
     const activeSquadId = localStorage.getItem('drive_active_squad_id');
     let found = false;

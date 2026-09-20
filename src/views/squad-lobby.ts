@@ -11,6 +11,7 @@ import {
   updateSquadStatus,
   leaveSquad,
   fetchStoryByIdFromDb,
+  fetchStoryByGroupAndEpisode,
 } from '../lib/db.ts';
 import { supabase } from '../lib/supabase.ts';
 import { getStoryById, stories } from '../data/stories.ts';
@@ -547,27 +548,64 @@ function attachLobbyEventListeners(squadId: string): void {
       }
 
       isLaunching = true;
-      launchBtn.textContent = '🚀 Launching Episode & Starting 48h Clock...';
+      
+      // ─── Launch Countdown ───
+      const countdownOverlay = document.createElement('div');
+      countdownOverlay.id = 'launch-countdown-overlay';
+      countdownOverlay.style.cssText = 'position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.92); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:16px;';
+      countdownOverlay.innerHTML = `
+        <div style="font-size:0.85rem; text-transform:uppercase; letter-spacing:2px; color:var(--color-purple); font-weight:700;">SQUAD MISSION LAUNCHING</div>
+        <div id="countdown-number" style="font-family:var(--font-heading); font-size:5rem; font-weight:900; color:white; line-height:1;">5</div>
+        <div style="font-size:0.82rem; color:var(--color-text-muted);">Get ready to read together!</div>
+      `;
+      document.body.appendChild(countdownOverlay);
+
+      // Animate countdown 5→1
+      const countdownEl = document.getElementById('countdown-number');
+      for (let i = 4; i >= 1; i--) {
+        await new Promise(r => setTimeout(r, 1000));
+        if (countdownEl) countdownEl.textContent = String(i);
+      }
+      await new Promise(r => setTimeout(r, 1000));
+      if (countdownEl) countdownEl.textContent = '🚀';
+      await new Promise(r => setTimeout(r, 500));
 
       try {
-        // 1. Mark squad in-progress in Supabase
+        // 1. Mark squad in-progress
         await updateSquadStatus(currentSquad.id, 'in-progress');
 
-        // 2. Create or initialize SquadSession with 48h clock (starts at episode 2)
-        const storyGroupId = currentSquad.storyId || 'story-group-1';
+        // 2. Determine storyGroupId from the story data
+        const storyData = getStoryById(currentSquad.storyId);
+        const storyGroupId = storyData?.storyGroupId || currentSquad.storyId || 'story-group-1';
+
+        // 3. Get soloEpisodeCount to know which episode is the first post-gate one
+        const soloEpCount = storyData?.soloEpisodeCount || 1;
+        const firstSquadEpisode = soloEpCount + 1;
+
+        // 4. Create or get squad session (starts at the first post-gate episode)
         let session = await getSquadSession(currentSquad.id);
         if (!session) {
-          session = await createSquadSession(currentSquad.id, storyGroupId, 2);
+          session = await createSquadSession(currentSquad.id, storyGroupId, firstSquadEpisode);
         }
 
-        console.log('[Lobby] Squad session started:', session?.id, 'Episode started at:', session?.episodeStartedAt);
+        console.log('[Lobby] Squad session started:', session?.id, 'Episode:', session?.currentEpisodeNumber);
 
-        // 3. Navigate to story reader
-        const targetStory = currentSquad.storyId || 'story-1';
-        navigate('story/' + targetStory);
+        // 5. Find the actual story ID for the target episode
+        const targetEpisode = session?.currentEpisodeNumber || firstSquadEpisode;
+        const episodeData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEpisode);
+
+        // 6. Navigate to the correct episode
+        countdownOverlay.remove();
+        if (episodeData) {
+          navigate('story/' + episodeData.id);
+        } else {
+          // Fallback: navigate to the squad's story (Episode 1)
+          console.warn('[Lobby] Could not find post-gate episode, falling back to story ID');
+          navigate('story/' + currentSquad.storyId);
+        }
       } catch (err) {
         console.error('[Lobby] Error launching episode:', err);
-        // Still navigate if offline/demo
+        countdownOverlay.remove();
         navigate('story/' + (currentSquad.storyId || 'story-1'));
       } finally {
         isLaunching = false;
@@ -636,6 +674,26 @@ function startLobbyPolling(squadId: string): void {
         // If squad was launched by another member, auto-navigate to story
         if (currentSquad.status === 'in-progress') {
           stopLobbyPolling();
+          const currentUid = getUserId();
+          const isDriver = currentUid === currentSquad.driverId;
+          
+          if (isDriver) {
+            // DRiVER: navigate to the post-gate episode
+            try {
+              const storyData = getStoryById(currentSquad.storyId);
+              const storyGroupId = storyData?.storyGroupId || currentSquad.storyId;
+              const session = await getSquadSession(currentSquad.id);
+              const targetEp = session?.currentEpisodeNumber || 2;
+              const epData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEp);
+              if (epData) {
+                navigate('story/' + epData.id);
+                return;
+              }
+            } catch (e) {
+              console.warn('[Lobby] Could not fetch post-gate episode for DRiVER:', e);
+            }
+          }
+          // Non-DRiVER or fallback: go to Episode 1 to read solo content first
           navigate('story/' + (currentSquad.storyId || 'story-1'));
           return;
         }
