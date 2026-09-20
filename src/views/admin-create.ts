@@ -1454,6 +1454,7 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
   // Open Story Settings for characters
   container.querySelectorAll('[data-open-char-settings]').forEach(btn => {
     btn.addEventListener('click', () => {
+      getFormData();
       openStorySettings();
       setTimeout(() => {
         const card = document.querySelector('.ss-characters-card');
@@ -2142,6 +2143,7 @@ function openStoryboard(): void {
     // Keep activeEditorMode = 'storyboard' so that pressing "Back" in settings
     // returns to the storyboard view (updateView checks activeEditorMode).
     overlay.remove();
+    getFormData();
     openStorySettings();
   });
 
@@ -3027,7 +3029,7 @@ export function init(): void {
       document.addEventListener('click', () => {
         if (dropdown) dropdown.style.display = 'none';
       });
-      document.getElementById('btn-dd-story-settings')?.addEventListener('click', () => {
+      document.getElementById('btn-dd-story-settings')?.addEventListener('click', () => { getFormData();
         openStorySettings();
       });
       document.getElementById('btn-dd-add-panel')?.addEventListener('click', () => {
@@ -3378,7 +3380,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         try { await saveOfficialStory(buildStory('draft')); } catch {}
         navigate('admin');
       });
-      document.getElementById('btn-submit-review')?.addEventListener('click', () => {
+      document.getElementById('btn-submit-review')?.addEventListener('click', () => { getFormData();
         openStorySettings();
       });
     }
@@ -3401,7 +3403,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Dropdown actions
-      document.getElementById('btn-dd-story-settings')?.addEventListener('click', () => {
+      document.getElementById('btn-dd-story-settings')?.addEventListener('click', () => { getFormData();
         openStorySettings();
       });
       document.getElementById('btn-dd-add-page')?.addEventListener('click', () => {
