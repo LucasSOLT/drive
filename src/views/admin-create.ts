@@ -424,6 +424,45 @@ function buildStory(status: 'draft' | 'live'): Story {
   };
 }
 
+async function preUploadBase64Images() {
+  if (_coverThumbnail && _coverThumbnail.startsWith('data:')) {
+    try {
+      const blob = await fetch(_coverThumbnail).then(r => r.blob());
+      const file = new File([blob], `cover.jpg`, { type: 'image/jpeg' });
+      const res = await uploadMedia(file, 'stories');
+      _coverThumbnail = res.url;
+    } catch (err) {
+      console.warn(`[AdminCreate] Failed to pre-upload cover thumbnail:`, err);
+    }
+  }
+
+  for (let i = 0; i < bookPages.length; i++) {
+    if (bookPages[i].image && bookPages[i].image!.startsWith('data:')) {
+      try {
+        const blob = await fetch(bookPages[i].image!).then(r => r.blob());
+        const file = new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' });
+        const res = await uploadMedia(file, 'stories');
+        bookPages[i].image = res.url;
+      } catch (err) {
+        console.warn(`[AdminCreate] Failed to pre-upload page ${i} image:`, err);
+      }
+    }
+  }
+
+  for (let i = 0; i < scrollPanels.length; i++) {
+    if (scrollPanels[i].image && scrollPanels[i].image!.startsWith('data:')) {
+      try {
+        const blob = await fetch(scrollPanels[i].image!).then(r => r.blob());
+        const file = new File([blob], `panel-${i}.jpg`, { type: 'image/jpeg' });
+        const res = await uploadMedia(file, 'stories');
+        scrollPanels[i].image = res.url;
+      } catch (err) {
+        console.warn(`[AdminCreate] Failed to pre-upload panel ${i} image:`, err);
+      }
+    }
+  }
+}
+
 function openStorySettings(options?: { preserveScroll?: boolean }): void {
   const wizard = document.getElementById('admin-admin-create-wizard');
   if (!wizard) return;
@@ -603,9 +642,10 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
         </div>
 
         <div class="ss-actions">
-          <button id="ss-save-draft-btn" type="button" class="ss-action-btn ss-action-btn--secondary">Save as Draft</button>
-          <button id="ss-go-live-btn" type="button" class="ss-action-btn ss-action-btn--primary">Go Live</button>
+          <button id="ss-save-draft-btn" type="button" class="ss-action-btn ss-action-btn--primary">Save & Quit</button>
+          <button id="ss-cancel-btn" type="button" class="ss-action-btn ss-action-btn--secondary">Cancel</button>
         </div>
+        <p style="text-align:center; font-size:0.72rem; color:var(--color-text-muted); margin:10px 0 0; padding:0 16px;">To publish to readers, place this story on a tile via Content Management in the Admin Dashboard.</p>
       </div>
     </div>
   `;
@@ -890,44 +930,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   });
 
-  async function preUploadBase64Images() {
-    if (_coverThumbnail && _coverThumbnail.startsWith('data:')) {
-      try {
-        const blob = await fetch(_coverThumbnail).then(r => r.blob());
-        const file = new File([blob], `cover.jpg`, { type: 'image/jpeg' });
-        const res = await uploadMedia(file, 'stories');
-        _coverThumbnail = res.url;
-      } catch (err) {
-        console.warn(`[AdminCreate] Failed to pre-upload cover thumbnail:`, err);
-      }
-    }
 
-    for (let i = 0; i < bookPages.length; i++) {
-      if (bookPages[i].image && bookPages[i].image!.startsWith('data:')) {
-        try {
-          const blob = await fetch(bookPages[i].image!).then(r => r.blob());
-          const file = new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' });
-          const res = await uploadMedia(file, 'stories');
-          bookPages[i].image = res.url;
-        } catch (err) {
-          console.warn(`[AdminCreate] Failed to pre-upload page ${i} image:`, err);
-        }
-      }
-    }
-
-    for (let i = 0; i < scrollPanels.length; i++) {
-      if (scrollPanels[i].image && scrollPanels[i].image!.startsWith('data:')) {
-        try {
-          const blob = await fetch(scrollPanels[i].image!).then(r => r.blob());
-          const file = new File([blob], `panel-${i}.jpg`, { type: 'image/jpeg' });
-          const res = await uploadMedia(file, 'stories');
-          scrollPanels[i].image = res.url;
-        } catch (err) {
-          console.warn(`[AdminCreate] Failed to pre-upload panel ${i} image:`, err);
-        }
-      }
-    }
-  }
 
   document.getElementById('ss-save-draft-btn')?.addEventListener('click', async (e) => {
     stopBgmAudioPreview();
@@ -943,36 +946,13 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       console.error(err);
       alert('Failed to save draft.');
       btn.disabled = false;
-      btn.textContent = 'Save as Draft';
+      btn.textContent = 'Save & Quit';
     }
   });
 
-  document.getElementById('ss-go-live-btn')?.addEventListener('click', async (e) => {
+  document.getElementById('ss-cancel-btn')?.addEventListener('click', () => {
     stopBgmAudioPreview();
-    getFormData();
-    if (!storyTitle.trim()) {
-      (document.getElementById('ss-title') as HTMLInputElement)?.focus();
-      return;
-    }
-    const pageCount = selectedFormat === 'book' ? bookPages.length : scrollPanels.length;
-    if (pageCount < 12 || pageCount > 36) {
-      alert(`Episodes must contain between 12 and 36 pages to go live (currently: ${pageCount} pages). Please adjust your pages or save as a draft.`);
-      return;
-    }
-    const btn = e.currentTarget as HTMLButtonElement;
-    btn.disabled = true;
-    btn.textContent = 'Publishing...';
-    try {
-      await preUploadBase64Images();
-      await saveOfficialStory(buildStory('live'));
-      clearDraft();
-      navigate('admin');
-    } catch (err) {
-      console.error(err);
-      alert('Failed to publish story.');
-      btn.disabled = false;
-      btn.textContent = 'Go Live';
-    }
+    navigate('admin');
   });
 }
 
@@ -1225,9 +1205,6 @@ function renderCanvasToolbar(formatLabel: string): string {
       <div class="canvas-toolbar__left" style="display:flex; align-items:center; gap:6px;">
         <button class="canvas-toolbar__btn" id="btn-toolbar-quit" title="Quit without saving">
           ${ICON.backArrow}
-        </button>
-        <button class="canvas-toolbar__btn" id="btn-toolbar-complete" title="Mark episode as completed" style="background:rgba(34,197,94,0.15); border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border:none; cursor:pointer;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
@@ -2041,7 +2018,7 @@ const isDesktopScreen = (): boolean => {
   return window.innerWidth >= 768;
 };
 let activeEditorMode: 'storyboard' | 'mobile' = isDesktopScreen() ? 'storyboard' : 'mobile';
-let promptSaveStoryAdminGlobal: ((status?: 'draft' | 'live') => Promise<void>) | null = null;
+let promptSaveStoryAdminGlobal: ((status?: 'draft') => Promise<void>) | null = null;
 
 function showDesktopRequiredModal(): void {
   showModal({
@@ -2161,9 +2138,7 @@ function openStoryboard(): void {
         <button class="sb-topbar__btn-action" id="sb-save-draft" type="button" title="Save story draft">
           💾 Save Draft
         </button>
-        <button class="sb-topbar__btn-action sb-topbar__btn-primary" id="sb-go-live" type="button" title="Publish official story">
-          🚀 Go Live
-        </button>
+
         <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
         ${!isDesktopScreen() ? `
           <button class="sb-topbar__close" id="sb-close" type="button" title="Close and return to mobile editor">
@@ -2233,11 +2208,7 @@ function openStoryboard(): void {
     }
   });
 
-  document.getElementById('sb-go-live')?.addEventListener('click', () => {
-    if (promptSaveStoryAdminGlobal) {
-      promptSaveStoryAdminGlobal('live');
-    }
-  });
+
 
   document.getElementById('sb-add-page')?.addEventListener('click', () => {
     bookPages.push(defaultBookPage());
@@ -2700,32 +2671,9 @@ export function init(): void {
 
   loadData();
 
-  async function promptSaveStoryAdmin(saveStatus: 'draft' | 'live' = 'draft'): Promise<void> {
+  async function promptSaveStoryAdmin(saveStatus: 'draft' = 'draft'): Promise<void> {
     promptSaveStoryAdminGlobal = promptSaveStoryAdmin;
     getFormData();
-
-    const pageCount = selectedFormat === 'book' ? bookPages.length : scrollPanels.length;
-    if (saveStatus === 'live' && (pageCount < 12 || pageCount > 36)) {
-      showModal({
-        title: 'Episode Length Requirement',
-        content: `
-          <p style="line-height:1.5; margin-bottom:12px; font-size:0.9rem; color:var(--color-text-secondary);">
-            Episodes must contain between <strong>12 and 36 pages</strong> to go live.<br><br>
-            Current count: <strong>${pageCount} pages</strong>.<br>
-            ${pageCount < 12 ? `Please add at least <strong>${12 - pageCount}</strong> more page(s).` : `Please remove <strong>${pageCount - 36}</strong> page(s).`}
-          </p>
-          <p style="font-size:0.8rem; color:var(--color-text-muted);">
-            You can still save this episode as a <strong>Draft</strong> and continue editing later.
-          </p>
-        `,
-        confirmText: 'Save as Draft',
-        cancelText: 'Keep Editing',
-        onConfirm: async () => {
-          await promptSaveStoryAdmin('draft');
-        }
-      });
-      return;
-    }
 
     const hasValidTitle = storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled';
     if (hasValidTitle) {
@@ -2793,24 +2741,76 @@ export function init(): void {
       // SPARC Checkpoint Challenge Authoring
       attachSparcAdminListeners(document);
 
-      // Auto-save and exit — no popup
-      document.getElementById('btn-toolbar-quit')?.addEventListener('click', async () => {
-        if (!storyTitle.trim()) storyTitle = 'Untitled';
-        saveDraft();
-        try { await saveOfficialStory(buildStory('draft')); } catch {}
-        navigate('admin');
-      });
-
-      document.getElementById('btn-toolbar-complete')?.addEventListener('click', () => {
-        showModal({
-          title: 'Mark as Completed?',
-          content: '<p style="line-height:1.6;">Would you like to mark this episode as completed? You can always revisit and edit.</p>',
-          confirmText: 'Yes',
-          cancelText: 'Cancel',
-          onConfirm: () => {
-            promptSaveStoryAdmin('live');
-          },
+      // Auto-save and exit — with dropdown
+      document.getElementById('btn-toolbar-quit')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Remove any existing dropdown
+        document.getElementById('quit-dropdown')?.remove();
+        
+        const btn = e.currentTarget as HTMLElement;
+        const rect = btn.getBoundingClientRect();
+        
+        const dropdown = document.createElement('div');
+        dropdown.id = 'quit-dropdown';
+        dropdown.style.cssText = `
+          position: fixed;
+          top: ${rect.bottom + 8}px;
+          left: ${rect.left}px;
+          min-width: 220px;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+          z-index: 9999;
+          overflow: hidden;
+          font-family: var(--font-body);
+        `;
+        
+        dropdown.innerHTML = `
+          <button id="quit-save" style="display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; border:none; background:none; color:var(--color-text-primary); cursor:pointer; font-size:0.88rem; text-align:left; font-family:var(--font-body);">
+            <span style="font-size:1.1rem;">💾</span> Save & Quit
+          </button>
+          <div style="height:1px; background:var(--color-border);"></div>
+          <button id="quit-cancel" style="display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; border:none; background:none; color:var(--color-text-muted); cursor:pointer; font-size:0.88rem; text-align:left; font-family:var(--font-body);">
+            <span style="font-size:1.1rem;">❌</span> Cancel (Don't Save)
+          </button>
+          <div style="height:1px; background:var(--color-border);"></div>
+          <div style="padding:12px 16px; font-size:0.72rem; color:var(--color-text-muted); line-height:1.4;">
+            ℹ️ To publish, place this story on a tile via Content Management.
+          </div>
+        `;
+        
+        document.body.appendChild(dropdown);
+        
+        // Save & Quit
+        document.getElementById('quit-save')?.addEventListener('click', async () => {
+          dropdown.remove();
+          if (!storyTitle.trim()) storyTitle = 'Untitled';
+          getFormData();
+          saveDraft();
+          try {
+            await preUploadBase64Images();
+            await saveOfficialStory(buildStory('draft'));
+          } catch (err) {
+            console.error(err);
+          }
+          navigate('admin');
         });
+        
+        // Cancel
+        document.getElementById('quit-cancel')?.addEventListener('click', () => {
+          dropdown.remove();
+          navigate('admin');
+        });
+        
+        // Close dropdown on outside click
+        const closeDropdown = (ev: MouseEvent) => {
+          if (!dropdown.contains(ev.target as Node)) {
+            dropdown.remove();
+            document.removeEventListener('click', closeDropdown);
+          }
+        };
+        setTimeout(() => document.addEventListener('click', closeDropdown), 10);
       });
 
       // Scroll-hide/show toolbar
