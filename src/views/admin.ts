@@ -67,10 +67,10 @@ export function render(): string {
     : `<span style="background: var(--color-purple); color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px;">🛡️ ADMIN</span>`;
 
   return `
-    <div class="view-admin fade-in" id="admin-container" style="display: flex; flex-direction: column; height: calc(100dvh - 56px - 64px); overflow: hidden; font-family: var(--font-body);">
+    <div class="view-admin fade-in" id="admin-container" style="display: flex; flex-direction: column; min-height: 100%; font-family: var(--font-body); padding-bottom: 90px;">
       
       <!-- Top Header Bar -->
-      <header style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--color-border); background-color: var(--color-surface); position: sticky; top: 0; z-index: 10; flex-shrink: 0; gap: 8px;">
+      <header style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--color-border); background-color: var(--color-surface); gap: 8px;">
         <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
           <div style="width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); display: flex; justify-content: center; align-items: center; color: white; font-weight: bold; font-size: 0.9rem; flex-shrink: 0;">
             ${ICON.shield}
@@ -90,31 +90,31 @@ export function render(): string {
       </header>
 
       <!-- Stats Bar -->
-      <div id="admin-stats-bar" style="padding: 12px 16px; background: var(--color-surface); border-bottom: 1px solid var(--color-border); display: flex; gap: 12px; overflow-x: auto; flex-shrink: 0;">
+      <div id="admin-stats-bar" style="padding: 12px 16px; background: var(--color-surface); border-bottom: 1px solid var(--color-border); display: flex; gap: 12px; overflow-x: auto;">
         <div style="flex: 1; min-width: 100px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px 14px; text-align: center;">
-          <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-purple);" id="stat-originals">\u2014</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-purple);" id="stat-originals">--</div>
           <div style="font-size: 0.65rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Originals</div>
         </div>
         <div style="flex: 1; min-width: 100px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px 14px; text-align: center;">
-          <div style="font-size: 1.5rem; font-weight: 800; color: #F59E0B;" id="stat-pending">\u2014</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #F59E0B;" id="stat-pending">--</div>
           <div style="font-size: 0.65rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Pending</div>
         </div>
         <div style="flex: 1; min-width: 100px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px 14px; text-align: center;">
-          <div style="font-size: 1.5rem; font-weight: 800; color: #10b981;" id="stat-published">\u2014</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #10b981;" id="stat-published">--</div>
           <div style="font-size: 0.65rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Published</div>
         </div>
         <div style="flex: 1; min-width: 100px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px 14px; text-align: center;">
-          <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-text-primary);" id="stat-reads">\u2014</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-text-primary);" id="stat-reads">--</div>
           <div style="font-size: 0.65rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Total Reads</div>
         </div>
         <div style="flex: 1; min-width: 100px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px 14px; text-align: center;">
-          <div style="font-size: 1.5rem; font-weight: 800; color: #ef4444;" id="stat-likes">\u2014</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #ef4444;" id="stat-likes">--</div>
           <div style="font-size: 0.65rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Total Likes</div>
         </div>
       </div>
 
       <!-- Tab Navigation -->
-      <div style="padding: 10px 16px 0; background: var(--color-surface); border-bottom: 1px solid var(--color-border); flex-shrink: 0;">
+      <div style="padding: 10px 16px 0; background: var(--color-surface); border-bottom: 1px solid var(--color-border);">
         <div style="display: flex; gap: 0; overflow-x: auto;" id="admin-main-tabs">
           <button class="admin-main-tab admin-main-tab--active" data-tab="originals" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 700; border: none; background: transparent; color: var(--color-purple); cursor: pointer; border-bottom: 2px solid var(--color-purple); display: flex; align-items: center; gap: 6px; white-space: nowrap;">
             ${ICON.book} DRiVE Originals
@@ -140,7 +140,7 @@ export function render(): string {
       </div>
 
       <!-- Search & Filters Toolbar -->
-      <div id="admin-search-toolbar" style="padding: 10px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); flex-shrink: 0; align-items: center; flex-wrap: wrap;">
+      <div id="admin-search-toolbar" style="padding: 10px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); align-items: center; flex-wrap: wrap;">
         <div style="flex: 1; min-width: 180px; position: relative;">
           <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); display: flex;">${ICON.search}</span>
           <input type="text" id="admin-search-input" placeholder="Search stories..." style="width: 100%; padding: 8px 12px 8px 34px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg); color: var(--color-text-primary); font-family: inherit; font-size: 0.85rem; box-sizing: border-box; outline: none;" />
@@ -164,10 +164,10 @@ export function render(): string {
       </div>
 
       <!-- Main Content Area -->
-      <div style="flex: 1; overflow-y: auto; padding: 16px;" id="admin-content-area">
+      <div style="padding: 16px;" id="admin-content-area">
         <div style="display: flex; justify-content: center; align-items: center; padding: 60px 0; color: var(--color-text-muted);">
           <div class="admin-spinner"></div>
-          <span style="margin-left: 8px;">Loading dashboard\u2026</span>
+          <span style="margin-left: 8px;">Loading dashboard…</span>
         </div>
       </div>
     </div>
@@ -417,10 +417,6 @@ function renderOriginalsContent(area: HTMLElement): void {
     `;
   }
 
-  document.getElementById('btn-add-original')?.addEventListener('click', () => {
-    // Standardized on Illustrated Book format (Waterfall Storyboard soft-deleted as inactive artifact)
-    navigate('admin-create?format=book&new=true');
-  });
   if (storyGroups.length > 0) {
     attachOfficialCardListeners();
     attachExpandCollapseListeners();
