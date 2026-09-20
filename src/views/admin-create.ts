@@ -315,7 +315,6 @@ function getFormData(): void {
   storyGenre = (((document.getElementById('ss-genre') as HTMLSelectElement)?.value || storyGenre || 'Fantasy')) as Genre;
   storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || storySynopsis || '';
   storyContentRating = (((document.getElementById('ss-rating') as HTMLSelectElement)?.value || storyContentRating || 'All Ages')) as any;
-  storyCoverVideo = (document.getElementById('ss-cover-video') as HTMLInputElement)?.value || storyCoverVideo || '';
 }
 
 function buildStory(status: 'draft' | 'live'): Story {
@@ -404,12 +403,14 @@ function buildStory(status: 'draft' | 'live'): Story {
   };
 }
 
-function openStorySettings(): void {
+function openStorySettings(options?: { preserveScroll?: boolean }): void {
   const wizard = document.getElementById('admin-admin-create-wizard');
   if (!wizard) return;
 
-  window.scrollTo({ top: 0, behavior: 'instant' });
-  document.getElementById('app-content')?.scrollTo({ top: 0, behavior: 'instant' });
+  if (!options?.preserveScroll) {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    document.getElementById('app-content')?.scrollTo({ top: 0, behavior: 'instant' });
+  }
 
   const formatLabels: Record<string, string> = {
     'scroll': 'Waterfall Storyboard',
@@ -442,10 +443,6 @@ function openStorySettings(): void {
               <video id="modal-cover-video-preview" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover; ${(storyCoverVideo || isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${(storyCoverVideo || _coverThumbnail) ? `src="${storyCoverVideo || _coverThumbnail}"` : ''}></video>
             </div>
             <input type="file" id="modal-cover-thumb-input" accept="image/*,video/*" style="display: none;" />
-          </div>
-          <div class="ss-field" style="margin-top: 10px;">
-            <label class="ss-field__label" for="ss-cover-video">Or Media Link (optional image/video URL)</label>
-            <input type="text" id="ss-cover-video" class="ss-field__input" value="${storyCoverVideo || ''}" placeholder="https://... (image or video URL)" />
           </div>
         </div>
 
@@ -636,30 +633,7 @@ function openStorySettings(): void {
     });
   }
 
-  const coverVideoInput = document.getElementById('ss-cover-video') as HTMLInputElement | null;
-  coverVideoInput?.addEventListener('input', () => {
-    const val = coverVideoInput.value.trim();
-    storyCoverVideo = val;
-    if (val) {
-      const isVid = isVideoMedia(val, val);
-      if (isVid) {
-        if (modalThumbVideoPreview && modalThumbPreview && modalThumbPlaceholder) {
-          modalThumbVideoPreview.src = val;
-          modalThumbVideoPreview.style.display = 'block';
-          modalThumbPreview.style.display = 'none';
-          modalThumbPlaceholder.style.display = 'none';
-        }
-      } else {
-        _coverThumbnail = val;
-        if (modalThumbPreview && modalThumbVideoPreview && modalThumbPlaceholder) {
-          modalThumbPreview.src = val;
-          modalThumbPreview.style.display = 'block';
-          modalThumbVideoPreview.style.display = 'none';
-          modalThumbPlaceholder.style.display = 'none';
-        }
-      }
-    }
-  });
+
 
   document.getElementById('ss-back')?.addEventListener('click', () => {
     getFormData();
@@ -737,13 +711,24 @@ function openStorySettings(): void {
   wizard.querySelectorAll('[data-char-delete]').forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = parseInt((btn as HTMLElement).getAttribute('data-char-delete') || '0');
+      const scrollY = window.scrollY;
+      const appContent = document.getElementById('app-content');
+      const appScrollY = appContent?.scrollTop || 0;
       storyCharacters.splice(idx, 1);
+      getFormData();
       saveDraft();
-      openStorySettings(); // re-render
+      openStorySettings({ preserveScroll: true }); // re-render
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        if (appContent) appContent.scrollTop = appScrollY;
+      });
     });
   });
   // Add character
   document.getElementById('ss-add-char-btn')?.addEventListener('click', () => {
+    const scrollY = window.scrollY;
+    const appContent = document.getElementById('app-content');
+    const appScrollY = appContent?.scrollTop || 0;
     const newId = 'char_' + Date.now();
     const defaultVoice = VOICE_OPTIONS[storyCharacters.length % VOICE_OPTIONS.length];
     storyCharacters.push({
@@ -752,8 +737,15 @@ function openStorySettings(): void {
       voiceId: defaultVoice.voiceId,
       color: CHAR_COLORS[storyCharacters.length % CHAR_COLORS.length],
     });
+    getFormData(); // sync form fields before re-render
     saveDraft();
-    openStorySettings(); // re-render
+    openStorySettings({ preserveScroll: true }); // re-render
+    
+    // Restore scroll position after re-render
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollY, behavior: 'instant' });
+      if (appContent) appContent.scrollTop = appScrollY;
+    });
   });
 
   // Squad Gate Episodes Before Gate Selector
@@ -798,17 +790,23 @@ function openStorySettings(): void {
   bgmFileInput?.addEventListener('change', async () => {
     const file = bgmFileInput.files?.[0];
     if (!file) return;
+    const scrollY = window.scrollY;
+    const appContent = document.getElementById('app-content');
+    const appScrollY = appContent?.scrollTop || 0;
     if (bgmUploadBtn) {
       bgmUploadBtn.textContent = 'Uploading...';
       bgmUploadBtn.disabled = true;
     }
     try {
-      const storyId = editStoryId || activeDraftId || 'draft';
-      const extracted = await extractAudioFromMediaFile(file);
-      const cdnUrl = await uploadAudioData(extracted.blob, storyId, 'bgm');
-      storyBgmUrl = cdnUrl;
+      const res = await uploadMedia(file, 'bgm');
+      storyBgmUrl = res.url;
+      getFormData(); // sync any other form fields before re-render
       saveDraft();
-      openStorySettings();
+      openStorySettings({ preserveScroll: true });
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        if (appContent) appContent.scrollTop = appScrollY;
+      });
     } catch (err: any) {
       console.error('BGM upload failed:', err);
       alert('BGM upload failed: ' + (err?.message || 'Unknown error'));
@@ -837,10 +835,18 @@ function openStorySettings(): void {
   });
 
   bgmRemoveBtn?.addEventListener('click', () => {
+    const scrollY = window.scrollY;
+    const appContent = document.getElementById('app-content');
+    const appScrollY = appContent?.scrollTop || 0;
     stopBgmAudioPreview();
     storyBgmUrl = '';
+    getFormData();
     saveDraft();
-    openStorySettings();
+    openStorySettings({ preserveScroll: true });
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollY, behavior: 'instant' });
+      if (appContent) appContent.scrollTop = appScrollY;
+    });
   });
 
   bgmVolSlider?.addEventListener('input', () => {

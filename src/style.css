@@ -13668,3 +13668,47 @@ body.content-management-mode .story-card:hover {
   margin: 2px 0 0;
   line-height: 1.4;
 }
+
+/* --- MOBILE FIXES --- */
+.reader__info-page {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding-bottom: 120px !important;
+}
+
+.reader__info-page--book {
+  min-height: auto !important;
+  max-height: 100% !important;
+}
+
+.reader__page:has(.reader__info-page) {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.reader__book-content:has(.reader__info-page) {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+@media (max-height: 700px) {
+  .reader__info-page {
+    padding: 20px 16px 100px !important;
+  }
+  .reader__info-page .reader__info-title {
+    font-size: 1.3rem !important;
+  }
+  .reader__info-pillar {
+    padding: 10px 12px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .story-stack .episode-tile {
+    position: relative !important;
+    top: auto !important;
+  }
+  .story-stack {
+    padding-bottom: 0 !important;
+  }
+}

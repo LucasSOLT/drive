@@ -420,7 +420,7 @@ function renderOriginalsContent(area: HTMLElement): void {
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">DRiVE Originals (${storyGroups.length} stories, ${filtered.length} episodes)</h2>
       </div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px;" id="originals-grid">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px;" id="originals-grid">
         ${storyGroups.map((episodes, i) => renderStoryStack(episodes, i)).join('')}
       </div>
     `;
@@ -624,7 +624,13 @@ function attachStackListeners(): void {
     };
 
     tiles.forEach((tile, idx) => {
+      const handler = (e: Event) => {
+        e.preventDefault();
+        bringToFront(idx);
+      };
       tile.addEventListener('mouseenter', () => bringToFront(idx));
+      tile.addEventListener('click', handler);
+      tile.addEventListener('touchstart', handler);
     });
 
     (stack as HTMLElement).addEventListener('mouseleave', () => resetStack());
