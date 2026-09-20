@@ -651,12 +651,6 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
             ` : ''}
           </div>
         </div>
-
-        <div class="ss-actions">
-          <button id="ss-save-draft-btn" type="button" class="ss-action-btn ss-action-btn--primary">Save & Quit</button>
-          <button id="ss-cancel-btn" type="button" class="ss-action-btn ss-action-btn--secondary">Cancel</button>
-        </div>
-        <p style="text-align:center; font-size:0.72rem; color:var(--color-text-muted); margin:10px 0 0; padding:0 16px;">To publish to readers, place this story on a tile via Content Management in the Admin Dashboard.</p>
       </div>
     </div>
   `;
@@ -941,30 +935,6 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   });
 
-
-
-  document.getElementById('ss-save-draft-btn')?.addEventListener('click', async (e) => {
-    stopBgmAudioPreview();
-    const btn = e.currentTarget as HTMLButtonElement;
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-    try {
-      await preUploadBase64Images();
-      await saveOfficialStory(buildStory('draft'));
-      clearDraft();
-      navigate('admin');
-    } catch (err) {
-      console.error(err);
-      alert('Failed to save draft.');
-      btn.disabled = false;
-      btn.textContent = 'Save & Quit';
-    }
-  });
-
-  document.getElementById('ss-cancel-btn')?.addEventListener('click', () => {
-    stopBgmAudioPreview();
-    navigate('admin');
-  });
 }
 
 
@@ -1214,29 +1184,27 @@ function renderCanvasToolbar(formatLabel: string): string {
   return `
     <div class="canvas-toolbar" id="canvas-toolbar">
       <div class="canvas-toolbar__left" style="display:flex; align-items:center; gap:6px;">
-        <button class="canvas-toolbar__btn" id="btn-toolbar-quit" title="Quit without saving">
-          ${ICON.backArrow}
+        <button class="canvas-toolbar__btn" id="btn-toolbar-quit" title="Save & Exit" style="padding:6px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
         </button>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span class="canvas-toolbar__title">${formatLabel}</span>
-        <span class="canvas-toolbar__page-counter" title="${isValidLength ? 'Page count satisfies 12–36 page requirement' : pageCount < 12 ? 'Need at least 12 pages' : 'Maximum 36 pages'}" style="display:inline-flex; align-items:center; gap:4px; font-size:0.75rem; font-weight:700; padding:2px 8px; border-radius:12px; background:${isValidLength ? 'rgba(34,197,94,0.15)' : 'rgba(234,179,8,0.18)'}; color:${isValidLength ? '#22c55e' : '#eab308'}; border:1px solid ${isValidLength ? 'rgba(34,197,94,0.35)' : 'rgba(234,179,8,0.35)'};">
-          <span>${isValidLength ? '✓' : '⚠️'}</span>
-          <span>${pageCount}/12–36</span>
+        <span class="canvas-toolbar__page-counter" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:700; padding:3px 10px; border-radius:10px; background:${isValidLength ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.12)'}; color:${isValidLength ? '#22c55e' : '#eab308'};">
+          ${pageCount} pg${pageCount !== 1 ? 's' : ''}
         </span>
       </div>
       <div class="canvas-toolbar__right" style="position:relative; display:flex; align-items:center; gap:8px;">
-        ${(isBook && !isDesktopScreen()) ? `
-          <button class="canvas-toolbar__btn-storyboard" id="btn-toolbar-switch-storyboard" type="button" title="Switch to Content Storyboard desktop view">
-            🖥️ Storyboard View
-          </button>
-        ` : ''}
         <button class="canvas-toolbar__btn" id="btn-toolbar-menu" title="Menu">
           ${ICON.dots}
         </button>
         <div class="canvas-toolbar__dropdown" id="toolbar-dropdown" style="display:none;">
           <button class="canvas-toolbar__dd-item" id="btn-dd-story-settings">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l-.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06-.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Story Settings
           </button>
           ${isBook ? `
@@ -1244,12 +1212,14 @@ function renderCanvasToolbar(formatLabel: string): string {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Page
             </button>
-            ${!isDesktopScreen() ? `
-              <button class="canvas-toolbar__dd-item" id="btn-dd-storyboard">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                Storyboard View
-              </button>
-            ` : ''}
+            <button class="canvas-toolbar__dd-item" id="btn-dd-storyboard">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              Storyboard View
+            </button>
+            <button class="canvas-toolbar__dd-item" id="btn-dd-preview">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Preview Story
+            </button>
           ` : `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -2137,7 +2107,9 @@ function openStoryboard(): void {
         </div>
       </div>
       <div class="sb-topbar__right">
-        <span class="sb-topbar__counter">${bookPages.length} Pages</span>
+        <span class="sb-topbar__counter" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:700; padding:3px 10px; border-radius:10px; background:${bookPages.length >= 12 && bookPages.length <= 36 ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.12)'}; color:${bookPages.length >= 12 && bookPages.length <= 36 ? '#22c55e' : '#eab308'};">
+          ${bookPages.length} pg${bookPages.length !== 1 ? 's' : ''}
+        </span>
         ${!isDesktopScreen() ? `
           <button class="sb-topbar__btn-switch" id="sb-switch-mobile" type="button" title="Switch to mobile phone preview">
             📱 Mobile View
@@ -3524,9 +3496,26 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           showDesktopRequiredModal();
         }
       };
-      document.getElementById('btn-toolbar-switch-storyboard')?.addEventListener('click', handleOpenStoryboard);
       document.getElementById('btn-dd-storyboard')?.addEventListener('click', handleOpenStoryboard);
-
+      document.getElementById('btn-dd-preview')?.addEventListener('click', async () => {
+        if (dropdown) dropdown.style.display = 'none';
+        getFormData();
+        saveDraft();
+        try {
+          await preUploadBase64Images();
+          const story = buildStory('draft');
+          await saveOfficialStory(story);
+          const storyId = editStoryId || story.id;
+          if (storyId) {
+            navigate('story/' + storyId);
+          } else {
+            alert('Save the story first before previewing.');
+          }
+        } catch (err) {
+          console.error('Preview failed:', err);
+          alert('Failed to save story for preview. Please try again.');
+        }
+      });
       // Arrow navigation
       document.getElementById('btn-book-prev')?.addEventListener('click', () => {
         if (currentPage > 0) { currentPage--; updateView(); }

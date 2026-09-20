@@ -398,16 +398,8 @@ function renderOriginalsContent(area: HTMLElement): void {
   }
   const storyGroups = Array.from(groupMap.values());
 
-  // Always show the + Add Official Story button at the top
-  const addButtonHtml = `
-    <button id="btn-add-original" style="width: 100%; padding: 14px 20px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); color: white; border: none; border-radius: 14px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: var(--shadow-md); margin-bottom: 20px; transition: all 0.2s ease;">
-      ${ICON.plus} Add Official Story
-    </button>
-  `;
-
   if (storyGroups.length === 0) {
     area.innerHTML = `
-      ${addButtonHtml}
       <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; opacity: 0.7;">
         <div style="font-size: 2.5rem; margin-bottom: 12px;">📖</div>
         <h3 style="margin: 0 0 6px 0; color: var(--color-text-primary); font-family: var(--font-heading); font-size: 1rem;">No stories match your filters</h3>
@@ -416,7 +408,6 @@ function renderOriginalsContent(area: HTMLElement): void {
     `;
   } else {
     area.innerHTML = `
-      ${addButtonHtml}
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">DRiVE Originals (${storyGroups.length} stories, ${filtered.length} episodes)</h2>
       </div>
@@ -498,6 +489,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
         </div>
         <div style="display: flex; gap: 6px;">
           <button data-edit-official="${story.id}" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600;">Edit</button>
+          <button data-preview-story="${story.id}" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; gap: 4px;">👁 Preview</button>
           <button data-move-up="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem;">↑</button>
           <button data-move-down="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem;">↓</button>
           <button data-delete-official="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-muted); cursor: pointer; font-size: 0.8rem;">🗑</button>
@@ -613,6 +605,14 @@ function attachOfficialCardListeners(): void {
     btn.addEventListener('click', (e) => {
       const id = (e.currentTarget as HTMLElement).dataset.editOfficial!;
       navigate('admin-create/' + id);
+    });
+  });
+
+  // Preview button
+  document.querySelectorAll('[data-preview-story]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const storyId = (btn as HTMLElement).dataset.previewStory;
+      if (storyId) navigate('story/' + storyId);
     });
   });
 
