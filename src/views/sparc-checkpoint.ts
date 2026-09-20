@@ -1,248 +1,450 @@
-import { navigate } from '../router.ts';
+import { navigate, getCurrentRoute } from '../router.ts';
 import { supabase } from '../lib/supabase.ts';
 import { getUserId } from '../lib/auth.ts';
+import { 
+  getSquadSession, 
+  getSparcResponses, 
+  submitSparcResponse, 
+  markSparcCompleted, 
+  checkAllSparcCompleted, 
+  getSquadMembers 
+} from '../lib/db.ts';
+import { tryAdvanceSquad } from '../lib/squad-engine.ts';
+import { uploadMedia } from '../lib/storage.ts';
+import { MONSTER_AVATARS } from '../data/avatars.ts';
+import { type SparcPost, type SquadMemberState, type SquadSession } from '../types.ts';
 
-const SPARC_PROMPTS: Record<string, string> = {
-  reflection: 'Reflect on what you just read. What resonated with you?',
-  poem: 'Write a 6-word poem about what you just experienced.',
-  haiku: 'Express your thoughts as a haiku (5-7-5 syllables).',
-  voice: 'Record a voice memo sharing your reaction.',
-};
-
+// State
+let pollInterval: number;
 let currentSquadId = '';
-let currentChapterIndex = 0;
-let currentPromptType: 'reflection' | 'poem' | 'haiku' | 'voice' = 'reflection';
-let isRecording = false;
-let recognition: any = null;
+let currentStoryGroupId = '';
+let currentEpisodeNumber = 1;
+let currentSession: SquadSession | null = null;
+let attachments: { type: 'photo' | 'link'; url: string }[] = [];
+let hasSubmitted = false;
+let posts: SparcPost[] = [];
+let members: SquadMemberState[] = [];
 
-export function setSparcContext(squadId: string, chapterIndex: number, promptType: 'reflection' | 'poem' | 'haiku' | 'voice') {
-  currentSquadId = squadId;
-  currentChapterIndex = chapterIndex;
-  currentPromptType = promptType;
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function getTimeAgo(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHrs = Math.floor(diffMins / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  return `${diffDays}d ago`;
+}
+
+function renderFeed(posts: SparcPost[], members: SquadMemberState[]): string {
+  const postedUserIds = new Set(posts.map(p => p.userId));
+  
+  let html = '';
+  // Render actual posts
+  for (const post of posts) {
+    const avatar = MONSTER_AVATARS[post.avatarIndex % MONSTER_AVATARS.length] || MONSTER_AVATARS[0];
+    const timeAgo = getTimeAgo(post.createdAt);
+    html += `
+      <div class="sparc-feed__post">
+        <div class="sparc-feed__post-header">
+          <div class="sparc-feed__avatar">${avatar}</div>
+          <div class="sparc-feed__meta">
+            <span class="sparc-feed__username">${escapeHtml(post.username)}</span>
+            <span class="sparc-feed__time">${timeAgo}</span>
+          </div>
+          <span class="sparc-feed__badge">✅ Greenlit</span>
+        </div>
+        <div class="sparc-feed__content">${post.content}</div>
+        ${post.mediaUrls.length > 0 ? `
+          <div class="sparc-feed__media">
+            ${post.mediaUrls.map(url => `<img src="${url}" class="sparc-feed__media-img" alt="Attachment">`).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+  
+  // Render "hasn't replied" for missing members
+  for (const member of members) {
+    if (!postedUserIds.has(member.userId)) {
+      const avatar = MONSTER_AVATARS[member.avatarIndex % MONSTER_AVATARS.length] || MONSTER_AVATARS[0];
+      html += `
+        <div class="sparc-feed__post sparc-feed__post--pending">
+          <div class="sparc-feed__post-header">
+            <div class="sparc-feed__avatar" style="opacity:0.4;">${avatar}</div>
+            <span class="sparc-feed__username" style="opacity:0.6;">${escapeHtml(member.username)}</span>
+            <span class="sparc-feed__badge sparc-feed__badge--pending">⏳ Waiting</span>
+          </div>
+        </div>
+      `;
+    }
+  }
+  
+  return html || '<p style="text-align:center; color:var(--color-text-muted); padding:24px;">No responses yet. Be the first to reply!</p>';
+}
+
+function renderAttachments(): string {
+  if (attachments.length === 0) return '';
+  return attachments.map((att, i) => `
+    <div style="display:inline-block; position:relative; margin-right:8px; margin-top:8px;">
+      ${att.type === 'photo' 
+        ? `<img src="${att.url}" style="height:60px; border-radius:4px;">`
+        : `<a href="${att.url}" target="_blank" style="display:inline-block; padding:8px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:4px;">🔗 Link</a>`
+      }
+      <button class="remove-attachment-btn" data-index="${i}" style="position:absolute; top:-6px; right:-6px; background:red; color:white; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; font-size:12px;">×</button>
+    </div>
+  `).join('');
+}
+
+function updateProgressBar() {
+  const postedCount = new Set(posts.map(p => p.userId)).size;
+  const totalCount = members.length;
+  const progressEl = document.getElementById('sparc-progress-text');
+  const barEl = document.getElementById('sparc-progress-bar-fill');
+  if (progressEl) progressEl.textContent = `${postedCount}/${totalCount} members greenlit`;
+  if (barEl) {
+    const pct = totalCount > 0 ? (postedCount / totalCount) * 100 : 0;
+    barEl.style.width = `${pct}%`;
+  }
 }
 
 export function render(): string {
-  const prompt = SPARC_PROMPTS[currentPromptType] || SPARC_PROMPTS.reflection;
-
   return `
-    <div class="view-sparc-checkpoint fade-in" id="sparc-container" style="padding: var(--space-md); max-width: 430px; margin: 0 auto;">
-
-      <!-- SPARC Header -->
-      <div class="slide-up stagger-1" style="text-align: center; margin-bottom: var(--space-lg);">
-        <div style="
-          width: 56px; height: 56px; border-radius: 50%; margin: 0 auto var(--space-sm);
-          background: linear-gradient(135deg, var(--color-purple), var(--color-blue));
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 4px 16px rgba(139,92,246,0.3);
-        ">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
-            <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/>
-          </svg>
+    <div class="view-sparc-checkpoint fade-in">
+      <div class="sparc-timer" id="sparc-timer" style="display:none; padding: 12px; background: var(--color-purple); color: white; text-align: center; font-weight: bold;"></div>
+      
+      <div style="max-width: 600px; margin: 0 auto; padding: 24px;">
+        <div class="sparc-header" style="text-align:center; margin-bottom: 24px;">
+          <div style="font-size: 32px; margin-bottom: 8px;">🔥</div>
+          <h1 id="sparc-title">Episode Complete</h1>
         </div>
-        <span style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--color-purple); font-weight: 700;">SPARC Checkpoint</span>
-        <h1 style="font-family: var(--font-heading); font-size: 1.4rem; font-weight: 700; color: var(--color-text-primary); margin: 6px 0 0;">Chapter ${currentChapterIndex + 1} Complete</h1>
+
+        <div class="sparc-progress" style="margin-bottom: 24px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span id="sparc-progress-text" style="font-weight:bold;">0/0 members greenlit</span>
+          </div>
+          <div style="height:8px; background:var(--color-border); border-radius:4px; overflow:hidden;">
+            <div id="sparc-progress-bar-fill" style="height:100%; width:0%; background:var(--color-purple); transition:width 0.3s ease;"></div>
+          </div>
+        </div>
+
+        <div class="sparc-prompt-card" id="sparc-prompt-card" style="background:var(--color-surface); padding:16px; border-radius:8px; border:1px solid var(--color-border); margin-bottom:24px;">
+          <p id="sparc-prompt-text">Loading challenge...</p>
+          <div id="sparc-prompt-media"></div>
+        </div>
+
+        <div style="text-align:center; margin-bottom: 24px;">
+          <button id="btn-toggle-composer" class="btn btn--primary">Reply to String</button>
+        </div>
+
+        <div class="sparc-composer" id="sparc-composer" style="display:none; background:var(--color-surface); padding:16px; border-radius:8px; border:1px solid var(--color-border); margin-bottom:24px;">
+          <div class="sparc-composer__toolbar" style="margin-bottom:8px; display:flex; gap:8px;">
+            <button class="format-btn" data-cmd="bold"><b>B</b></button>
+            <button class="format-btn" data-cmd="italic"><i>I</i></button>
+            <button class="format-btn" data-cmd="underline"><u>U</u></button>
+            <button class="format-btn" data-cmd="createLink">🔗</button>
+          </div>
+          
+          <div class="sparc-composer__editor" id="sparc-editor" contenteditable="true" style="min-height:100px; border:1px solid var(--color-border); padding:8px; border-radius:4px; margin-bottom:12px; background:var(--color-bg);"></div>
+          
+          <div class="sparc-composer__attachments" id="sparc-attachments-container" style="margin-bottom:12px;"></div>
+
+          <div style="display:flex; gap:12px; margin-bottom:12px;">
+            <button id="btn-attach-photo" class="btn btn--secondary" style="font-size:12px;">+ Photo</button>
+            <button id="btn-attach-link" class="btn btn--secondary" style="font-size:12px;">+ Link</button>
+            <input type="file" id="sparc-file-input" accept="image/*" hidden>
+          </div>
+
+          <button id="btn-submit-post" class="btn btn--primary" style="width:100%;">Submit</button>
+        </div>
+
+        <div class="sparc-feed" id="sparc-feed" style="margin-bottom:24px;"></div>
+
+        <button id="btn-next-episode" class="sparc-advance-btn btn btn--primary" style="width:100%; margin-top:24px;" disabled>Next Episode</button>
       </div>
-
-      <!-- Prompt Card -->
-      <div class="slide-up stagger-2" style="
-        background: var(--color-surface); border: 1.5px solid var(--color-border);
-        border-radius: var(--radius-xl); padding: var(--space-lg); box-shadow: var(--shadow-md);
-        margin-bottom: var(--space-md);
-      ">
-        <div style="
-          background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(59,130,246,0.05));
-          border-radius: var(--radius-lg); padding: var(--space-md);
-          margin-bottom: var(--space-md); border-left: 3px solid var(--color-purple);
-        ">
-          <p style="font-family: var(--font-body); font-size: 0.95rem; font-style: italic; color: var(--color-text-primary); margin: 0; line-height: 1.5;">
-            "${prompt}"
-          </p>
-        </div>
-
-        <!-- Response Textarea -->
-        <textarea id="sparc-response" rows="6" placeholder="Type your response here..." style="
-          width: 100%; border: 1px solid var(--color-border); border-radius: var(--radius-md);
-          padding: var(--space-sm) var(--space-md); font-family: var(--font-body); font-size: 0.92rem;
-          background: var(--color-eggshell); color: var(--color-text-primary); outline: none; resize: none;
-          line-height: 1.5;
-        "></textarea>
-
-        <!-- Action Row -->
-        <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-md);">
-          <!-- Voice Button -->
-          <button id="sparc-mic-btn" style="
-            width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--color-border);
-            background: var(--color-eggshell); cursor: pointer; display: flex; align-items: center; justify-content: center;
-            transition: all 0.2s ease; flex-shrink: 0;
-          " title="Voice-to-text">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-          </button>
-
-          <!-- Image Upload -->
-          <button id="sparc-upload-btn" style="
-            width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--color-border);
-            background: var(--color-eggshell); cursor: pointer; display: flex; align-items: center; justify-content: center;
-            transition: all 0.2s ease; flex-shrink: 0;
-          " title="Upload media">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-              <circle cx="8.5" cy="8.5" r="1.5"/>
-              <polyline points="21 15 16 10 5 21"/>
-            </svg>
-          </button>
-          <input type="file" id="sparc-file-input" accept="image/*" hidden>
-
-          <!-- Spacer -->
-          <div style="flex: 1;"></div>
-
-          <div id="sparc-status" style="font-size: 0.78rem; color: var(--color-text-muted); align-self: center;"></div>
-        </div>
-
-        <!-- Media Preview -->
-        <div id="sparc-media-preview" style="display: none; margin-top: var(--space-md); position: relative;">
-          <img id="sparc-media-img" style="width: 100%; border-radius: var(--radius-md); object-fit: cover; max-height: 200px;" alt="Uploaded media">
-          <button id="sparc-remove-media" style="
-            position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
-            border-radius: 50%; background: rgba(0,0,0,0.5); border: none; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-          ">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Submit Button -->
-      <div class="slide-up stagger-3">
-        <button id="sparc-submit-btn" class="btn btn--primary" style="
-          width: 100%; padding: var(--space-md); font-size: 1rem; font-weight: 700;
-        ">
-          Submit & Continue →
-        </button>
-      </div>
-
     </div>
   `;
 }
 
-let uploadedMediaUrl: string | null = null;
+export async function init(): Promise<void> {
+  const routeParts = getCurrentRoute().split('/');
+  // route format: sparc/{squadId}/{storyGroupId}/{episodeNumber}
+  currentSquadId = routeParts[1] || '';
+  currentStoryGroupId = routeParts[2] || '';
+  currentEpisodeNumber = parseInt(routeParts[3] || '1', 10);
+  attachments = [];
+  hasSubmitted = false;
 
-export function init(): void {
-  const textarea = document.getElementById('sparc-response') as HTMLTextAreaElement;
+  const titleEl = document.getElementById('sparc-title');
+  if (titleEl) titleEl.textContent = `Episode ${currentEpisodeNumber} Complete`;
 
-  // Voice-to-text
-  const micBtn = document.getElementById('sparc-mic-btn');
-  const statusEl = document.getElementById('sparc-status');
-  if (micBtn) {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      micBtn.addEventListener('click', () => {
-        if (isRecording && recognition) {
-          recognition.stop();
-          isRecording = false;
-          micBtn.style.background = 'var(--color-eggshell)';
-          micBtn.style.borderColor = 'var(--color-border)';
-          if (statusEl) statusEl.textContent = '';
-          return;
-        }
+  // Fetch data
+  try {
+    const [promptRes, sessionData, membersData, postsData] = await Promise.all([
+      supabase.from('official_stories').select('sparc_prompt').eq('story_group_id', currentStoryGroupId).eq('episode_number', currentEpisodeNumber).single(),
+      getSquadSession(currentSquadId),
+      getSquadMembers(currentSquadId),
+      getSparcResponses(currentSquadId, currentStoryGroupId, currentEpisodeNumber)
+    ]);
 
-        recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
+    currentSession = sessionData;
+    members = membersData || [];
+    posts = postsData || [];
 
-        recognition.onresult = (event: any) => {
-          let transcript = '';
-          for (let i = 0; i < event.results.length; i++) {
-            transcript += event.results[i][0].transcript;
-          }
-          if (textarea) textarea.value = transcript;
-        };
-
-        recognition.onend = () => {
-          isRecording = false;
-          micBtn.style.background = 'var(--color-eggshell)';
-          micBtn.style.borderColor = 'var(--color-border)';
-          if (statusEl) statusEl.textContent = '';
-        };
-
-        recognition.start();
-        isRecording = true;
-        micBtn.style.background = 'rgba(239,68,68,0.1)';
-        micBtn.style.borderColor = 'var(--color-red)';
-        if (statusEl) statusEl.textContent = '🔴 Listening...';
-      });
+    // Render prompt
+    const promptTextEl = document.getElementById('sparc-prompt-text');
+    const promptMediaEl = document.getElementById('sparc-prompt-media');
+    if (promptRes.data?.sparc_prompt) {
+      if (promptTextEl) promptTextEl.textContent = promptRes.data.sparc_prompt.text || 'Reflect on what you just read.';
+      if (promptMediaEl && promptRes.data.sparc_prompt.mediaUrls?.length) {
+        promptMediaEl.innerHTML = promptRes.data.sparc_prompt.mediaUrls.map((url: string) => `<img src="${url}" style="max-width:100%; border-radius:4px; margin-top:8px;">`).join('');
+      }
     } else {
-      micBtn.style.opacity = '0.3';
-      micBtn.style.cursor = 'not-allowed';
-      micBtn.title = 'Voice input not supported in this browser';
+      if (promptTextEl) promptTextEl.textContent = 'Reflect on what you just read.';
     }
+
+    // Check if current user already submitted
+    const userId = getUserId();
+    hasSubmitted = posts.some(p => p.userId === userId);
+    
+    if (hasSubmitted) {
+      const btnToggle = document.getElementById('btn-toggle-composer');
+      if (btnToggle) btnToggle.style.display = 'none';
+    }
+
+    refreshFeedUI();
+
+    // 48h Timer setup
+    if (currentSession?.episodeStartedAt) {
+      const timerEl = document.getElementById('sparc-timer');
+      if (timerEl) {
+        timerEl.style.display = 'block';
+        updateTimer(currentSession.episodeStartedAt, timerEl);
+        const timerInterval = setInterval(() => {
+          updateTimer(currentSession!.episodeStartedAt, timerEl);
+        }, 60000); // update every minute
+        window.addEventListener('hashchange', () => clearInterval(timerInterval), { once: true });
+      }
+    }
+
+    // Polling setup
+    pollInterval = window.setInterval(async () => {
+      try {
+        const newPosts = await getSparcResponses(currentSquadId, currentStoryGroupId, currentEpisodeNumber);
+        if (newPosts.length !== posts.length) {
+          posts = newPosts;
+          refreshFeedUI();
+        }
+      } catch (err) {
+        console.error('Polling error', err);
+      }
+    }, 10000);
+    window.addEventListener('hashchange', () => clearInterval(pollInterval), { once: true });
+
+  } catch (err) {
+    console.error('Error initializing SPARC checkpoint:', err);
   }
 
-  // Image Upload
-  const uploadBtn = document.getElementById('sparc-upload-btn');
+  setupEventListeners();
+}
+
+function updateTimer(startedAt: string, el: HTMLElement) {
+  const start = new Date(startedAt).getTime();
+  const end = start + (48 * 60 * 60 * 1000);
+  const now = Date.now();
+  const left = end - now;
+  
+  if (left <= 0) {
+    el.textContent = 'Time is up! The story must move forward.';
+  } else {
+    const hrs = Math.floor(left / (1000 * 60 * 60));
+    const mins = Math.floor((left % (1000 * 60 * 60)) / (1000 * 60));
+    el.textContent = `${hrs}h ${mins}m remaining to greenlight`;
+  }
+}
+
+function refreshFeedUI() {
+  const feedEl = document.getElementById('sparc-feed');
+  if (feedEl) {
+    feedEl.innerHTML = renderFeed(posts, members);
+  }
+  updateProgressBar();
+  
+  const postedCount = new Set(posts.map(p => p.userId)).size;
+  const allGreenlit = postedCount === members.length && members.length > 0;
+  
+  const nextBtn = document.getElementById('btn-next-episode') as HTMLButtonElement;
+  if (nextBtn) {
+    nextBtn.disabled = !allGreenlit;
+  }
+}
+
+function setupEventListeners() {
+  const btnToggle = document.getElementById('btn-toggle-composer');
+  const composer = document.getElementById('sparc-composer');
   const fileInput = document.getElementById('sparc-file-input') as HTMLInputElement;
-  const mediaPreview = document.getElementById('sparc-media-preview');
-  const mediaImg = document.getElementById('sparc-media-img') as HTMLImageElement;
 
-  uploadBtn?.addEventListener('click', () => fileInput?.click());
+  btnToggle?.addEventListener('click', () => {
+    if (composer) {
+      composer.style.display = composer.style.display === 'none' ? 'block' : 'none';
+    }
+  });
 
-  fileInput?.addEventListener('change', () => {
+  document.querySelectorAll('.format-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const cmd = (e.currentTarget as HTMLButtonElement).dataset.cmd;
+      if (cmd === 'createLink') {
+        const url = prompt('Enter link URL:');
+        if (url) document.execCommand(cmd, false, url);
+      } else if (cmd) {
+        document.execCommand(cmd, false);
+      }
+      document.getElementById('sparc-editor')?.focus();
+    });
+  });
+
+  document.getElementById('btn-attach-photo')?.addEventListener('click', () => {
+    fileInput?.click();
+  });
+
+  fileInput?.addEventListener('change', async () => {
     const file = fileInput.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      uploadedMediaUrl = e.target?.result as string;
-      if (mediaImg) mediaImg.src = uploadedMediaUrl;
-      if (mediaPreview) mediaPreview.style.display = 'block';
-    };
-    reader.readAsDataURL(file);
+    
+    // show loading state on button
+    const btn = document.getElementById('btn-attach-photo') as HTMLButtonElement;
+    if (btn) btn.textContent = 'Uploading...';
+    
+    try {
+      const res = await uploadMedia(file, 'sparc');
+      const url = res.url;
+      attachments.push({ type: 'photo', url });
+      renderAttachmentsUI();
+    } catch (err) {
+      console.error('Upload error', err);
+      alert('Failed to upload image');
+    } finally {
+      if (btn) btn.textContent = '+ Photo';
+      fileInput.value = '';
+    }
   });
 
-  document.getElementById('sparc-remove-media')?.addEventListener('click', () => {
-    uploadedMediaUrl = null;
-    if (mediaPreview) mediaPreview.style.display = 'none';
+  document.getElementById('btn-attach-link')?.addEventListener('click', () => {
+    const url = prompt('Enter URL to attach:');
+    if (url) {
+      attachments.push({ type: 'link', url });
+      renderAttachmentsUI();
+    }
   });
 
-  // Submit
-  const submitBtn = document.getElementById('sparc-submit-btn');
-  submitBtn?.addEventListener('click', async () => {
-    const content = textarea?.value?.trim() || '';
-    if (!content && !uploadedMediaUrl) {
-      alert('Please share your response before continuing.');
+  document.getElementById('sparc-attachments-container')?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('remove-attachment-btn')) {
+      const index = parseInt(target.dataset.index || '0', 10);
+      attachments.splice(index, 1);
+      renderAttachmentsUI();
+    }
+  });
+
+  document.getElementById('btn-submit-post')?.addEventListener('click', async () => {
+    const editor = document.getElementById('sparc-editor');
+    const content = editor?.innerHTML.trim();
+    if (!content && attachments.length === 0) {
+      alert('Please write something or attach media.');
       return;
     }
 
-    submitBtn.textContent = 'Saving...';
-    (submitBtn as HTMLButtonElement).disabled = true;
+    const userId = getUserId();
+    if (!userId || !currentSquadId) return;
+
+    const btn = document.getElementById('btn-submit-post') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
 
     try {
-      const userId = getUserId();
-      if (userId && currentSquadId) {
-        await supabase.from('sparc_responses').insert({
-          squad_id: currentSquadId,
-          user_id: userId,
-          chapter_index: currentChapterIndex,
-          prompt_type: currentPromptType,
-          content,
-          media_url: uploadedMediaUrl,
-        });
+      const mediaUrls = attachments.map(a => a.url);
+      await submitSparcResponse({
+        squadId: currentSquadId,
+        storyGroupId: currentStoryGroupId,
+        episodeNumber: currentEpisodeNumber,
+        userId,
+        content: content || '',
+        mediaUrls
+      });
+      await markSparcCompleted(currentSquadId, userId, currentEpisodeNumber);
+      
+      hasSubmitted = true;
+      if (composer) composer.style.display = 'none';
+      if (btnToggle) btnToggle.style.display = 'none';
+      
+      // manual refresh
+      posts = await getSparcResponses(currentSquadId, currentStoryGroupId, currentEpisodeNumber);
+      refreshFeedUI();
+    } catch (err) {
+      console.error('Error submitting SPARC:', err);
+      alert('Failed to submit. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+    }
+  });
+
+  document.getElementById('btn-next-episode')?.addEventListener('click', async () => {
+    if (!currentSession) return;
+    const btn = document.getElementById('btn-next-episode') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = 'Advancing...';
+
+    try {
+      const result = await tryAdvanceSquad(currentSession.id, currentSquadId, currentEpisodeNumber);
+      if (result.completed) {
+        alert('Story Complete! Returning to library.');
+        navigate('library');
+      } else if (result.advanced && result.nextEpisode) {
+        // Find next episode's story ID
+        const { data, error } = await supabase
+          .from('official_stories')
+          .select('id')
+          .eq('story_group_id', currentStoryGroupId)
+          .eq('episode_number', result.nextEpisode)
+          .single();
+          
+        if (data && !error) {
+          navigate(`story/${data.id}`);
+        } else {
+          console.error('Could not find next episode story ID', error);
+          navigate('library');
+        }
+      } else {
+        alert('Could not advance. Make sure all members have submitted.');
+        btn.disabled = false;
+        btn.textContent = 'Next Episode';
       }
     } catch (err) {
-      console.error('Error saving SPARC response:', err);
+      console.error('Advance error:', err);
+      alert('Error advancing episode');
+      btn.disabled = false;
+      btn.textContent = 'Next Episode';
     }
-
-    // Reset
-    uploadedMediaUrl = null;
-    if (recognition) { recognition.stop(); recognition = null; }
-    isRecording = false;
-
-    // Navigate to next chapter or back to story
-    navigate('explore');
   });
+}
+
+function renderAttachmentsUI() {
+  const container = document.getElementById('sparc-attachments-container');
+  if (container) {
+    container.innerHTML = renderAttachments();
+  }
 }

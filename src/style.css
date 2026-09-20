@@ -13243,3 +13243,355 @@ body.content-management-mode .story-card:hover {
     padding: 10px 12px;
   }
 }
+/* ---------------------------------------
+   PHASE 4 — Reader Timer Banner
+   --------------------------------------- */
+
+.reader__timer-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(59,130,246,0.10));
+  border-bottom: 1px solid rgba(139,92,246,0.2);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-purple);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.reader__timer-icon { font-size: 1rem; }
+
+/* ---------------------------------------
+   PHASE 5 — SPARC Checkpoint Social Feed
+   --------------------------------------- */
+
+.sparc-timer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(59,130,246,0.08));
+  border-radius: var(--radius-lg);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-purple);
+  margin-bottom: var(--space-md);
+}
+
+.sparc-header {
+  text-align: center;
+  margin-bottom: var(--space-lg);
+}
+
+.sparc-header__icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  margin: 0 auto var(--space-sm);
+  background: linear-gradient(135deg, var(--color-purple), var(--color-blue));
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(139,92,246,0.3);
+}
+
+.sparc-header__label {
+  font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 1.5px; color: var(--color-purple);
+  font-weight: 700;
+}
+
+.sparc-header__title {
+  font-family: var(--font-heading);
+  font-size: 1.4rem; font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 6px 0 0;
+}
+
+.sparc-progress {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-md);
+}
+
+.sparc-progress__bar {
+  flex: 1; height: 6px;
+  background: var(--color-border);
+  border-radius: 3px; overflow: hidden;
+}
+
+.sparc-progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-purple), #10b981);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.sparc-progress__text {
+  font-size: 0.78rem; font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.sparc-prompt-card {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-md);
+  margin-bottom: var(--space-md);
+}
+
+.sparc-prompt-card__text {
+  background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(59,130,246,0.05));
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  border-left: 3px solid var(--color-purple);
+  font-family: var(--font-body);
+  font-size: 0.95rem; font-style: italic;
+  color: var(--color-text-primary);
+  line-height: 1.6; margin: 0;
+}
+
+.sparc-prompt-card__media {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: var(--space-md);
+}
+
+.sparc-prompt-card__media img,
+.sparc-prompt-card__media video {
+  max-width: 200px; max-height: 140px;
+  border-radius: var(--radius-md);
+  object-fit: cover; cursor: pointer;
+}
+
+/* Reply to String button */
+.sparc-reply-btn {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; width: 100%;
+  padding: 14px; border: 2px dashed rgba(139,92,246,0.4);
+  border-radius: var(--radius-lg);
+  background: rgba(139,92,246,0.06);
+  color: var(--color-purple);
+  font-size: 0.95rem; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+  margin-bottom: var(--space-md);
+}
+
+.sparc-reply-btn:hover {
+  background: rgba(139,92,246,0.12);
+  border-color: var(--color-purple);
+}
+
+/* Composer */
+.sparc-composer {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  margin-bottom: var(--space-md);
+  transition: all 0.3s ease;
+}
+
+.sparc-composer--collapsed { display: none; }
+
+.sparc-composer__toolbar {
+  display: flex; gap: 4px; padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(0,0,0,0.02);
+}
+
+.sparc-composer__toolbar button {
+  width: 36px; height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-eggshell);
+  cursor: pointer; font-size: 0.85rem;
+  font-weight: 700; color: var(--color-text-primary);
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+
+.sparc-composer__toolbar button:hover {
+  background: var(--color-purple);
+  color: white; border-color: var(--color-purple);
+}
+
+.sparc-composer__editor {
+  min-height: 120px; max-height: 300px;
+  padding: var(--space-md);
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--color-text-primary);
+  line-height: 1.6; outline: none;
+  overflow-y: auto;
+}
+
+.sparc-composer__editor:empty::before {
+  content: 'Share your thoughts with your squad...';
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.sparc-composer__attachments {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.sparc-composer__attach-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-eggshell);
+  cursor: pointer; font-size: 0.78rem;
+  font-weight: 600; color: var(--color-text-secondary);
+  transition: all 0.15s;
+}
+
+.sparc-composer__attach-btn:hover {
+  background: var(--color-purple);
+  color: white; border-color: var(--color-purple);
+}
+
+.sparc-composer__previews {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px;
+}
+
+.sparc-composer__preview {
+  position: relative; width: 80px; height: 60px;
+  border-radius: var(--radius-md); overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.sparc-composer__preview img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+
+.sparc-composer__preview-remove {
+  position: absolute; top: 2px; right: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); border: none;
+  color: white; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem;
+}
+
+.sparc-composer__submit {
+  display: flex; justify-content: flex-end;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.sparc-composer__submit-btn {
+  padding: 10px 28px;
+  background: linear-gradient(135deg, var(--color-purple), var(--color-blue));
+  color: white; border: none;
+  border-radius: var(--radius-lg);
+  font-size: 0.9rem; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+}
+
+.sparc-composer__submit-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.sparc-composer__submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* Feed */
+.sparc-feed { margin-bottom: var(--space-lg); }
+
+.sparc-feed__title {
+  font-size: 0.75rem; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--color-text-muted);
+  font-weight: 700; margin-bottom: var(--space-sm);
+  padding-left: 4px;
+}
+
+.sparc-feed__post {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.sparc-feed__post--pending {
+  opacity: 0.5; border-style: dashed;
+}
+
+.sparc-feed__post-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+
+.sparc-feed__avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--color-eggshell);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; overflow: hidden;
+}
+
+.sparc-feed__avatar svg { width: 28px; height: 28px; }
+
+.sparc-feed__meta {
+  flex: 1; display: flex; flex-direction: column;
+}
+
+.sparc-feed__username {
+  font-size: 0.88rem; font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.sparc-feed__time {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.sparc-feed__badge {
+  font-size: 0.72rem; font-weight: 700;
+  color: #10b981; white-space: nowrap;
+}
+
+.sparc-feed__badge--pending {
+  color: var(--color-text-muted);
+}
+
+.sparc-feed__content {
+  font-size: 0.92rem; line-height: 1.6;
+  color: var(--color-text-primary);
+  word-wrap: break-word;
+}
+
+.sparc-feed__media {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.sparc-feed__media-img {
+  max-width: 200px; max-height: 140px;
+  border-radius: var(--radius-md);
+  object-fit: cover; cursor: pointer;
+}
+
+/* Advance button */
+.sparc-advance-btn {
+  width: 100%; padding: 16px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white; border: none;
+  border-radius: var(--radius-lg);
+  font-size: 1rem; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+  margin-top: var(--space-md);
+}
+
+.sparc-advance-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.sparc-advance-btn:disabled {
+  background: var(--color-border);
+  color: var(--color-text-muted);
+  cursor: not-allowed; transform: none;
+}

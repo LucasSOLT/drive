@@ -75,7 +75,7 @@ export function openSquadGateModal(options: SquadGateOptions): void {
       <div class="squad-gate-hero">
         <h2 class="squad-gate-title">Journey with a Squad</h2>
         <p class="squad-gate-subtitle">
-          You've completed <strong>${options.storyTitle} • Ep. 1</strong>. To unlock Episode 2 and continue your journey, form or join a Squad of <strong>3 to 5 players</strong>.
+          You've completed <strong>${options.storyTitle} • Ep. ${options.episodeNumber || 1}</strong>. To unlock Episode ${(options.episodeNumber || 1) + 1} and continue your journey, form or join a Squad of <strong>3 to 5 players</strong>.
         </p>
       </div>
 
@@ -100,7 +100,7 @@ export function openSquadGateModal(options: SquadGateOptions): void {
       <div class="squad-gate-footer">
         <button class="squad-gate-btn-secondary" id="sg-btn-replay">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-          Replay Ep. 1
+          Replay Ep. ${options.episodeNumber || 1}
         </button>
         <button class="squad-gate-btn-secondary" id="sg-btn-catalog">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>

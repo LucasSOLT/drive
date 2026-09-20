@@ -1973,6 +1973,32 @@ export async function hasUserCompletedSparc(
   return completed.includes(episodeNumber);
 }
 
+/** Fetch a specific episode from a story group */
+export async function fetchStoryByGroupAndEpisode(
+  storyGroupId: string,
+  episodeNumber: number
+): Promise<{ id: string; sparcPrompt?: { text: string; mediaUrls?: string[] } } | null> {
+  const { data, error } = await supabase
+    .from('official_stories')
+    .select('id, sparc_prompt')
+    .eq('story_group_id', storyGroupId)
+    .eq('episode_number', episodeNumber)
+    .single();
+
+  if (error) {
+    console.warn('[DB] Error fetching story by group/episode:', error);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    sparcPrompt: data.sparc_prompt ? {
+      text: data.sparc_prompt.text || '',
+      mediaUrls: data.sparc_prompt.mediaUrls || data.sparc_prompt.media_urls || [],
+    } : undefined,
+  };
+}
+
 // ═══════════════════════════════════════════════════════════
 // Content Slot Overrides (Cloud-synced Homepage / Feed Curation)
 // ═══════════════════════════════════════════════════════════

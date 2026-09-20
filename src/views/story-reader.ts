@@ -10,7 +10,9 @@ import {
 import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
-
+import { getSoloEpisodeCount, getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
+import { getSquadSession } from '../lib/db.ts';
+import { type SquadSession } from '../types.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -29,16 +31,17 @@ function formatCount(n: number): string {
   return String(n);
 }
 
-
-function renderEpisode1InfoPage(format: 'book' | 'scroll'): string {
+function renderGateInfoPage(format: 'book' | 'scroll', soloEpCount: number): string {
   const btnId = format === 'book' ? 'btn-book-lets-begin' : 'btn-waterfall-lets-begin';
+  const episodeText = soloEpCount === 1 ? 'Episode 1' : `Episodes 1–${soloEpCount}`;
+  const nextEpText = soloEpCount === 1 ? 'Episode 2' : `Episode ${soloEpCount + 1}`;
   return `
     <div class="reader__info-page reader__info-page--${format}">
       <div class="reader__info-glow"></div>
       
       <div class="reader__info-badge">
         <span class="squad-gate-badge-dot"></span>
-        <span>EPISODE 1 COMPLETE · SQUAD GATE</span>
+        <span>${episodeText.toUpperCase()} COMPLETE · SQUAD GATE</span>
       </div>
 
       <h2 class="reader__info-title">Nobody Plays Alone on DRiVE</h2>
@@ -51,15 +54,15 @@ function renderEpisode1InfoPage(format: 'book' | 'scroll'): string {
         <div class="reader__info-pillar">
           <div class="reader__info-pillar-icon">✨</div>
           <div class="reader__info-pillar-text">
-            <strong>Episode 1 is Free & Solo</strong>
-            <span>All first episodes are 100% free and accessible solo to experience the hook.</span>
+            <strong>${episodeText} ${soloEpCount === 1 ? 'is' : 'are'} Free & Solo</strong>
+            <span>All first ${soloEpCount === 1 ? 'episodes are' : soloEpCount + ' episodes are'} 100% free and accessible solo to experience the hook.</span>
           </div>
         </div>
 
         <div class="reader__info-pillar">
           <div class="reader__info-pillar-icon">👥</div>
           <div class="reader__info-pillar-text">
-            <strong>Episodes 2+ Require a Squad of 3 to 5</strong>
+            <strong>${nextEpText}+ Requires a Squad of 3 to 5</strong>
             <span>To continue the journey, assemble your friends or match globally with fellow adventurers.</span>
           </div>
         </div>
@@ -79,6 +82,43 @@ function renderEpisode1InfoPage(format: 'book' | 'scroll'): string {
 
       <button class="reader__info-btn" id="${btnId}">
         <span>Let's Begin</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+      </button>
+    </div>
+  `;
+}
+
+function renderSparcTransitionCard(format: 'book' | 'scroll'): string {
+  const btnId = format === 'book' ? 'btn-book-sparc-transition' : 'btn-waterfall-sparc-transition';
+  return `
+    <div class="reader__info-page reader__info-page--${format}">
+      <div class="reader__info-glow"></div>
+      
+      <div class="reader__info-badge">
+        <span class="squad-gate-badge-dot" style="background:var(--color-purple);"></span>
+        <span>EPISODE COMPLETE</span>
+      </div>
+
+      <h2 class="reader__info-title">⚡ SPARC Checkpoint</h2>
+      
+      <p class="reader__info-lead">
+        You've finished reading this episode! Now it's time to share your thoughts with your squad.
+      </p>
+
+      <div class="reader__info-card" style="text-align:center; padding:24px;">
+        <div style="font-size:2.5rem; margin-bottom:12px;">💬</div>
+        <p style="font-size:0.95rem; color:var(--color-text-primary); line-height:1.6; margin:0;">
+          Answer the challenge prompt, share your perspective, and see what your squad members think.
+          <br><br>
+          <strong>Everyone must reply</strong> before the squad advances to the next episode.
+        </p>
+      </div>
+
+      <button class="reader__info-btn" id="${btnId}" style="background:linear-gradient(135deg, var(--color-purple), var(--color-blue));">
+        <span>Open SPARC Checkpoint</span>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="5" y1="12" x2="19" y2="12"></line>
           <polyline points="12 5 19 12 12 19"></polyline>
@@ -143,8 +183,8 @@ export function render(): string {
           </div>
         `;}).join('')}
 
-        <!-- Waterfall Episode 1 Informational Page -->
-        ${(!story.episodeNumber || story.episodeNumber === 1) ? renderEpisode1InfoPage('scroll') : ''}
+        <!-- Gate/SPARC end card inserted dynamically in init() -->
+        <div id="scroll-end-card"></div>
       </div>
     `;
   } else if (story.format === 'book') {
@@ -192,7 +232,7 @@ export function render(): string {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <div class="reader__page-dots" id="book-dots">
-            ${Array.from({ length: (!story.episodeNumber || story.episodeNumber === 1) ? story.panels.length + 1 : story.panels.length }).map((_, i) => `<span class="reader__dot ${i === 0 ? 'active' : ''} ${i >= story.panels.length ? 'reader__dot--info' : ''}" data-page="${i}" title="${i >= story.panels.length ? 'Squad Info' : 'Page ' + (i + 1)}"></span>`).join('')}
+            ${Array.from({ length: story.panels.length + 1 }).map((_, i) => `<span class="reader__dot ${i === 0 ? 'active' : ''} ${i >= story.panels.length ? 'reader__dot--info' : ''}" data-page="${i}" title="${i >= story.panels.length ? 'End' : 'Page ' + (i + 1)}"></span>`).join('')}
           </div>
           <button class="reader__page-btn" id="book-next" aria-label="Next page">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -208,6 +248,12 @@ export function render(): string {
       <!-- Progress bar -->
       <div class="reader__progress-track">
         <div class="reader__progress-bar" id="reader-progress"></div>
+      </div>
+
+      <!-- 48h Squad Timer Banner -->
+      <div class="reader__timer-banner" id="reader-timer-banner" style="display:none;">
+        <span class="reader__timer-icon">⏱️</span>
+        <span class="reader__timer-text" id="reader-timer-text"></span>
       </div>
 
       <!-- Floating action header -->
@@ -298,6 +344,44 @@ export function init(): void {
     genre: story.genre,
     episodeNumber: story.episodeNumber || 1,
   });
+
+  // ─── Dynamic Squad Gate & Timer ───
+  const episodeNumber = story.episodeNumber || 1;
+  const storyGroupId = story.storyGroupId || story.id;
+  let soloEpCount: number = story.soloEpisodeCount || 1;
+  const isPostGateEpisode = episodeNumber > soloEpCount;
+  const isGateEpisode = episodeNumber === soloEpCount;
+  const showEndCard = isGateEpisode || isPostGateEpisode;
+
+  // Fetch soloEpisodeCount from DB for accuracy (async, won't block render)
+  getSoloEpisodeCount(storyGroupId).then(count => {
+    soloEpCount = count;
+  }).catch(() => {});
+
+  // 48h Timer for post-gate episodes
+  let activeSession: SquadSession | null = null;
+  const squadId = localStorage.getItem('drive_active_squad_id') || '';
+  if (isPostGateEpisode && squadId) {
+    getSquadSession(squadId).then(session => {
+      activeSession = session;
+      if (session) {
+        const timerBanner = document.getElementById('reader-timer-banner');
+        const timerText = document.getElementById('reader-timer-text');
+        if (timerBanner && timerText) {
+          timerBanner.style.display = 'flex';
+          const updateTimer = () => {
+            const remaining = getEpisodeTimeRemaining(session);
+            timerText.textContent = `${formatTimeRemaining(remaining)} remaining · Episode ${episodeNumber}`;
+            if (remaining <= 0) timerText.textContent = 'Time expired · Episode ' + episodeNumber;
+          };
+          updateTimer();
+          const timerInterval = setInterval(updateTimer, 60000);
+          // Cleanup on navigation
+          window.addEventListener('hashchange', () => clearInterval(timerInterval), { once: true });
+        }
+      }
+    }).catch(() => {});
+  }
 
   // Ensure video playback for initial page video or scroll videos
   const initialBookVideo = document.getElementById('book-video') as HTMLVideoElement | null;
@@ -479,39 +563,46 @@ export function init(): void {
   if (story.format === 'book') {
     var currentPage = 0;
     let scriptVisible = false;
-    const isEpisode1 = !story.episodeNumber || story.episodeNumber === 1;
-    const totalPages = isEpisode1 ? story.panels.length + 1 : story.panels.length;
+    const totalPages = showEndCard ? story.panels.length + 1 : story.panels.length;
     const pageContainer = document.getElementById('book-page');
     const dotsContainer = document.getElementById('book-dots');
     let scriptContainer = document.getElementById('book-script');
 
     const updatePage = () => {
       const toggleBtn = document.getElementById('reader-text-toggle');
-      const isInfoPage = isEpisode1 && currentPage === story.panels.length;
+      const isInfoPage = showEndCard && currentPage === story.panels.length;
 
       if (pageContainer) {
         if (isInfoPage) {
-          // Render full Informational Page on the last slide of Episode 1
-          pageContainer.innerHTML = renderEpisode1InfoPage('book');
-          // Hide text toggle button and script container
           if (toggleBtn) toggleBtn.style.display = 'none';
           if (scriptContainer) scriptContainer.style.display = 'none';
 
-          // Attach listener to "Let's Begin" button
-          document.getElementById('btn-book-lets-begin')?.addEventListener('click', () => {
-            stopSpeaking();
-            openSquadGateModal({
-              storyId: story.id,
-              storyTitle: story.title,
-              storyCoverImage: story.coverImage,
-              episodeNumber: story.episodeNumber || 1,
-              onReplay: () => {
-                currentPage = 0;
-                updatePage();
-                if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
-              },
+          if (isGateEpisode) {
+            // Squad Gate info page
+            pageContainer.innerHTML = renderGateInfoPage('book', soloEpCount);
+            document.getElementById('btn-book-lets-begin')?.addEventListener('click', () => {
+              stopSpeaking();
+              openSquadGateModal({
+                storyId: story.id,
+                storyTitle: story.title,
+                storyCoverImage: story.coverImage,
+                episodeNumber: episodeNumber,
+                onReplay: () => {
+                  currentPage = 0;
+                  updatePage();
+                  if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
+                },
+              });
             });
-          });
+          } else if (isPostGateEpisode) {
+            // SPARC transition page
+            pageContainer.innerHTML = renderSparcTransitionCard('book');
+            document.getElementById('btn-book-sparc-transition')?.addEventListener('click', () => {
+              stopBgm();
+              stopSpeaking();
+              navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
+            });
+          }
         } else {
           // Render regular book panel
           if (toggleBtn) toggleBtn.style.display = 'flex';
@@ -703,33 +794,25 @@ export function init(): void {
         updatePage();
         if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
       } else {
-        // Reached end of Illustrated Book (on info page) -> open Squad Gate
+        // Reached end — trigger appropriate action
         stopSpeaking();
-        openSquadGateModal({
-          storyId: story.id,
-          storyTitle: story.title,
-          storyCoverImage: story.coverImage,
-          episodeNumber: story.episodeNumber || 1,
-          onReplay: () => {
-            currentPage = 0;
-            updatePage();
-            if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
-          },
-        });
+        if (isGateEpisode) {
+          openSquadGateModal({
+            storyId: story.id,
+            storyTitle: story.title,
+            storyCoverImage: story.coverImage,
+            episodeNumber: episodeNumber,
+            onReplay: () => {
+              currentPage = 0;
+              updatePage();
+              if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
+            },
+          });
+        } else if (isPostGateEpisode) {
+          stopBgm();
+          navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
+        }
       }
-    });
-
-    // Waterfall squad gate button listener ("Let's Begin")
-    document.getElementById('btn-waterfall-lets-begin')?.addEventListener('click', () => {
-      openSquadGateModal({
-        storyId: story.id,
-        storyTitle: story.title,
-        storyCoverImage: story.coverImage,
-        episodeNumber: story.episodeNumber || 1,
-        onReplay: () => {
-          container.scrollTo({ top: 0, behavior: 'smooth' });
-        },
-      });
     });
 
     // Text toggle
@@ -808,6 +891,34 @@ export function init(): void {
       document.querySelectorAll('[data-panel-index]').forEach(panel => {
         observer.observe(panel);
       });
+    }
+  }
+
+  // ─── Dynamic End Card for Scroll Format ───
+  if (story.format === 'scroll') {
+    const scrollEndCard = document.getElementById('scroll-end-card');
+    if (scrollEndCard) {
+      if (isGateEpisode) {
+        scrollEndCard.innerHTML = renderGateInfoPage('scroll', soloEpCount);
+        document.getElementById('btn-waterfall-lets-begin')?.addEventListener('click', () => {
+          openSquadGateModal({
+            storyId: story.id,
+            storyTitle: story.title,
+            storyCoverImage: story.coverImage,
+            episodeNumber: episodeNumber,
+            onReplay: () => {
+              container.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+          });
+        });
+      } else if (isPostGateEpisode) {
+        scrollEndCard.innerHTML = renderSparcTransitionCard('scroll');
+        document.getElementById('btn-waterfall-sparc-transition')?.addEventListener('click', () => {
+          stopBgm();
+          stopSpeaking();
+          navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
+        });
+      }
     }
   }
 
