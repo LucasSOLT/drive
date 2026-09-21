@@ -436,6 +436,7 @@ export function render(): string {
         </button>
 
         <!-- LAUNCH BUTTON (Active only when >=3 members AND all ready) -->
+        ${isDriver ? `
         <button id="start-story-btn" class="btn btn--primary" ${!allMembersReady ? 'disabled' : ''} style="
           width: 100%;
           padding: 13px 20px;
@@ -468,6 +469,11 @@ export function render(): string {
               ? `⏳ Waiting on ${memberCount - readyCount} Player${(memberCount - readyCount) > 1 ? 's' : ''} to Press "I'M READY"`
               : `🚀 Launch Episode Now (48h Clock Starts!)`}
         </button>
+        ` : `
+        <div style="text-align: center; padding: 12px; color: var(--color-text-muted); font-size: 0.9rem; font-weight: 600; background: rgba(0,0,0,0.02); border-radius: var(--radius-lg); border: 1px dashed var(--color-border);">
+          Waiting for DRiVER to launch...
+        </div>
+        `}
 
       </div>
 
@@ -674,27 +680,24 @@ function startLobbyPolling(squadId: string): void {
         // If squad was launched by another member, auto-navigate to story
         if (currentSquad.status === 'in-progress') {
           stopLobbyPolling();
-          const currentUid = getUserId();
-          const isDriver = currentUid === currentSquad.driverId;
-          
-          if (isDriver) {
-            // DRiVER: navigate to the post-gate episode
-            try {
-              const storyData = getStoryById(currentSquad.storyId);
-              const storyGroupId = storyData?.storyGroupId || currentSquad.storyId;
-              const session = await getSquadSession(currentSquad.id);
-              const targetEp = session?.currentEpisodeNumber || 2;
-              const epData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEp);
-              if (epData) {
-                navigate('story/' + epData.id);
-                return;
-              }
-            } catch (e) {
-              console.warn('[Lobby] Could not fetch post-gate episode for DRiVER:', e);
+          try {
+            const storyData = getStoryById(currentSquad.storyId);
+            const storyGroupId = storyData?.storyGroupId || currentSquad.storyId;
+            const session = await getSquadSession(currentSquad.id);
+            const targetEp = session?.currentEpisodeNumber || 2;
+            const epData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEp);
+            
+            // All members navigate to the post-gate episode
+            if (epData && epData.id) {
+              navigate('story/' + epData.id);
+            } else {
+              // Fallback: try to get post-gate episode from the session
+              navigate('story/' + (currentSquad.storyId || 'story-1'));
             }
+          } catch (e) {
+            console.warn('[Lobby] Could not fetch post-gate episode:', e);
+            navigate('story/' + (currentSquad.storyId || 'story-1'));
           }
-          // Non-DRiVER or fallback: go to Episode 1 to read solo content first
-          navigate('story/' + (currentSquad.storyId || 'story-1'));
           return;
         }
 
