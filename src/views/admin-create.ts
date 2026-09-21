@@ -1999,7 +1999,7 @@ const isDesktopScreen = (): boolean => {
   return window.innerWidth >= 768;
 };
 let activeEditorMode: 'storyboard' | 'mobile' = isDesktopScreen() ? 'storyboard' : 'mobile';
-let promptSaveStoryAdminGlobal: ((status?: 'draft') => Promise<void>) | null = null;
+
 
 function showDesktopRequiredModal(): void {
   showModal({
@@ -2163,9 +2163,16 @@ function openStoryboard(): void {
   // Close button behavior depends on screen size:
   // Desktop → save draft and return to admin dashboard (no mobile editor available)
   // Mobile  → switch back to mobile editor view
-  document.getElementById('sb-close')?.addEventListener('click', () => {
+  document.getElementById('sb-close')?.addEventListener('click', async () => {
     if (isDesktopScreen()) {
+      getFormData();
       saveDraft();
+      try {
+        await preUploadBase64Images();
+        await saveOfficialStory(buildStory('draft'));
+      } catch (err) {
+        console.error('Cloud save on close failed:', err);
+      }
       overlay.remove();
       navigate('admin');
     } else {
@@ -2181,13 +2188,24 @@ function openStoryboard(): void {
     openStorySettings();
   });
 
-  document.getElementById('sb-save-draft')?.addEventListener('click', () => {
-    saveDraft();
-    const btn = document.getElementById('sb-save-draft');
-    if (btn) {
-      const orig = btn.innerHTML;
-      btn.innerHTML = '✅ Saved!';
-      setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1800);
+  document.getElementById('sb-save-draft')?.addEventListener('click', async () => {
+    const savedIndicator = document.getElementById('sb-saved-indicator');
+    getFormData();
+    saveDraft(); // localStorage backup
+    try {
+      if (savedIndicator) savedIndicator.textContent = '⏳ Saving...';
+      await preUploadBase64Images();
+      await saveOfficialStory(buildStory('draft'));
+      if (savedIndicator) {
+        savedIndicator.textContent = '✅ Saved to cloud!';
+        setTimeout(() => { if (savedIndicator) savedIndicator.textContent = ''; }, 3000);
+      }
+    } catch (err) {
+      console.error('Cloud save failed:', err);
+      if (savedIndicator) {
+        savedIndicator.textContent = '⚠️ Local only - cloud save failed';
+        setTimeout(() => { if (savedIndicator) savedIndicator.textContent = ''; }, 5000);
+      }
     }
   });
 
@@ -2663,69 +2681,7 @@ export function init(): void {
 
   loadData();
 
-  async function promptSaveStoryAdmin(saveStatus: 'draft' = 'draft'): Promise<void> {
-    promptSaveStoryAdminGlobal = promptSaveStoryAdmin;
-    getFormData();
 
-    const hasValidTitle = storyTitle && storyTitle.trim() && storyTitle.trim() !== 'Untitled';
-    if (hasValidTitle) {
-      saveDraft();
-      hideModal();
-      try {
-        await saveOfficialStory(buildStory(saveStatus));
-      } catch (e) {
-        console.warn('Story save error', e);
-      }
-      navigate('admin');
-      return;
-    }
-
-    showModal({
-      title: 'Story Title Required',
-      content: `
-        <p style="line-height:1.5; margin-bottom:14px; font-size:0.88rem; color:var(--color-text-secondary);">
-          Please enter a title for your story before saving:
-        </p>
-        <div style="margin-bottom:8px;">
-          <input type="text" id="draft-prompt-title" class="ss-field__input" placeholder="Enter story title..." value="" maxlength="80" style="width:100%; box-sizing:border-box;" />
-        </div>
-      `,
-      confirmText: 'Save, and Exit',
-      cancelText: 'Cancel',
-      onConfirm: async () => {
-        const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
-        const enteredTitle = input?.value.trim();
-        if (!enteredTitle) {
-          return;
-        }
-        storyTitle = enteredTitle;
-        const titleInput = document.getElementById('ss-title') as HTMLInputElement | null;
-        if (titleInput) titleInput.value = enteredTitle;
-        const page0Title = document.getElementById('page0-title') as HTMLInputElement | null;
-        if (page0Title) page0Title.value = enteredTitle;
-
-        saveDraft();
-        try {
-          await saveOfficialStory(buildStory(saveStatus));
-        } catch (e) {
-          console.warn('Story save error', e);
-        }
-        hideModal();
-        navigate('admin');
-      },
-    });
-
-    setTimeout(() => {
-      const input = document.getElementById('draft-prompt-title') as HTMLInputElement | null;
-      input?.focus();
-      input?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          const confirmBtn = document.getElementById('modal-confirm-btn');
-          confirmBtn?.click();
-        }
-      });
-    }, 100);
-  }
 
   attachListeners = () => {
     // ─── SHARED CANVAS TOOLBAR ───

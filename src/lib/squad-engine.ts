@@ -100,6 +100,23 @@ export async function tryAdvanceSquad(
     return { advanced: false, reason: 'No active session' };
   }
 
+  // Idempotency: only advance if session is still on the expected episode
+  if (session.currentEpisodeNumber !== episodeNumber) {
+    console.log('Session already advanced to episode', session.currentEpisodeNumber);
+    const { supabase } = await import('./supabase.ts');
+    const { data } = await supabase
+      .from('official_stories')
+      .select('id')
+      .eq('story_group_id', session.storyGroupId)
+      .eq('episode_number', session.currentEpisodeNumber)
+      .single();
+    if (data) {
+      const { navigate } = await import('../router.ts');
+      navigate('story/' + data.id);
+    }
+    return { advanced: false, reason: 'already_advanced' };
+  }
+
   const { canAdvance, reason } = await canSquadAdvance(squadId, episodeNumber, session);
 
   if (!canAdvance) {

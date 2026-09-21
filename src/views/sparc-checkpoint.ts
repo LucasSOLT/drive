@@ -13,7 +13,7 @@ import {
   submitSparcReply,
   getSparcReplies
 } from '../lib/db.ts';
-import { tryAdvanceSquad } from '../lib/squad-engine.ts';
+import { tryAdvanceSquad, isEpisodeTimerExpired } from '../lib/squad-engine.ts';
 import { uploadMedia } from '../lib/storage.ts';
 import { MONSTER_AVATARS } from '../data/avatars.ts';
 import { type SparcPost, type SquadMemberState, type SquadSession } from '../types.ts';
@@ -26,6 +26,7 @@ let currentEpisodeNumber = 1;
 let currentSession: SquadSession | null = null;
 let attachments: { type: 'photo' | 'link'; url: string }[] = [];
 let hasSubmitted = false;
+let hasAutoAdvanced = false;
 let posts: SparcPost[] = [];
 let members: SquadMemberState[] = [];
 let reactions: Record<string, Array<{ emoji: string; count: number; userReacted: boolean }>> = {};
@@ -244,6 +245,7 @@ export async function init(): Promise<void> {
   currentEpisodeNumber = parseInt(routeParts[3] || '1', 10);
   attachments = [];
   hasSubmitted = false;
+  hasAutoAdvanced = false;
 
   const titleEl = document.getElementById('sparc-title');
   if (titleEl) titleEl.textContent = `Episode ${currentEpisodeNumber} Complete`;
@@ -314,6 +316,21 @@ export async function init(): Promise<void> {
     // Polling setup
     pollInterval = window.setInterval(async () => {
       try {
+        const session = await getSquadSession(currentSquadId);
+        if (session && session.currentEpisodeNumber > currentEpisodeNumber) {
+          clearInterval(pollInterval);
+          const { data } = await supabase
+            .from('official_stories')
+            .select('id')
+            .eq('story_group_id', currentStoryGroupId)
+            .eq('episode_number', session.currentEpisodeNumber)
+            .single();
+          if (data) {
+            navigate('story/' + data.id);
+          }
+          return;
+        }
+
         const newPosts = await getSparcResponses(currentSquadId, currentStoryGroupId, currentEpisodeNumber);
         const postsChanged = newPosts.length !== posts.length;
         posts = newPosts;
@@ -370,8 +387,27 @@ function refreshFeedUI() {
   const allGreenlit = postedCount === members.length && members.length > 0;
 
   const nextBtn = document.getElementById('btn-next-episode') as HTMLButtonElement;
-  if (nextBtn) {
-    nextBtn.disabled = !allGreenlit;
+  if (nextBtn && currentSession) {
+    const timerExpired = isEpisodeTimerExpired(currentSession);
+    
+    if (allGreenlit || timerExpired) {
+      nextBtn.disabled = false;
+      
+      if (timerExpired && !allGreenlit) {
+        nextBtn.textContent = '⏰ Time\'s up — Continue to Next Episode →';
+      }
+      
+      if (allGreenlit && !hasAutoAdvanced) {
+        hasAutoAdvanced = true;
+        nextBtn.textContent = '🚀 All squad members greenlit! Advancing in 5s...';
+        nextBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+        setTimeout(() => {
+          nextBtn.click();
+        }, 5000);
+      }
+    } else {
+      nextBtn.disabled = true;
+    }
   }
 }
 
