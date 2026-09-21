@@ -497,17 +497,15 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
   }).join('');
 
   return `
-    <div class="story-group" data-group-id="${groupId}" data-expanded="false" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative; margin-bottom: 16px;">
+    <div class="story-group" data-group-id="${groupId}" data-expanded="false" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; overflow: visible; display: flex; flex-direction: column; position: relative; margin-bottom: 16px;">
       <!-- Collapsed Card (Episode 1) -->
       <div style="display: flex; padding: 16px; gap: 16px; align-items: flex-start; position: relative;">
-        <div style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; padding: 3px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 700;">${formatBadge}</div>
-        
         <button class="story-card-menu-btn" data-menu-for="${groupId}" data-story-id="${ep1.id}" data-is-live="${isLive ? 'true' : 'false'}" style="
-          position: absolute; top: 12px; right: 44px;
+          position: absolute; top: 10px; right: 10px;
           width: 32px; height: 32px;
           border-radius: 8px;
           border: 1px solid var(--color-border);
-          background: rgba(0,0,0,0.3);
+          background: rgba(0,0,0,0.4);
           color: white;
           cursor: pointer;
           display: flex; align-items: center; justify-content: center;
@@ -655,7 +653,7 @@ function attachOfficialCardListeners(): void {
           background: var(--color-surface); border: 1px solid var(--color-border);
           border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
           padding: 6px 0; min-width: 200px; z-index: 1000;
-          position: absolute; right: 8px; top: 36px;
+          position: absolute; right: 10px; top: 44px;
         `;
         dropdown.innerHTML = `
           <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Story</div>
@@ -682,7 +680,7 @@ function attachOfficialCardListeners(): void {
           background: var(--color-surface); border: 1px solid var(--color-border);
           border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
           padding: 6px 0; min-width: 200px; z-index: 1000;
-          position: absolute; right: 36px; top: 36px;
+          position: absolute; right: 0; top: 32px;
         `;
         dropdown.innerHTML = `
           <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Episode</div>
