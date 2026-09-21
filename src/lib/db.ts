@@ -1071,6 +1071,16 @@ export async function takeOfficialStoryOffline(storyId: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function archiveOfficialStory(storyId: string): Promise<void> {
+  const { error } = await supabase
+    .from('official_stories')
+    .update({ status: 'archived', is_featured: false, is_editor_pick: false, updated_at: new Date().toISOString() })
+    .eq('id', storyId);
+  if (error) throw error;
+  _cachedOfficialStories = null;
+  try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
+}
+
 /** Toggle Featured status on an official story */
 export async function toggleOfficialStoryFeatured(storyId: string, isFeatured: boolean): Promise<void> {
   const { error } = await supabase

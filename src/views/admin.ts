@@ -18,6 +18,7 @@ import {
   toggleUserStoryEditorPick,
   goOfficialStoryLive,
   takeOfficialStoryOffline,
+  archiveOfficialStory,
   checkIsGameMaster,
   hasAdminPrivileges,
   getUserRole,
@@ -471,34 +472,50 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
     }
 
     return `
-      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--color-border); gap: 12px;">
-        <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
-          ${epCoverHtml}
-          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <span style="font-weight: 700; font-size: 0.9rem; color: var(--color-text-primary);">EP ${epNum}</span>
-              <span style="font-size: 0.75rem; color: var(--color-text-muted);">${story.panels?.length || 0} pages</span>
-              <span style="font-size: 0.7rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: ${epIsLive ? 'rgba(16,185,129,0.1)' : 'rgba(234,179,8,0.1)'}; color: ${epIsLive ? '#10b981' : '#eab308'};">${epStatus}</span>
-            </div>
-            ${story.title && story.title !== ep1.title ? `<div style="font-size: 0.8rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(story.title)}</div>` : ''}
-          </div>
+      <div style="display: flex; align-items: center; padding: 12px; margin-bottom: 8px; background: var(--color-surface); border-radius: 10px; border: 1px solid var(--color-border); gap: 12px; position: relative;">
+        <!-- Left: episode cover -->
+        ${epCoverHtml}
+        <!-- Middle: episode info -->
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-weight: 700; font-size: 0.88rem; color: var(--color-text-primary);">Episode ${epNum}</div>
+          <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 2px;">${story.panels?.length || 0} pages · ${epStatus}</div>
         </div>
-        <div style="display: flex; gap: 6px;">
-          <button data-edit-official="${story.id}" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.75rem; font-weight: 600;">Edit</button>
-          <button data-preview-story="${story.id}" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; gap: 4px;">👁 Preview</button>
-          <button data-move-up="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem;">↑</button>
-          <button data-move-down="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem;">↓</button>
-          <button data-delete-official="${story.id}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-muted); cursor: pointer; font-size: 0.8rem;">🗑</button>
-        </div>
+        <!-- Right: three-dot menu -->
+        <button class="ep-menu-btn" data-ep-menu-for="${story.id}" style="
+          width: 28px; height: 28px;
+          border-radius: 6px;
+          border: 1px solid var(--color-border);
+          background: var(--color-bg);
+          color: var(--color-text-secondary);
+          cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 0.95rem;
+          flex-shrink: 0;
+        ">⋮</button>
       </div>
     `;
   }).join('');
 
   return `
-    <div class="story-group" data-group-id="${groupId}" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative;">
+    <div class="story-group" data-group-id="${groupId}" data-expanded="false" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative; margin-bottom: 16px;">
       <!-- Collapsed Card (Episode 1) -->
       <div style="display: flex; padding: 16px; gap: 16px; align-items: flex-start; position: relative;">
         <div style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; padding: 3px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 700;">${formatBadge}</div>
+        
+        <button class="story-card-menu-btn" data-menu-for="${groupId}" data-story-id="${ep1.id}" data-is-live="${isLive ? 'true' : 'false'}" style="
+          position: absolute; top: 12px; right: 44px;
+          width: 32px; height: 32px;
+          border-radius: 8px;
+          border: 1px solid var(--color-border);
+          background: rgba(0,0,0,0.3);
+          color: white;
+          cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 1.1rem;
+          backdrop-filter: blur(4px);
+          z-index: 10;
+        ">⋮</button>
+
         <div style="width: 80px; height: 120px; border-radius: 8px; overflow: hidden; flex-shrink: 0; border: 1px solid var(--color-border);">
           ${coverHtml}
         </div>
@@ -511,19 +528,11 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
             <span style="font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: ${isLive ? 'rgba(16,185,129,0.1)' : 'rgba(234,179,8,0.1)'}; color: ${isLive ? '#10b981' : '#eab308'};">${statusLabel}</span>
             <span style="font-size: 0.75rem; color: var(--color-text-secondary); font-weight: 600;">${totalEps} Episode${totalEps > 1 ? 's' : ''}</span>
           </div>
-          <div class="collapsed-actions" style="display: flex; gap: 8px; align-items: center; margin-top: auto;">
-            <button class="expand-episodes-btn" style="flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">▼ Show All Episodes</button>
-            <button data-edit-official="${ep1.id}" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.8rem; font-weight: 600;">🔧 Edit</button>
-            ${!isLive ? `<button data-go-live-story="${ep1.id}" data-story-title="${escapeHtml(ep1.title)}" style="padding: 8px 12px; border-radius: 8px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.8rem; font-weight: 700; display: flex; align-items: center; gap: 4px;">🚀 Go Live</button>` : ''}
-          </div>
-          <div class="expanded-actions" style="display: none; align-items: center; margin-top: auto;">
-            <button class="collapse-episodes-btn" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">▲ Collapse</button>
-          </div>
         </div>
       </div>
 
       <!-- Expanded Section (Hidden by default) -->
-      <div class="expanded-episodes" style="display: none; border-top: 1px solid var(--color-border); padding: 0 16px 16px 16px; background: var(--color-bg);">
+      <div class="expanded-episodes" style="display: none; border-top: 1px solid var(--color-border); padding: 16px; background: var(--color-bg);">
         <div style="display: flex; flex-direction: column;">
           ${episodeRows}
         </div>
@@ -532,7 +541,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
                   display: flex; align-items: center; justify-content: center; gap: 6px;
                   width: 100%;
                   padding: 12px;
-                  margin-top: 16px;
+                  margin-top: 8px;
                   border: 2px dashed var(--color-border);
                   border-radius: 8px;
                   background: transparent;
@@ -554,30 +563,6 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
 
 /** Attach expand/collapse listeners for story groups */
 function attachExpandCollapseListeners(): void {
-  document.querySelectorAll('.story-group').forEach(group => {
-    const expandBtn = group.querySelector('.expand-episodes-btn') as HTMLElement | null;
-    const collapseBtn = group.querySelector('.collapse-episodes-btn') as HTMLElement | null;
-    const expandedSection = group.querySelector('.expanded-episodes') as HTMLElement | null;
-    const collapsedActions = group.querySelector('.collapsed-actions') as HTMLElement | null;
-    const expandedActions = group.querySelector('.expanded-actions') as HTMLElement | null;
-
-    if (expandBtn && expandedSection && collapsedActions && expandedActions) {
-      expandBtn.addEventListener('click', () => {
-        expandedSection.style.display = 'block';
-        collapsedActions.style.display = 'none';
-        expandedActions.style.display = 'flex';
-      });
-    }
-
-    if (collapseBtn && expandedSection && collapsedActions && expandedActions) {
-      collapseBtn.addEventListener('click', () => {
-        expandedSection.style.display = 'none';
-        collapsedActions.style.display = 'flex';
-        expandedActions.style.display = 'none';
-      });
-    }
-  });
-
   document.querySelectorAll('[data-add-episode]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const el = e.currentTarget as HTMLElement;
@@ -596,50 +581,231 @@ function attachExpandCollapseListeners(): void {
   });
 }
 
+let _adminDropdownListenerAttached = false;
+
+function showGoLiveConfirm(storyId: string, storyTitle: string) {
+  const overlay = document.createElement('div');
+  overlay.id = 'go-live-confirm-overlay';
+  overlay.style.cssText = `
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; padding: 20px;
+  `;
+  overlay.innerHTML = `
+    <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 28px; max-width: 420px; width: 100%; text-align: center; font-family: var(--font-body);">
+      <div style="font-size: 2.5rem; margin-bottom: 12px;">🚀</div>
+      <h3 style="margin: 0 0 8px; font-family: var(--font-heading); font-size: 1.1rem; color: var(--color-text-primary);">Go Live with "${escapeHtml(storyTitle)}"?</h3>
+      <p style="font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 20px; line-height: 1.5;">
+        This will share the <strong>entire story</strong> to anyone on the internet via DRiVE. 
+        Please ensure there is no explicit or inappropriate content.
+      </p>
+      <div style="display: flex; gap: 12px; justify-content: center;">
+        <button id="go-live-cancel" style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.88rem; font-weight: 600;">Cancel</button>
+        <button id="go-live-confirm" style="flex: 1; padding: 12px; border-radius: 10px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700;">Yes, Go Live</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById('go-live-cancel')?.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) overlay.remove(); });
+
+  document.getElementById('go-live-confirm')?.addEventListener('click', async () => {
+    const confirmBtn = document.getElementById('go-live-confirm') as HTMLButtonElement;
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Publishing...'; }
+    try {
+      await goOfficialStoryLive(storyId);
+      overlay.remove();
+      loadAllMetrics();
+      loadTabContent();
+    } catch (err) {
+      console.error('Go live failed:', err);
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Failed - Try Again'; }
+    }
+  });
+}
+
 function attachOfficialCardListeners(): void {
-  // Edit button → navigate to admin creation studio
-  document.querySelectorAll('[data-edit-official]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.editOfficial!;
-      navigate('admin-create/' + id);
-    });
-  });
+  if (!_adminDropdownListenerAttached) {
+    _adminDropdownListenerAttached = true;
+    document.addEventListener('click', async (e) => {
+      const target = e.target as HTMLElement;
 
-  // Preview button
-  document.querySelectorAll('[data-preview-story]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const storyId = (btn as HTMLElement).dataset.previewStory;
-      if (storyId) navigate('story/' + storyId);
-    });
-  });
+      // Close dropdowns
+      document.querySelectorAll('.story-dropdown-menu').forEach(menu => {
+        if (!menu.contains(target) && !target.closest('.story-card-menu-btn') && !target.closest('.ep-menu-btn')) {
+          menu.remove();
+        }
+      });
 
-  // Move up
-  document.querySelectorAll('[data-move-up]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.moveUp!;
-      const idx = currentOfficialStories.findIndex(s => s.id === id);
-      if (idx <= 0) return;
-      const ids = currentOfficialStories.map(s => s.id);
-      [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
-      await reorderOfficialStories(ids);
-      loadTabContent();
-    });
-  });
+      // 1. Main Card Menu
+      const cardMenuBtn = target.closest('.story-card-menu-btn') as HTMLElement;
+      if (cardMenuBtn) {
+        e.stopPropagation();
+        document.querySelectorAll('.story-dropdown-menu').forEach(menu => menu.remove());
+        const groupId = cardMenuBtn.dataset.menuFor!;
+        const storyId = cardMenuBtn.dataset.storyId!;
+        const isLive = cardMenuBtn.dataset.isLive === 'true';
+        const storyGroup = cardMenuBtn.closest('.story-group') as HTMLElement;
+        const isExpanded = storyGroup.dataset.expanded === 'true';
 
-  // Move down
-  document.querySelectorAll('[data-move-down]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.moveDown!;
-      const idx = currentOfficialStories.findIndex(s => s.id === id);
-      if (idx < 0 || idx >= currentOfficialStories.length - 1) return;
-      const ids = currentOfficialStories.map(s => s.id);
-      [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
-      await reorderOfficialStories(ids);
-      loadTabContent();
-    });
-  });
+        const dropdown = document.createElement('div');
+        dropdown.className = 'story-dropdown-menu';
+        dropdown.style.cssText = `
+          background: var(--color-surface); border: 1px solid var(--color-border);
+          border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+          padding: 6px 0; min-width: 200px; z-index: 1000;
+          position: absolute; right: 8px; top: 36px;
+        `;
+        dropdown.innerHTML = `
+          <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Story</div>
+          <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview Story</div>
+          <div class="menu-item" data-toggle-episodes="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">${isExpanded ? '▲ Collapse' : '📋 Show All Episodes'}</div>
+          ${!isLive ? `<div class="menu-item" data-go-live-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">🚀 Go Live</div>` : `<div class="menu-item" data-take-offline="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">📴 Take Offline</div>`}
+          <div style="border-top: 1px solid var(--color-border); margin: 4px 0;"></div>
+          <div class="menu-item" data-archive-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">📦 Archive</div>
+          <div class="menu-item" data-delete-group="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #ef4444;" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">🗑 Delete</div>
+        `;
+        cardMenuBtn.parentElement?.appendChild(dropdown);
+        return;
+      }
 
-  // Feature toggle
+      // 2. Episode Menu
+      const epMenuBtn = target.closest('.ep-menu-btn') as HTMLElement;
+      if (epMenuBtn) {
+        e.stopPropagation();
+        document.querySelectorAll('.story-dropdown-menu').forEach(menu => menu.remove());
+        const storyId = epMenuBtn.dataset.epMenuFor!;
+        const dropdown = document.createElement('div');
+        dropdown.className = 'story-dropdown-menu';
+        dropdown.style.cssText = `
+          background: var(--color-surface); border: 1px solid var(--color-border);
+          border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+          padding: 6px 0; min-width: 200px; z-index: 1000;
+          position: absolute; right: 36px; top: 36px;
+        `;
+        dropdown.innerHTML = `
+          <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Episode</div>
+          <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview</div>
+          <div class="menu-item" data-move-up="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">↑ Move Up</div>
+          <div class="menu-item" data-move-down="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">↓ Move Down</div>
+          <div style="border-top: 1px solid var(--color-border); margin: 4px 0;"></div>
+          <div class="menu-item" data-delete-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #ef4444;" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">🗑 Delete Episode</div>
+        `;
+        epMenuBtn.parentElement?.appendChild(dropdown);
+        return;
+      }
+
+      // 3. Dropdown Actions
+      const menuItem = target.closest('.menu-item') as HTMLElement;
+      if (menuItem) {
+        document.querySelectorAll('.story-dropdown-menu').forEach(menu => menu.remove());
+
+        if (menuItem.dataset.editOfficial) {
+          navigate('admin-create/' + menuItem.dataset.editOfficial);
+        } else if (menuItem.dataset.previewAdmin) {
+          navigate('story/' + menuItem.dataset.previewAdmin);
+        } else if (menuItem.dataset.toggleEpisodes) {
+          const groupId = menuItem.dataset.toggleEpisodes;
+          const group = document.querySelector(`.story-group[data-group-id="${groupId}"]`) as HTMLElement;
+          if (group) {
+            const isExpanded = group.dataset.expanded === 'true';
+            const expandedSection = group.querySelector('.expanded-episodes') as HTMLElement;
+            if (isExpanded) {
+              expandedSection.style.display = 'none';
+              group.dataset.expanded = 'false';
+            } else {
+              expandedSection.style.display = 'block';
+              group.dataset.expanded = 'true';
+            }
+          }
+        } else if (menuItem.dataset.archiveStory) {
+          const storyId = menuItem.dataset.archiveStory;
+          const story = currentOfficialStories.find(s => s.id === storyId);
+          showModal({
+            title: `📦 Archive "${story?.title || 'Story'}"?`,
+            content: '<p>This will remove the story from all public pages (Home, Featured, Explore) and move it to the Archived section. You can restore it later.</p>',
+            confirmText: 'Archive',
+            cancelText: 'Cancel',
+            onConfirm: async () => {
+              await archiveOfficialStory(storyId);
+              loadAllMetrics();
+              loadTabContent();
+            },
+          });
+        } else if (menuItem.dataset.deleteGroup) {
+          const groupId = menuItem.dataset.deleteGroup;
+          const story = currentOfficialStories.find(s => (s.storyGroupId || s.id) === groupId);
+          showModal({
+            title: `🗑 Delete "${story?.title || 'Story'}" Permanently?`,
+            content: '<p>This will permanently delete this story AND all its episodes from everywhere — the admin dashboard, the library, and all public pages. This cannot be undone.</p>',
+            confirmText: 'Delete Permanently',
+            cancelText: 'Cancel',
+            onConfirm: async () => {
+              const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
+              for (const ep of episodes) {
+                await deleteOfficialStory(ep.id);
+              }
+              loadAllMetrics();
+              loadTabContent();
+            },
+          });
+        } else if (menuItem.dataset.deleteOfficial) {
+          const storyId = menuItem.dataset.deleteOfficial;
+          const story = currentOfficialStories.find(s => s.id === storyId);
+          showModal({
+            title: `Delete "${story?.title || 'Episode'}"?`,
+            content: '<p>Are you sure you want to permanently delete this episode? This cannot be undone.</p>',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            onConfirm: async () => {
+              await deleteOfficialStory(storyId);
+              loadAllMetrics();
+              loadTabContent();
+            },
+          });
+        } else if (menuItem.dataset.takeOffline) {
+          const storyId = menuItem.dataset.takeOffline;
+          const story = currentOfficialStories.find(s => s.id === storyId);
+          showModal({
+            title: `📴 Take Offline: "${story?.title || 'Story'}"`,
+            content: '<p>This will remove the story from Featured and Explore feeds. It will become a draft and can be re-published later.</p>',
+            confirmText: 'Take Offline',
+            cancelText: 'Cancel',
+            onConfirm: async () => {
+              await takeOfficialStoryOffline(storyId);
+              loadAllMetrics();
+              loadTabContent();
+            },
+          });
+        } else if (menuItem.dataset.goLiveStory) {
+          const storyId = menuItem.dataset.goLiveStory;
+          const story = currentOfficialStories.find(s => s.id === storyId);
+          if (story) showGoLiveConfirm(storyId, story.title);
+        } else if (menuItem.dataset.moveUp) {
+          const id = menuItem.dataset.moveUp;
+          const idx = currentOfficialStories.findIndex(s => s.id === id);
+          if (idx > 0) {
+            const ids = currentOfficialStories.map(s => s.id);
+            [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
+            await reorderOfficialStories(ids);
+            loadTabContent();
+          }
+        } else if (menuItem.dataset.moveDown) {
+          const id = menuItem.dataset.moveDown;
+          const idx = currentOfficialStories.findIndex(s => s.id === id);
+          if (idx >= 0 && idx < currentOfficialStories.length - 1) {
+            const ids = currentOfficialStories.map(s => s.id);
+            [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
+            await reorderOfficialStories(ids);
+            loadTabContent();
+          }
+        }
+      }
+    });
+  }
+
+  // Feature toggle (used in content management)
   document.querySelectorAll('[data-toggle-featured]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const el = e.currentTarget as HTMLElement;
@@ -651,6 +817,7 @@ function attachOfficialCardListeners(): void {
     });
   });
 
+  // Pick toggle (used in content management)
   document.querySelectorAll('[data-toggle-pick]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const el = e.currentTarget as HTMLElement;
@@ -659,95 +826,6 @@ function attachOfficialCardListeners(): void {
       await toggleOfficialStoryEditorPick(id, !current);
       loadAllMetrics();
       loadTabContent();
-    });
-  });
-
-  document.querySelectorAll('[data-delete-official]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.deleteOfficial!;
-      const story = currentOfficialStories.find(s => s.id === id);
-      showModal({
-        title: `Delete "${story?.title || 'Story'}"?`,
-        content: '<p>Are you sure you want to permanently delete this official story? This cannot be undone.</p>',
-        confirmText: 'Delete Permanently',
-        cancelText: 'Cancel',
-        onConfirm: async () => {
-          await deleteOfficialStory(id);
-          loadAllMetrics();
-          loadTabContent();
-        },
-      });
-    });
-  });
-
-
-  // Take Offline
-  document.querySelectorAll('[data-take-offline]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.takeOffline!;
-      const story = currentOfficialStories.find(s => s.id === id);
-      showModal({
-        title: `📴 Take Offline: "${story?.title || 'Story'}"`,
-        content: '<p>This will remove the story from Featured and Explore feeds. It will become a draft and can be re-published later.</p>',
-        confirmText: 'Take Offline',
-        cancelText: 'Cancel',
-        onConfirm: async () => {
-          await takeOfficialStoryOffline(id);
-          loadAllMetrics();
-          loadTabContent();
-        },
-      });
-    });
-  });
-
-  // Go Live
-  document.querySelectorAll('[data-go-live-story]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const storyId = (btn as HTMLElement).dataset.goLiveStory;
-      const storyTitle = (btn as HTMLElement).dataset.storyTitle || 'this story';
-      if (!storyId) return;
-
-      // Create confirmation overlay
-      const overlay = document.createElement('div');
-      overlay.id = 'go-live-confirm-overlay';
-      overlay.style.cssText = `
-        position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-        display: flex; align-items: center; justify-content: center;
-        z-index: 9999; padding: 20px;
-      `;
-      overlay.innerHTML = `
-        <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 28px; max-width: 420px; width: 100%; text-align: center; font-family: var(--font-body);">
-          <div style="font-size: 2.5rem; margin-bottom: 12px;">🚀</div>
-          <h3 style="margin: 0 0 8px; font-family: var(--font-heading); font-size: 1.1rem; color: var(--color-text-primary);">Go Live with "${storyTitle}"?</h3>
-          <p style="font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 20px; line-height: 1.5;">
-            This will share the <strong>entire story</strong> to anyone on the internet via DRiVE. 
-            Please ensure there is no explicit or inappropriate content.
-          </p>
-          <div style="display: flex; gap: 12px; justify-content: center;">
-            <button id="go-live-cancel" style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.88rem; font-weight: 600;">Cancel</button>
-            <button id="go-live-confirm" style="flex: 1; padding: 12px; border-radius: 10px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700;">Yes, Go Live</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(overlay);
-
-      document.getElementById('go-live-cancel')?.addEventListener('click', () => overlay.remove());
-      overlay.addEventListener('click', (ev) => { if (ev.target === overlay) overlay.remove(); });
-
-      document.getElementById('go-live-confirm')?.addEventListener('click', async () => {
-        const confirmBtn = document.getElementById('go-live-confirm') as HTMLButtonElement;
-        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Publishing...'; }
-        try {
-          await goOfficialStoryLive(storyId);
-          overlay.remove();
-          loadAllMetrics();
-          loadTabContent();
-        } catch (err) {
-          console.error('Go live failed:', err);
-          if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Failed - Try Again'; }
-        }
-      });
     });
   });
 }
