@@ -2,7 +2,7 @@ import { openSquadGateModal } from '../components/squad-gate-modal.ts';
 import { trackStoryReading, updateTrackedStoryStatus } from '../lib/reading-tracker.ts';
 import { getRouteParam, navigate } from '../router.ts';
 import { getStoryById, registerStory } from '../data/stories.ts';
-import { fetchStoryByIdFromDb } from '../lib/db.ts';
+import { fetchStoryByIdFromDb, fetchOfficialStories } from '../lib/db.ts';
 import {
   getStoryLikes, hasUserLiked, toggleStoryLike,
   isBookmarked, toggleBookmark
@@ -305,7 +305,7 @@ export function render(): string {
   `;
 }
 
-export function init(): void {
+export async function init(): Promise<void> {
   const container = document.getElementById('reader-container');
   if (!container) return;
 
@@ -331,6 +331,79 @@ export function init(): void {
       }
     });
     return;
+  }
+
+  let siblingEpisodes: { id: string; episodeNumber: number }[] = [];
+  if (story.storyGroupId) {
+    const allStories = await fetchOfficialStories();
+    siblingEpisodes = allStories
+      .filter(s => s.storyGroupId === story.storyGroupId)
+      .map(s => ({ id: s.id, episodeNumber: s.episodeNumber || 1 }))
+      .sort((a, b) => a.episodeNumber - b.episodeNumber);
+  }
+
+  if (siblingEpisodes.length > 1) {
+    container.style.paddingBottom = '70px';
+    
+    const navHtml = `
+      <div id="episode-nav-bar" style="
+        position: fixed; bottom: 0; left: 0; right: 0;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 20px;
+        background: linear-gradient(to top, var(--color-bg), rgba(20,20,36,0.95));
+        border-top: 1px solid var(--color-border);
+        z-index: 100;
+        max-width: 600px;
+        margin: 0 auto;
+      ">
+        <button id="ep-nav-prev" style="
+          padding: 10px 16px; border-radius: 10px;
+          border: 1px solid var(--color-border);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          cursor: pointer; font-size: 0.82rem; font-weight: 600;
+          display: flex; align-items: center; gap: 6px;
+        ">← Previous Episode</button>
+        
+        <span style="font-size: 0.75rem; font-weight: 700; color: var(--color-text-muted);">
+          Episode ${story.episodeNumber || 1}
+        </span>
+        
+        <button id="ep-nav-next" style="
+          padding: 10px 16px; border-radius: 10px;
+          border: none;
+          background: linear-gradient(135deg, var(--color-purple), #8a2be2);
+          color: white;
+          cursor: pointer; font-size: 0.82rem; font-weight: 700;
+          display: flex; align-items: center; gap: 6px;
+        ">Next Episode →</button>
+      </div>
+    `;
+    container.insertAdjacentHTML('beforeend', navHtml);
+
+    const currentEpNum = story.episodeNumber || 1;
+    const currentIdx = siblingEpisodes.findIndex(e => e.episodeNumber === currentEpNum);
+    const prevEp = currentIdx > 0 ? siblingEpisodes[currentIdx - 1] : null;
+    const nextEp = currentIdx < siblingEpisodes.length - 1 ? siblingEpisodes[currentIdx + 1] : null;
+    
+    const prevBtn = document.getElementById('ep-nav-prev');
+    const nextBtn = document.getElementById('ep-nav-next');
+    
+    if (prevBtn) {
+      if (prevEp) {
+        prevBtn.addEventListener('click', () => navigate('story/' + prevEp.id));
+      } else {
+        prevBtn.style.visibility = 'hidden';
+      }
+    }
+    
+    if (nextBtn) {
+      if (nextEp) {
+        nextBtn.addEventListener('click', () => navigate('story/' + nextEp.id));
+      } else {
+        nextBtn.style.visibility = 'hidden';
+      }
+    }
   }
 
   // Auto-track reading session in My Stories library

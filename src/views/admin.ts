@@ -431,7 +431,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
   
   const coverSrc = ep1.coverImage || (ep1.panels?.[0]) || '';
   const isLive = ep1.officialStatus === 'live';
-  const statusLabel = isLive ? '🟢 LIVE' : '🔴 DRAFT';
+  const statusLabel = isLive ? '🟢 LIVE' : '🟡 AWAITING';
   const formatBadge = ep1.format === 'book' ? '📖 Book' : '📜 Waterfall';
 
   let coverHtml = '';
@@ -452,7 +452,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
   const episodeRows = episodes.map((story, epIdx) => {
     const epCover = story.coverImage || (story.panels?.[0]) || '';
     const epIsLive = story.officialStatus === 'live';
-    const epStatus = epIsLive ? '🟢 LIVE' : '🔴 DRAFT';
+    const epStatus = epIsLive ? '🟢 LIVE' : '🟡 AWAITING';
     const epNum = story.episodeNumber || (epIdx + 1);
     
     let epCoverHtml = '';
@@ -478,7 +478,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
               <span style="font-weight: 700; font-size: 0.9rem; color: var(--color-text-primary);">EP ${epNum}</span>
               <span style="font-size: 0.75rem; color: var(--color-text-muted);">${story.panels?.length || 0} pages</span>
-              <span style="font-size: 0.7rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: ${epIsLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color: ${epIsLive ? '#10b981' : '#ef4444'};">${epStatus}</span>
+              <span style="font-size: 0.7rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: ${epIsLive ? 'rgba(16,185,129,0.1)' : 'rgba(234,179,8,0.1)'}; color: ${epIsLive ? '#10b981' : '#eab308'};">${epStatus}</span>
             </div>
             ${story.title && story.title !== ep1.title ? `<div style="font-size: 0.8rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(story.title)}</div>` : ''}
           </div>
@@ -508,12 +508,13 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
             ${escapeHtml(ep1.author)} · ${ep1.genre}
           </div>
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: auto;">
-            <span style="font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: ${isLive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color: ${isLive ? '#10b981' : '#ef4444'};">${statusLabel}</span>
+            <span style="font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: ${isLive ? 'rgba(16,185,129,0.1)' : 'rgba(234,179,8,0.1)'}; color: ${isLive ? '#10b981' : '#eab308'};">${statusLabel}</span>
             <span style="font-size: 0.75rem; color: var(--color-text-secondary); font-weight: 600;">${totalEps} Episode${totalEps > 1 ? 's' : ''}</span>
           </div>
           <div class="collapsed-actions" style="display: flex; gap: 8px; align-items: center; margin-top: auto;">
             <button class="expand-episodes-btn" style="flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">▼ Show All Episodes</button>
             <button data-edit-official="${ep1.id}" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.8rem; font-weight: 600;">🔧 Edit</button>
+            ${!isLive ? `<button data-go-live-story="${ep1.id}" data-story-title="${escapeHtml(ep1.title)}" style="padding: 8px 12px; border-radius: 8px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.8rem; font-weight: 700; display: flex; align-items: center; gap: 4px;">🚀 Go Live</button>` : ''}
           </div>
           <div class="expanded-actions" style="display: none; align-items: center; margin-top: auto;">
             <button class="collapse-episodes-btn" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">▲ Collapse</button>
@@ -590,7 +591,7 @@ function attachExpandCollapseListeners(): void {
         ? `&genre=${encodeURIComponent(firstEpData.genre)}&contentRating=${encodeURIComponent(firstEpData.contentRating || 'All Ages')}&audioMode=${encodeURIComponent(firstEpData.audioMode || 'make_audio')}&narratorVoiceId=${encodeURIComponent(firstEpData.narratorVoiceId || '')}&soloEpisodeCount=${firstEpData.soloEpisodeCount || 1}` 
         : '';
       
-      navigate(`admin-create?format=${format}&storyGroupId=${groupId}&episodeNumber=${nextEp}&storyTitle=${encodeURIComponent(title)}${extraParams}`);
+      navigate(`admin-create?format=${format}&storyGroupId=${groupId}&episodeNumber=${nextEp}&storyTitle=${encodeURIComponent(title)}${extraParams}&new=true`);
     });
   });
 }
@@ -695,6 +696,57 @@ function attachOfficialCardListeners(): void {
           loadAllMetrics();
           loadTabContent();
         },
+      });
+    });
+  });
+
+  // Go Live
+  document.querySelectorAll('[data-go-live-story]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const storyId = (btn as HTMLElement).dataset.goLiveStory;
+      const storyTitle = (btn as HTMLElement).dataset.storyTitle || 'this story';
+      if (!storyId) return;
+
+      // Create confirmation overlay
+      const overlay = document.createElement('div');
+      overlay.id = 'go-live-confirm-overlay';
+      overlay.style.cssText = `
+        position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999; padding: 20px;
+      `;
+      overlay.innerHTML = `
+        <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 28px; max-width: 420px; width: 100%; text-align: center; font-family: var(--font-body);">
+          <div style="font-size: 2.5rem; margin-bottom: 12px;">🚀</div>
+          <h3 style="margin: 0 0 8px; font-family: var(--font-heading); font-size: 1.1rem; color: var(--color-text-primary);">Go Live with "${storyTitle}"?</h3>
+          <p style="font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 20px; line-height: 1.5;">
+            This will share the <strong>entire story</strong> to anyone on the internet via DRiVE. 
+            Please ensure there is no explicit or inappropriate content.
+          </p>
+          <div style="display: flex; gap: 12px; justify-content: center;">
+            <button id="go-live-cancel" style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.88rem; font-weight: 600;">Cancel</button>
+            <button id="go-live-confirm" style="flex: 1; padding: 12px; border-radius: 10px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700;">Yes, Go Live</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      document.getElementById('go-live-cancel')?.addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', (ev) => { if (ev.target === overlay) overlay.remove(); });
+
+      document.getElementById('go-live-confirm')?.addEventListener('click', async () => {
+        const confirmBtn = document.getElementById('go-live-confirm') as HTMLButtonElement;
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Publishing...'; }
+        try {
+          await goOfficialStoryLive(storyId);
+          overlay.remove();
+          loadAllMetrics();
+          loadTabContent();
+        } catch (err) {
+          console.error('Go live failed:', err);
+          if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Failed - Try Again'; }
+        }
       });
     });
   });

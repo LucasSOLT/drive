@@ -200,6 +200,8 @@ interface DraftEntry {
   soloEpisodeCount?: 1 | 2 | 3;
   sparcPromptText?: string;
   sparcPromptMediaUrls?: string[];
+  episodeStoryGroupId?: string | null;
+  episodeNumber?: number;
 }
 
 function getDraft(): DraftEntry | null {
@@ -238,6 +240,8 @@ function saveDraft() {
     soloEpisodeCount,
     sparcPromptText,
     sparcPromptMediaUrls,
+    episodeStoryGroupId,
+    episodeNumber,
   };
   
   // Pre-check: strip base64 data URLs to keep under localStorage limit
@@ -317,6 +321,8 @@ function loadDraft(draft: DraftEntry) {
   soloEpisodeCount = draft.soloEpisodeCount || 1;
   sparcPromptText = draft.sparcPromptText || '';
   sparcPromptMediaUrls = draft.sparcPromptMediaUrls || [];
+  episodeStoryGroupId = draft.episodeStoryGroupId || null;
+  episodeNumber = draft.episodeNumber || 1;
 }
 
 function clearDraft() {
@@ -2566,8 +2572,11 @@ export function init(): void {
     } else if (groupIdMatch) {
       // Check for existing draft first — preserve work on page refresh
       const existingDraft = getDraft();
-      if (existingDraft && existingDraft.bookPages && existingDraft.bookPages.length > 1) {
-        // Draft has real content — load it instead of resetting
+      if (existingDraft 
+          && existingDraft.bookPages && existingDraft.bookPages.length > 1
+          && existingDraft.episodeStoryGroupId === episodeStoryGroupId
+          && existingDraft.episodeNumber === episodeNumber) {
+        // Draft has real content and matches episode — load it instead of resetting
         loadDraft(existingDraft);
         updateView();
         return;

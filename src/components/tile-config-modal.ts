@@ -210,7 +210,10 @@ function renderStoryGrid(stories: Story[]): void {
           <div style="font-weight:700; font-size:0.88rem; color:var(--color-text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(ep1.title) || 'Untitled'}</div>
           <div style="font-size:0.75rem; color:var(--color-text-muted); margin-top:2px;">${ep1.genre || 'Unknown'} · ${totalEps} Ep${totalEps > 1 ? 's' : ''} · ${statusBadge}</div>
         </div>
-        <button class="tile-config-select-btn" data-select-story-id="${ep1.id}" style="padding:8px 14px; background:var(--color-purple); color:white; border:none; border-radius:var(--radius-md); font-size:0.78rem; font-weight:700; cursor:pointer; white-space:nowrap;">Insert</button>
+        ${isLive 
+          ? `<button class="tile-config-select-btn" data-select-story-id="${ep1.id}" style="padding:8px 14px; background:var(--color-purple); color:white; border:none; border-radius:var(--radius-md); font-size:0.78rem; font-weight:700; cursor:pointer; white-space:nowrap;">Insert</button>`
+          : `<span style="padding:8px 14px; background:var(--color-bg); border:1px solid var(--color-border); border-radius:var(--radius-md); font-size:0.72rem; color:var(--color-text-muted);">Not Live</span>`
+        }
       </div>
     `;
   }).join('');

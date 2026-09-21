@@ -6,24 +6,35 @@ import { stories, getFeaturedStories, getEditorPicks } from '../data/stories.ts'
 import { fetchFeaturedStories, fetchUnifiedExploreStories } from '../lib/db.ts';
 import type { Story } from '../types.ts';
 
-function renderFeaturedRows(allCards: Story[]): string {
-  const getStoryForSlot = (index: number): Story | null => {
+async function renderFeaturedRows(allCards: Story[]): Promise<string> {
+  const getStoryForSlot = async (index: number): Promise<Story | null> => {
     const override = getSlotOverride('home-featured', index);
     if (override === null) {
       // Explicitly removed by admin: show empty slot
       return null;
     }
     if (typeof override === 'string') {
-      return allCards.find(s => s.id === override) || null;
+      let story = allCards.find(s => s.id === override);
+      if (!story) {
+        // Fallback: fetch directly from Supabase
+        try {
+          const { fetchStoryByIdFromDb } = await import('../lib/db.ts');
+          story = await fetchStoryByIdFromDb(override) || undefined;
+          if (story) allCards.push(story); // cache for future lookups
+        } catch (err) {
+          console.error('Fallback story fetch failed:', err);
+        }
+      }
+      return story || null;
     }
     // No override: use unique story at this slot index (never duplicate!)
     return allCards[index] || null;
   };
 
-  const card1 = getStoryForSlot(0);
-  const card2 = getStoryForSlot(1);
-  const card3 = getStoryForSlot(2);
-  const card4 = getStoryForSlot(3);
+  const card1 = await getStoryForSlot(0);
+  const card2 = await getStoryForSlot(1);
+  const card3 = await getStoryForSlot(2);
+  const card4 = await getStoryForSlot(3);
 
   return `
   <!-- Row 1: Big left, Small right -->
@@ -122,12 +133,7 @@ export function render(): string {
           <a href="#featured" class="section__see-all" data-link="featured">See all</a>
         </div>
         <div id="home-featured-grid">
-          ${(() => {
-            const editorPicks = getEditorPicks();
-            const featured = getFeaturedStories();
-            const allCards = [...new Map([...editorPicks, ...featured].map(s => [s.id, s])).values()];
-            return renderFeaturedRows(allCards);
-          })()}
+          <div style="display:flex;justify-content:center;padding:40px;color:var(--color-text-muted);">Loading featured stories...</div>
         </div>
       </section>
 
@@ -239,7 +245,7 @@ export function init(): void {
         const editorPicks = getEditorPicks();
         const staticFeatured = getFeaturedStories();
         const allCards = [...new Map([...featuredLive, ...editorPicks, ...staticFeatured].map(s => [s.id, s])).values()];
-        const newFeaturedHtml = renderFeaturedRows(allCards);
+        const newFeaturedHtml = await renderFeaturedRows(allCards);
         // Only update DOM if content actually changed (prevents flash from DOM rebuild)
         if (featuredGrid.innerHTML !== newFeaturedHtml) {
           featuredGrid.innerHTML = newFeaturedHtml;
