@@ -1,5 +1,5 @@
 import type { StoryFormat, Genre, Story, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
-import { genres } from '../data/stories.ts';
+import { genres, registerStory } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
@@ -2745,11 +2745,16 @@ export function init(): void {
           if (!storyTitle.trim()) storyTitle = 'Untitled';
           getFormData();
           saveDraft();
+          const story = buildStory('draft');
+          registerStory(story); // Keep in memory
           try {
             await preUploadBase64Images();
-            await saveOfficialStory(buildStory('draft'));
-          } catch (err) {
-            console.error(err);
+          } catch (e) { console.warn('Pre-upload failed:', e); }
+          try {
+            await saveOfficialStory(story);
+          } catch (err: any) {
+            console.error('Cloud save failed on quit:', err);
+            alert('Warning: Story saved locally but cloud save failed. Error: ' + (err?.message || 'Unknown error'));
           }
           navigate('admin');
         });
@@ -3468,17 +3473,19 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         saveDraft();
         try {
           await preUploadBase64Images();
-          const story = buildStory('draft');
+        } catch (e) { console.warn('Pre-upload images failed, continuing:', e); }
+        const story = buildStory('draft');
+        const storyId = editStoryId || story.id;
+        // Register story in memory so the reader can find it even if cloud save fails
+        registerStory(story);
+        // Try to save to cloud (best-effort — don't block preview)
+        try {
           await saveOfficialStory(story);
-          const storyId = editStoryId || story.id;
-          if (storyId) {
-            navigate('story/' + storyId);
-          } else {
-            alert('Save the story first before previewing.');
-          }
         } catch (err) {
-          console.error('Preview failed:', err);
-          alert('Failed to save story for preview. Please try again.');
+          console.warn('Cloud save failed during preview (story still viewable from memory):', err);
+        }
+        if (storyId) {
+          navigate('story/' + storyId);
         }
       });
       // Arrow navigation

@@ -1,5 +1,5 @@
 import type { UserStory, Story, Genre, StoryFormat, ContentRating } from '../types.ts';
-import { stories as staticStories, genres } from '../data/stories.ts';
+import { stories as staticStories, genres, registerStory } from '../data/stories.ts';
 import {
   fetchAdminMetrics,
   fetchAdminStories,
@@ -702,7 +702,11 @@ function attachOfficialCardListeners(): void {
         if (menuItem.dataset.editOfficial) {
           navigate('admin-create/' + menuItem.dataset.editOfficial);
         } else if (menuItem.dataset.previewAdmin) {
-          navigate('story/' + menuItem.dataset.previewAdmin);
+          const sid = menuItem.dataset.previewAdmin;
+          // Register from admin cache so reader finds it even if not live
+          const cached = currentOfficialStories.find(s => s.id === sid);
+          if (cached) registerStory(cached);
+          navigate('story/' + sid);
         } else if (menuItem.dataset.toggleEpisodes) {
           const groupId = menuItem.dataset.toggleEpisodes;
           const group = document.querySelector(`.story-group[data-group-id="${groupId}"]`) as HTMLElement;
