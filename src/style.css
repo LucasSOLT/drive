@@ -13722,3 +13722,16 @@ body.content-management-mode .story-card:hover {
   color: #fbbf24;
   background: rgba(251, 191, 36, 0.15);
 }
+
+/* Upload spinner */
+.upload-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(139, 92, 246, 0.3);
+  border-top-color: #8b5cf6;
+  border-radius: 50%;
+  animation: upload-spin 0.8s linear infinite;
+}
+@keyframes upload-spin {
+  to { transform: rotate(360deg); }
+}

@@ -1,4 +1,4 @@
-import type { StoryFormat, Genre, Story, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
+import type { StoryFormat, Genre, Story, UserStory, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
 import { genres, registerStory } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
@@ -9,6 +9,7 @@ import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { uploadMedia } from '../lib/storage.ts';
 import { uploadAudioData } from '../lib/storage.ts';
 import { VOICE_OPTIONS } from '../lib/settings.ts';
+import { addUserStory } from '../state.ts';
 
 type CreatePhase = 'canvas' | 'details';
 
@@ -27,6 +28,41 @@ const isUserMode = () => window.location.hash.includes('mode=user');
 let soloEpisodeCount: 1 | 2 | 3 = 1;
 let sparcPromptText = '';
 let sparcPromptMediaUrls: string[] = [];
+
+/** Save story using the correct function based on user/admin mode */
+async function saveStoryForMode(story: Story): Promise<void> {
+  if (isUserMode()) {
+    // Convert Story → UserStory for regular users (saves to user_stories table)
+    const userStory: UserStory = {
+      id: story.id,
+      title: story.title || 'Untitled',
+      genre: story.genre as any || 'Drama',
+      format: story.format || 'book',
+      synopsis: story.synopsis || '',
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      coverImage: story.coverImage,
+      coverVideo: story.coverVideo,
+      pages: (story.panels || []).map((img, i) => ({
+        image: img || null,
+        text: story.pageScripts?.[i] || '',
+      })),
+      page_audio: story.pageAudio,
+      contentRating: story.contentRating,
+      characters: story.characters,
+      page_dialogue: story.pageDialogue,
+      audioMode: story.audioMode,
+      narratorVoiceId: story.narratorVoiceId,
+      bgmUrl: story.bgmUrl,
+      bgmVolume: story.bgmVolume,
+      pageFocalPositions: story.pageFocalPositions,
+      author_name: story.author,
+    };
+    await addUserStory(userStory);
+  } else {
+    await saveOfficialStory(story);
+  }
+}
 
 // Endless Scroll state
 interface TextOverlay {
@@ -1834,7 +1870,21 @@ function renderBookCanvas(): string {
         </button>
       </div>
 
-      ${renderSparcAdminEditor()}
+      ${!isUserMode() && currentPage === bookPages.length - 1 ? `
+        <div style="margin-top:16px; text-align:center;">
+          <button type="button" id="btn-sparc-checkpoint" style="
+            display:inline-flex; align-items:center; gap:8px; padding:12px 20px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.15));
+            border: 2px solid rgba(99,102,241,0.4); border-radius:14px;
+            color: var(--color-text-primary); font-size:0.9rem; font-weight:600;
+            cursor:pointer; font-family:var(--font-body); transition: all 0.2s;
+          ">
+            <span style="font-size:1.2rem;">⚡</span>
+            ${sparcPromptText.trim() || sparcPromptMediaUrls.length > 0 ? '✅ Edit SPARC Checkpoint' : 'Add SPARC Checkpoint'}
+          </button>
+          ${sparcPromptText.trim() ? `<p style="font-size:0.72rem; color:var(--color-text-muted); margin-top:6px;">End of episode challenge configured</p>` : ''}
+        </div>
+      ` : ''}
     </div>
   `;
 }
@@ -2143,9 +2193,16 @@ function openStoryboard(): void {
     </div>
     <div class="sb-track" id="sb-track">
       ${cardsHtml}
-      <div class="sb-card sb-card--sparc" style="min-width:420px; max-width:460px; overflow-y:auto; padding:8px 12px; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px;">
-        ${isUserMode() ? '' : renderSparcAdminEditor()}
-      </div>
+      ${!isUserMode() ? `<div class="sb-card sb-card--sparc" style="min-width:200px; max-width:240px; display:flex; align-items:center; justify-content:center; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px; padding:16px;">
+        <button type="button" id="btn-sparc-checkpoint" style="
+          display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px;
+          background:none; border:2px dashed rgba(99,102,241,0.4); border-radius:12px;
+          color:var(--color-text-primary); cursor:pointer; font-family:var(--font-body);
+        ">
+          <span style="font-size:1.5rem;">⚡</span>
+          <span style="font-size:0.8rem; font-weight:600;">${sparcPromptText.trim() ? '✅ Edit SPARC' : 'Add SPARC'}</span>
+        </button>
+      </div>` : ''}
     </div>
   `;
 
@@ -2176,7 +2233,7 @@ function openStoryboard(): void {
       saveDraft();
       try {
         await preUploadBase64Images();
-        await saveOfficialStory(buildStory('draft'));
+        await saveStoryForMode(buildStory('draft'));
       } catch (err) {
         console.error('Cloud save on close failed:', err);
       }
@@ -2202,7 +2259,7 @@ function openStoryboard(): void {
     try {
       if (savedIndicator) savedIndicator.textContent = '⏳ Saving...';
       await preUploadBase64Images();
-      await saveOfficialStory(buildStory('draft'));
+      await saveStoryForMode(buildStory('draft'));
       if (savedIndicator) {
         savedIndicator.textContent = '✅ Saved to cloud!';
         setTimeout(() => { if (savedIndicator) savedIndicator.textContent = ''; }, 3000);
@@ -2713,8 +2770,10 @@ export function init(): void {
         dropdown.style.cssText = `
           position: fixed;
           top: ${rect.bottom + 8}px;
-          left: ${rect.left}px;
-          min-width: 220px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 90%;
+          max-width: 320px;
           background: var(--color-surface);
           border: 1px solid var(--color-border);
           border-radius: var(--radius-lg);
@@ -2729,17 +2788,19 @@ export function init(): void {
             <span style="font-size:1.1rem;">💾</span> Save & Quit
           </button>
           <div style="height:1px; background:var(--color-border);"></div>
-          <button id="quit-cancel" style="display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; border:none; background:none; color:var(--color-text-muted); cursor:pointer; font-size:0.88rem; text-align:left; font-family:var(--font-body);">
-            <span style="font-size:1.1rem;">❌</span> Cancel (Don't Save)
+          <button id="quit-nosave" style="display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; border:none; background:none; color:#f87171; cursor:pointer; font-size:0.88rem; text-align:left; font-family:var(--font-body);">
+            <span style="font-size:1.1rem;">🚪</span> Don't Save & Quit
           </button>
           <div style="height:1px; background:var(--color-border);"></div>
-          <div style="padding:12px 16px; font-size:0.72rem; color:var(--color-text-muted); line-height:1.4;">
-            ℹ️ To publish, place this story on a tile via Content Management.
-          </div>
+          <button id="quit-cancel" style="display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; border:none; background:none; color:var(--color-text-muted); cursor:pointer; font-size:0.88rem; text-align:left; font-family:var(--font-body);">
+            <span style="font-size:1.1rem;">←</span> Go Back
+          </button>
         `;
         
         document.body.appendChild(dropdown);
         
+        const exitTarget = isUserMode() ? 'library' : 'admin';
+
         // Save & Quit
         document.getElementById('quit-save')?.addEventListener('click', async () => {
           dropdown.remove();
@@ -2752,18 +2813,23 @@ export function init(): void {
             await preUploadBase64Images();
           } catch (e) { console.warn('Pre-upload failed:', e); }
           try {
-            await saveOfficialStory(story);
+            await saveStoryForMode(story);
           } catch (err: any) {
             console.error('Cloud save failed on quit:', err);
             alert('Warning: Story saved locally but cloud save failed. Error: ' + (err?.message || 'Unknown error'));
           }
-          navigate('admin');
+          navigate(exitTarget);
         });
         
-        // Cancel
+        // Don't Save & Quit
+        document.getElementById('quit-nosave')?.addEventListener('click', () => {
+          dropdown.remove();
+          navigate(exitTarget);
+        });
+        
+        // Go Back (just close the dropdown)
         document.getElementById('quit-cancel')?.addEventListener('click', () => {
           dropdown.remove();
-          navigate('admin');
         });
         
         // Close dropdown on outside click
@@ -3425,8 +3491,8 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       document.getElementById('btn-save-exit')?.addEventListener('click', async () => {
         if (!storyTitle.trim()) storyTitle = 'Untitled';
         saveDraft();
-        try { await saveOfficialStory(buildStory('draft')); } catch {}
-        navigate('admin');
+        try { await saveStoryForMode(buildStory('draft')); } catch {}
+        navigate(isUserMode() ? 'library' : 'admin');
       });
       document.getElementById('btn-submit-review')?.addEventListener('click', () => { getFormData();
         openStorySettings();
@@ -3481,7 +3547,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         registerStory(story);
         // Try to save to cloud (best-effort — don't block preview)
         try {
-          await saveOfficialStory(story);
+          await saveStoryForMode(story);
         } catch (err) {
           console.warn('Cloud save failed during preview (story still viewable from memory):', err);
         }
@@ -3497,7 +3563,32 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         if (currentPage < bookPages.length - 1) { currentPage++; updateView(); }
       });
 
-      // Page dots click
+      // SPARC checkpoint button → opens modal
+      document.getElementById('btn-sparc-checkpoint')?.addEventListener('click', () => {
+        const modal = document.createElement('div');
+        modal.id = 'sparc-modal-overlay';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px;';
+        const card = document.createElement('div');
+        card.style.cssText = 'background:var(--color-surface);border:1px solid var(--color-border);border-radius:18px;padding:20px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;';
+        card.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h3 style="margin:0;font-size:1.05rem;font-weight:700;color:var(--color-text);">⚡ SPARC Checkpoint</h3>
+            <button id="sparc-modal-close" style="background:none;border:none;color:var(--color-text-muted);font-size:1.2rem;cursor:pointer;">✕</button>
+          </div>
+          ${renderSparcAdminEditor()}
+          <div style="margin-top:16px;text-align:right;">
+            <button id="sparc-modal-done" style="padding:10px 20px;background:var(--color-purple);color:white;border:none;border-radius:10px;font-size:0.88rem;cursor:pointer;font-family:var(--font-body);">Done</button>
+          </div>
+        `;
+        modal.appendChild(card);
+        document.body.appendChild(modal);
+        attachSparcAdminListeners(card);
+        const closeModal = () => { modal.remove(); updateView(); };
+        document.getElementById('sparc-modal-close')?.addEventListener('click', closeModal);
+        document.getElementById('sparc-modal-done')?.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+      });
+
       wizard.querySelectorAll('[data-dot]').forEach(dot => {
         dot.addEventListener('click', () => {
           currentPage = parseInt(dot.getAttribute('data-dot') || '0');
@@ -3505,25 +3596,47 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         });
       });
 
-      // Upload click
+      // Upload click — video clicks play/pause, other clicks trigger upload
       const uploadArea = wizard.querySelector(`[data-tile-upload="${i}"]`);
       uploadArea?.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('[data-tile-remove-img]') || (e.target as HTMLElement).closest('[data-tile-redo]')) return;
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-tile-remove-img]') || target.closest('[data-tile-redo]')) return;
+        // If clicking a video element, toggle play/pause instead of uploading
+        const videoEl = target.closest('video') || (target.tagName === 'VIDEO' ? target : null);
+        if (videoEl) {
+          const vid = videoEl as HTMLVideoElement;
+          if (vid.paused) { vid.muted = false; vid.play(); }
+          else { vid.pause(); }
+          return;
+        }
         const input = wizard.querySelector(`[data-tile-file="${i}"]`) as HTMLInputElement;
         input?.click();
       });
 
-      // File change
+      // File change — with loading spinner
       const fileInput = wizard.querySelector(`[data-tile-file="${i}"]`) as HTMLInputElement;
       fileInput?.addEventListener('change', async () => {
         const file = fileInput.files?.[0];
         if (file) {
+          // Show loading spinner
+          const tileEl = wizard.querySelector(`[data-tile-upload="${i}"]`) as HTMLElement;
+          let spinner: HTMLElement | null = null;
+          if (tileEl) {
+            spinner = document.createElement('div');
+            spinner.className = 'upload-spinner-overlay';
+            spinner.innerHTML = `<div class="upload-spinner"></div><span style="color:#e2e8f0;font-size:0.8rem;margin-top:8px;">Uploading...</span>`;
+            spinner.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);border-radius:8px;z-index:10;';
+            tileEl.style.position = 'relative';
+            tileEl.appendChild(spinner);
+          }
           try {
             const res = await uploadMedia(file, 'stories');
             bookPages[i].image = res.url;
             updateView();
           } catch (err: any) {
             alert('Upload failed: ' + (err?.message || 'Please check your connection and try again.'));
+          } finally {
+            spinner?.remove();
           }
         }
       });
