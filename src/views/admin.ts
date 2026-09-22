@@ -1,5 +1,5 @@
 import type { UserStory, Story, Genre, StoryFormat, ContentRating } from '../types.ts';
-import { stories as staticStories, genres, registerStory } from '../data/stories.ts';
+import { genres, registerStory } from '../data/stories.ts';
 import {
   fetchAdminMetrics,
   fetchAdminStories,
@@ -352,7 +352,7 @@ async function loadTabContent(): Promise<void> {
 }
 
 async function loadOriginalsTab(area: HTMLElement): Promise<void> {
-  // If cached stories are available, render immediately to eliminate 10s wait
+  // If cached stories are available, render immediately to eliminate wait
   const cached = getCachedOfficialStories();
   if (!currentOfficialStories.length && cached && cached.length > 0) {
     currentOfficialStories = cached;
@@ -361,10 +361,9 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
 
   try {
     const fetched = await fetchOfficialStories();
-    currentOfficialStories = fetched.length > 0 ? fetched : [...staticStories];
+    currentOfficialStories = fetched;
   } catch (err) {
-    console.warn('[Admin] Failed to fetch official stories, fallback to static/cache:', err);
-    if (!currentOfficialStories.length) currentOfficialStories = [...staticStories];
+    console.warn('[Admin] Failed to fetch official stories:', err);
   }
 
   renderOriginalsContent(area);
