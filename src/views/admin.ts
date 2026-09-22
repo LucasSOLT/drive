@@ -19,6 +19,7 @@ import {
   goOfficialStoryLive,
   takeOfficialStoryOffline,
   archiveOfficialStory,
+  unarchiveOfficialStory,
   checkIsGameMaster,
   hasAdminPrivileges,
   getUserRole,
@@ -385,21 +386,38 @@ function renderOriginalsContent(area: HTMLElement): void {
     filtered = filtered.filter(s => s.format === currentFormat);
   }
 
-  // Group stories by storyGroupId into episode stacks
+  // Split into active and archived
+  const activeFiltered = filtered.filter(s => (s as any).status !== 'archived');
+  const archivedFiltered = filtered.filter(s => (s as any).status === 'archived');
+
+  // Group active stories
   const groupMap = new Map<string, Story[]>();
-  for (const story of filtered) {
+  for (const story of activeFiltered) {
     const gid = story.storyGroupId || story.id;
     if (!groupMap.has(gid)) groupMap.set(gid, []);
     groupMap.get(gid)!.push(story);
   }
-  // Sort episodes within each group by episodeNumber
   for (const episodes of groupMap.values()) {
     episodes.sort((a, b) => (a.episodeNumber || 1) - (b.episodeNumber || 1));
   }
   const storyGroups = Array.from(groupMap.values());
 
-  if (storyGroups.length === 0) {
-    area.innerHTML = `
+  // Group archived stories
+  const archivedGroupMap = new Map<string, Story[]>();
+  for (const story of archivedFiltered) {
+    const gid = story.storyGroupId || story.id;
+    if (!archivedGroupMap.has(gid)) archivedGroupMap.set(gid, []);
+    archivedGroupMap.get(gid)!.push(story);
+  }
+  for (const episodes of archivedGroupMap.values()) {
+    episodes.sort((a, b) => (a.episodeNumber || 1) - (b.episodeNumber || 1));
+  }
+  const archivedGroups = Array.from(archivedGroupMap.values());
+
+  let html = '';
+
+  if (storyGroups.length === 0 && archivedGroups.length === 0) {
+    html = `
       <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; opacity: 0.7;">
         <div style="font-size: 2.5rem; margin-bottom: 12px;">📖</div>
         <h3 style="margin: 0 0 6px 0; color: var(--color-text-primary); font-family: var(--font-heading); font-size: 1rem;">No stories match your filters</h3>
@@ -407,15 +425,118 @@ function renderOriginalsContent(area: HTMLElement): void {
       </div>
     `;
   } else {
-    area.innerHTML = `
+    // Active stories section
+    html += `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">DRiVE Originals (${storyGroups.length} stories, ${filtered.length} episodes)</h2>
-      </div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px;" id="originals-grid">
-        ${storyGroups.map((episodes, i) => renderStoryStack(episodes, i)).join('')}
+        <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">DRiVE Originals (${storyGroups.length} stories, ${activeFiltered.length} episodes)</h2>
       </div>
     `;
+    if (storyGroups.length > 0) {
+      html += `
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px;" id="originals-grid">
+          ${storyGroups.map((episodes, i) => renderStoryStack(episodes, i)).join('')}
+        </div>
+      `;
+    } else {
+      html += `<p style="color: var(--color-text-muted); font-size: 0.85rem; padding: 20px 0;">No active stories. Check the Archived section below.</p>`;
+    }
+
+    // Archived section
+    if (archivedGroups.length > 0) {
+      html += `
+        <div style="margin-top: 32px; border-top: 1px solid var(--color-border); padding-top: 20px;">
+          <div id="archived-toggle" style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; margin-bottom: 16px;">
+            <span style="font-size: 1rem; color: var(--color-text-muted); font-family: var(--font-heading);">📦 Archived (${archivedGroups.length})</span>
+            <span id="archived-arrow" style="color: var(--color-text-muted); font-size: 0.8rem;">▸</span>
+          </div>
+          <div id="archived-grid" style="display: none; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px;">
+            ${archivedGroups.map(episodes => {
+              const ep1 = episodes[0];
+              const groupId = ep1.storyGroupId || ep1.id;
+              const coverSrc = ep1.coverImage || (ep1.panels?.[0]) || '';
+              return `
+                <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; display: flex; gap: 12px; align-items: center; opacity: 0.7;">
+                  <div style="width: 64px; height: 64px; border-radius: 8px; overflow: hidden; flex-shrink: 0; background: var(--color-bg);">
+                    ${coverSrc ? `<img src="${coverSrc}" style="width:100%;height:100%;object-fit:cover;" />` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.65rem;">No Cover</div>'}
+                  </div>
+                  <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 600; font-size: 0.85rem; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ep1.title || 'Untitled'}</div>
+                    <div style="font-size: 0.75rem; color: var(--color-text-muted);">${episodes.length} episode${episodes.length > 1 ? 's' : ''} · ${ep1.genre}</div>
+                    <div style="font-size: 0.7rem; color: #f59e0b; margin-top: 2px;">📦 ARCHIVED</div>
+                  </div>
+                  <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                    <button data-unarchive-group="${groupId}" style="background: rgba(139,92,246,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #8b5cf6; cursor: pointer; font-weight: 600;" title="Restore to DRiVE Originals">↩ Restore</button>
+                    <button data-delete-archived-group="${groupId}" style="background: rgba(239,68,68,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #ef4444; cursor: pointer; font-weight: 600;" title="Delete permanently">🗑</button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
   }
+
+  area.innerHTML = html;
+
+  // Wire archived toggle
+  const archivedToggle = area.querySelector('#archived-toggle');
+  const archivedGrid = area.querySelector('#archived-grid') as HTMLElement | null;
+  const archivedArrow = area.querySelector('#archived-arrow');
+  if (archivedToggle && archivedGrid) {
+    archivedToggle.addEventListener('click', () => {
+      const isHidden = archivedGrid.style.display === 'none';
+      archivedGrid.style.display = isHidden ? 'grid' : 'none';
+      if (archivedArrow) archivedArrow.textContent = isHidden ? '▾' : '▸';
+    });
+  }
+
+  // Wire unarchive buttons
+  area.querySelectorAll('[data-unarchive-group]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const groupId = (btn as HTMLElement).dataset.unarchiveGroup!;
+      const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
+      try {
+        for (const ep of episodes) {
+          await unarchiveOfficialStory(ep.id);
+          const idx = currentOfficialStories.findIndex(s => s.id === ep.id);
+          if (idx >= 0) (currentOfficialStories[idx] as any).status = 'draft';
+        }
+        loadAllMetrics();
+        loadTabContent();
+      } catch (err: any) {
+        alert('Unarchive failed: ' + (err?.message || 'Unknown error'));
+      }
+    });
+  });
+
+  // Wire delete-archived buttons
+  area.querySelectorAll('[data-delete-archived-group]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const groupId = (btn as HTMLElement).dataset.deleteArchivedGroup!;
+      const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
+      showModal({
+        title: `🗑 Delete permanently?`,
+        content: `<p>This will permanently delete "${episodes[0]?.title || 'this story'}" and all its episodes. This cannot be undone.</p>`,
+        confirmText: 'Delete Permanently',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+          try {
+            for (const ep of episodes) {
+              await deleteOfficialStory(ep.id);
+            }
+            currentOfficialStories = currentOfficialStories.filter(s => (s.storyGroupId || s.id) !== groupId);
+            loadAllMetrics();
+            loadTabContent();
+          } catch (err: any) {
+            alert('Delete failed: ' + (err?.message || 'Unknown error'));
+          }
+        },
+      });
+    });
+  });
 
   if (storyGroups.length > 0) {
     attachOfficialCardListeners();
@@ -730,6 +851,9 @@ function attachOfficialCardListeners(): void {
             cancelText: 'Cancel',
             onConfirm: async () => {
               await archiveOfficialStory(storyId);
+              // Update in-memory status so the archived section shows it immediately
+              const idx = currentOfficialStories.findIndex(s => s.id === storyId);
+              if (idx >= 0) (currentOfficialStories[idx] as any).status = 'archived';
               loadAllMetrics();
               loadTabContent();
             },
