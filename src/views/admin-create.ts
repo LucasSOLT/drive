@@ -872,6 +872,12 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       if (hint) {
         hint.innerHTML = `ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.`;
       }
+      // If current episode is now solo-only, clear any SPARC data
+      if (episodeNumber <= soloEpisodeCount && (sparcPromptText.trim() || sparcPromptMediaUrls.length > 0)) {
+        sparcPromptText = '';
+        sparcPromptMediaUrls = [];
+        console.log('[SPARC] Cleared SPARC data — Ep.' + episodeNumber + ' is now solo-only');
+      }
       saveDraft();
     });
   });
@@ -1107,10 +1113,10 @@ function renderSparcAdminEditor(): string {
         </label>
         <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px;" id="admin-sparc-media-list">
           ${sparcPromptMediaUrls.map((url, uIdx) => `
-            <div class="sparc-admin-thumb" style="position: relative; width: 84px; height: 84px; border-radius: 10px; overflow: hidden; border: 1px solid var(--color-border); background: #000;">
+            <div class="sparc-admin-thumb" style="position: relative; width: 84px; height: 84px; border-radius: 10px; overflow: hidden; border: 1px solid var(--color-border); background: #1a1a2e;">
               ${isVideoMedia(url)
                 ? `<video src="${url}" style="width: 100%; height: 100%; object-fit: cover;" autoplay muted loop playsinline></video>`
-                : `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover;" />`
+                : `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover;" alt="SPARC media" onerror="this.style.display='none'; this.parentElement.innerHTML+='<div style=\\'display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#94a3b8;font-size:0.65rem;text-align:center;padding:4px;\\'>Image failed</div>'" />`
               }
               <button type="button" class="sparc-admin-remove-media" data-remove-media="${uIdx}" title="Remove media" style="position: absolute; top: 3px; right: 3px; background: rgba(0, 0, 0, 0.75); color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">✕</button>
             </div>
@@ -1282,7 +1288,7 @@ function renderScrollCanvas(): string {
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
-      ${renderCanvasToolbar('Waterfall Storyboard - Ep.' + episodeNumber)}
+      ${renderCanvasToolbar((episodeNumber <= soloEpisodeCount ? 'Solo-Only Ep.' : 'Squad Ep.') + episodeNumber)}
 
       <!-- ─── CHARACTER SHEET STUDIO ─── -->
       <div class="cs-studio">
@@ -1400,7 +1406,7 @@ function renderScrollCanvas(): string {
           </div>
         </div>
 
-        ${isUserMode() ? '' : renderSparcAdminEditor()}
+        ${!isUserMode() && episodeNumber > soloEpisodeCount ? renderSparcAdminEditor() : ''}
 
         <!-- Bottom Actions -->
         <div class="scroll-bottom-actions">
@@ -1846,7 +1852,7 @@ function renderBookCanvas(): string {
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
-      ${renderCanvasToolbar('Illustrated Book - Ep.' + episodeNumber)}
+      ${renderCanvasToolbar((episodeNumber <= soloEpisodeCount ? 'Solo-Only Ep.' : 'Squad Ep.') + episodeNumber)}
 
       <h2 class="create-phase__title" style="margin-bottom:4px;">Your Pages</h2>
       <p class="create-phase__desc">Page ${currentPage + 1} of ${bookPages.length}. Long-press to delete.</p>
@@ -1870,7 +1876,7 @@ function renderBookCanvas(): string {
         </button>
       </div>
 
-      ${!isUserMode() && currentPage === bookPages.length - 1 ? `
+      ${!isUserMode() && episodeNumber > soloEpisodeCount && currentPage === bookPages.length - 1 ? `
         <div style="margin-top:16px; text-align:center;">
           <button type="button" id="btn-sparc-checkpoint" style="
             display:inline-flex; align-items:center; gap:8px; padding:12px 20px;
@@ -2193,7 +2199,7 @@ function openStoryboard(): void {
     </div>
     <div class="sb-track" id="sb-track">
       ${cardsHtml}
-      ${!isUserMode() ? `<div class="sb-card sb-card--sparc" style="min-width:200px; max-width:240px; display:flex; align-items:center; justify-content:center; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px; padding:16px;">
+      ${!isUserMode() && episodeNumber > soloEpisodeCount ? `<div class="sb-card sb-card--sparc" style="min-width:200px; max-width:240px; display:flex; align-items:center; justify-content:center; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px; padding:16px;">
         <button type="button" id="btn-sparc-checkpoint" style="
           display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px;
           background:none; border:2px dashed rgba(99,102,241,0.4); border-radius:12px;

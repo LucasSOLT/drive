@@ -314,34 +314,59 @@ export async function saveUserStory(story: UserStory): Promise<void> {
   const userId = getUserId();
 
   if (userId) {
-    const { data, error } = await supabase
-      .from('user_stories')
-      .insert({
-        user_id: userId,
-        title: story.title,
-        genre: story.genre,
-        format: story.format,
-        synopsis: story.synopsis || '',
-        status: story.status || 'draft',
-        pages: story.pages || [],
-        cover_image: story.coverImage || '',
-        characters: story.characters || [],
-        page_dialogue: story.page_dialogue || {},
-        audio_mode: story.audioMode || 'make_audio',
-        bgm_url: story.bgmUrl || null,
-        bgm_volume: story.bgmVolume ?? 0.25,
-        page_focal_positions: story.pageFocalPositions || {},
-      })
-      .select('id')
-      .single();
+    const payload: Record<string, any> = {
+      user_id: userId,
+      title: story.title,
+      genre: story.genre,
+      format: story.format,
+      synopsis: story.synopsis || '',
+      status: story.status || 'draft',
+      pages: story.pages || [],
+      cover_image: story.coverImage || '',
+      characters: story.characters || [],
+      page_dialogue: story.page_dialogue || {},
+      audio_mode: story.audioMode || 'make_audio',
+      bgm_url: story.bgmUrl || null,
+      bgm_volume: story.bgmVolume ?? 0.25,
+      page_focal_positions: story.pageFocalPositions || {},
+    };
 
-    if (error) {
-      console.error('Failed to save user story to Supabase:', error);
-      throw error;
+    // Retry loop: attempt insert, strip unknown columns on failure, retry
+    let attempts = 0;
+    const maxAttempts = 5;
+    let savedId: string | null = null;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      const { data, error } = await supabase
+        .from('user_stories')
+        .insert(payload)
+        .select('id')
+        .single();
+
+      if (!error && data?.id) {
+        savedId = data.id;
+        break;
+      }
+
+      if (error) {
+        // Check if the error is about a missing column
+        const colMatch = error.message?.match(/Could not find the '(\w+)' column/);
+        if (colMatch && colMatch[1]) {
+          const badCol = colMatch[1];
+          console.warn(`[DB] Column '${badCol}' not in user_stories, stripping and retrying (attempt ${attempts})...`);
+          delete payload[badCol];
+          continue;
+        }
+
+        // Non-column error — throw immediately
+        console.error('Failed to save user story to Supabase:', error);
+        throw error;
+      }
     }
 
-    if (data?.id) {
-      story.id = data.id;
+    if (savedId) {
+      story.id = savedId;
     }
   }
 

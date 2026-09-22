@@ -744,9 +744,14 @@ function attachOfficialCardListeners(): void {
             confirmText: 'Delete Permanently',
             cancelText: 'Cancel',
             onConfirm: async () => {
-              const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
-              for (const ep of episodes) {
-                await deleteOfficialStory(ep.id);
+              try {
+                const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
+                for (const ep of episodes) {
+                  await deleteOfficialStory(ep.id);
+                }
+              } catch (err: any) {
+                console.error('Delete failed:', err);
+                alert('Delete failed: ' + (err?.message || 'Unknown error. Check RLS policies.'));
               }
               loadAllMetrics();
               loadTabContent();
@@ -761,7 +766,12 @@ function attachOfficialCardListeners(): void {
             confirmText: 'Delete',
             cancelText: 'Cancel',
             onConfirm: async () => {
-              await deleteOfficialStory(storyId);
+              try {
+                await deleteOfficialStory(storyId);
+              } catch (err: any) {
+                console.error('Delete failed:', err);
+                alert('Delete failed: ' + (err?.message || 'Unknown error'));
+              }
               loadAllMetrics();
               loadTabContent();
             },
