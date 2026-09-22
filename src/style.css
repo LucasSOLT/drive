@@ -90,19 +90,10 @@ body {
   overflow-x: hidden;
 }
 
-@media (min-width: 640px) {
-  #app:has(.create-phase--canvas),
-  #app:has(.view-create--canvas),
-  #app:has(.view-create),
-  #app:has(.view-admin) {
-    max-width: 620px;
-  }
-}
-
-@media (min-width: 960px) {
-  #app:has(.create-phase--canvas),
-  #app:has(.view-create--canvas) {
-    max-width: 680px;
+@media (min-width: 768px) {
+  #app {
+    max-width: 100%;
+    box-shadow: none;
   }
 }
 
@@ -13734,4 +13725,244 @@ body.content-management-mode .story-card:hover {
 }
 @keyframes upload-spin {
   to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DESKTOP / WIDE SCREEN RESPONSIVE OVERRIDES
+   All changes below only apply on screens >= 768px wide.
+   Mobile (< 768px) is completely untouched.
+   ═══════════════════════════════════════════════════════════ */
+
+@media (min-width: 768px) {
+
+  /* ─── Phase 1: Root App Shell ─── */
+  .app-content {
+    padding-bottom: calc(var(--nav-height) + 8px);
+  }
+
+  /* ─── Phase 1: Bottom Navigation ─── */
+  .bottom-nav {
+    max-width: 100%;
+  }
+
+  /* ─── Phase 1: View Header ─── */
+  .view-header {
+    max-width: 100%;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  /* ─── Phase 1: Drawers & Overlays ─── */
+  .settings-drawer {
+    max-width: 540px;
+  }
+  .avatar-picker {
+    max-width: 540px;
+  }
+  .social-editor {
+    max-width: 540px;
+  }
+  .comment-drawer {
+    max-width: 540px;
+  }
+
+  /* ─── Phase 1: Full Menu ─── */
+  .fullmenu {
+    max-width: 100%;
+  }
+
+  /* ─── Phase 2: Home Page ─── */
+  .view-home {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .view-home .hero {
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .view-home .scroll-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    gap: var(--space-md);
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .view-home .scroll-row .story-card--compact {
+    flex: 0 0 auto;
+    width: 170px;
+  }
+  .view-home .section-header {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* ─── Phase 3: Featured Page ─── */
+  .view-featured {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .view-featured .story-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    padding: 0;
+  }
+  .view-featured .scroll-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    gap: var(--space-md);
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .view-featured .scroll-row .story-card--compact {
+    flex: 0 0 auto;
+    width: 170px;
+  }
+
+  /* ─── Phase 3: Explore Page ─── */
+  .view-explore {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .view-explore .story-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    padding: 0;
+  }
+
+  /* ─── Phase 4: Library Page ─── */
+  .view-library {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .view-library .lib-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+  .paywall__card {
+    max-width: 480px;
+  }
+
+  /* ─── Phase 5: Admin Dashboard ─── */
+  .view-admin {
+    max-width: 1200px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+  .admin-toolbar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* ─── Phase 6: Story Creator ─── */
+  .view-create {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .create-phase--settings {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .create-phase--canvas {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  /* ─── Phase 7: Story Reader ─── */
+  .reader {
+    width: 100% !important;
+    max-width: 100%;
+    margin: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    box-shadow: none !important;
+    background: #000;
+  }
+  .reader__progress-track {
+    width: 100% !important;
+    max-width: 100%;
+    margin: 0 !important;
+  }
+  .reader__header {
+    width: 100% !important;
+    max-width: 100%;
+    margin: 0 !important;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .reader__heart-overlay {
+    width: 100% !important;
+    max-width: 100%;
+    margin: 0 !important;
+  }
+  .reader__book-content {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .reader__book-content img,
+  .reader__book-content video {
+    max-height: 85vh;
+    width: auto;
+    max-width: 100%;
+    margin: 0 auto;
+    display: block;
+    object-fit: contain;
+  }
+  .reader__page-nav {
+    max-width: 720px;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .reader__toast {
+    max-width: 500px;
+  }
+  /* Scroll/webtoon format */
+  .reader__scroll-content {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .reader__scroll-content img,
+  .reader__scroll-content video {
+    max-width: 100%;
+    height: auto;
+  }
+  /* Keep captions readable */
+  .reader .cc-overlay-text {
+    max-width: 720px;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  /* Reader info / end-of-episode / squad gate */
+  .reader__info-page {
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  /* ─── Phase 8: Squad Lobby ─── */
+  .view-squad-lobby {
+    max-width: 800px;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .squad-lobby-bottom-dock {
+    max-width: 800px !important;
+  }
+
+  /* ─── General: Modals ─── */
+  .modal-overlay .modal-card {
+    max-width: 520px;
+  }
+
+  /* ─── General: Beta/Auth pages ─── */
+  .beta-card {
+    max-width: 520px;
+  }
 }
