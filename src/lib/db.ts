@@ -892,11 +892,23 @@ export async function fetchOfficialStories(): Promise<Story[]> {
     }
 
     const stories = (data || []).map((s: any) => mapOfficialStoryRecord(s));
-    // Merge any local drafts not yet synced
+    // Auto-sync any local drafts to Supabase (don't just display them locally)
     const localDrafts = getLocalDraftStories();
     const cloudIds = new Set(stories.map((s: Story) => s.id));
     for (const draft of localDrafts) {
-      if (!cloudIds.has(draft.id)) stories.push(draft);
+      if (!cloudIds.has(draft.id)) {
+        // This draft only exists locally — try to sync it to Supabase
+        stories.push(draft); // Show it immediately
+        // Background sync (non-blocking)
+        saveOfficialStory(draft as Partial<Story> & { id: string }).then(() => {
+          console.log('[DB] Auto-synced local draft to Supabase:', draft.id, draft.title);
+        }).catch(err => {
+          console.warn('[DB] Failed to auto-sync local draft:', draft.id, err);
+        });
+      } else {
+        // Draft exists in cloud — remove the local copy
+        removeLocalDraft(draft.id);
+      }
     }
     _cachedOfficialStories = stories;
     try {
@@ -1021,19 +1033,33 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
   throw new Error('Failed to save official story after stripping unknown columns');
 }
 
-/** Delete an official story */
+/** Delete an official story from Supabase AND local storage */
 export async function deleteOfficialStory(storyId: string): Promise<void> {
+  // 1. Try to delete from Supabase (may not exist there if it was never synced)
   const { error } = await supabase
     .from('official_stories')
     .delete()
     .eq('id', storyId);
 
   if (error) {
-    console.error('[DB] Error deleting official story:', error);
-    throw error;
+    console.warn('[DB] Supabase delete error (may be local-only draft):', error.message);
+    // Don't throw — the story might only exist in localStorage
   }
+
+  // 2. Always remove from localStorage drafts
+  removeLocalDraft(storyId);
+
+  // 3. Clear caches so next fetch is fresh
   _cachedOfficialStories = null;
   try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
+  try {
+    // Also remove from admin-create draft if it matches
+    const raw = localStorage.getItem('drive_admin_create_draft');
+    if (raw) {
+      const draft = JSON.parse(raw);
+      if (draft?.id === storyId) localStorage.removeItem('drive_admin_create_draft');
+    }
+  } catch {}
 }
 
 /** Reorder official stories by updating their sort_order values */

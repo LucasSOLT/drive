@@ -749,9 +749,11 @@ function attachOfficialCardListeners(): void {
                 for (const ep of episodes) {
                   await deleteOfficialStory(ep.id);
                 }
+                // Immediately remove from in-memory array so they don't reappear
+                currentOfficialStories = currentOfficialStories.filter(s => (s.storyGroupId || s.id) !== groupId);
               } catch (err: any) {
                 console.error('Delete failed:', err);
-                alert('Delete failed: ' + (err?.message || 'Unknown error. Check RLS policies.'));
+                alert('Delete failed: ' + (err?.message || 'Unknown error.'));
               }
               loadAllMetrics();
               loadTabContent();
@@ -768,6 +770,8 @@ function attachOfficialCardListeners(): void {
             onConfirm: async () => {
               try {
                 await deleteOfficialStory(storyId);
+                // Immediately remove from in-memory array
+                currentOfficialStories = currentOfficialStories.filter(s => s.id !== storyId);
               } catch (err: any) {
                 console.error('Delete failed:', err);
                 alert('Delete failed: ' + (err?.message || 'Unknown error'));
