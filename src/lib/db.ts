@@ -2,6 +2,7 @@ import { supabase } from './supabase.ts';
 import { getUser, isAuthenticated, getUserId } from './auth.ts';
 import type { Story, UserStory, UserSubscription, UserPlan, SquadSession, SparcPost } from '../types.ts';
 import { isVideoMedia } from './media.ts';
+import { removeTrackedStory } from './reading-tracker.ts';
 
 // ═══════════════════════════════════════════════════════════
 // DRiVE Database Service Layer
@@ -1043,13 +1044,19 @@ export async function deleteOfficialStory(storyId: string): Promise<void> {
 
   if (error) {
     console.warn('[DB] Supabase delete error (may be local-only draft):', error.message);
-    // Don't throw — the story might only exist in localStorage
+    // If it is an explicit permission or RLS error, throw so the admin knows
+    if (error.code === '42501') {
+      throw new Error(`Permission denied: You do not have access to delete story ${storyId}. Ensure you are signed in as an admin.`);
+    }
   }
 
   // 2. Always remove from localStorage drafts
   removeLocalDraft(storyId);
 
-  // 3. Clear caches so next fetch is fresh
+  // 3. Remove from local reading journeys immediately
+  removeTrackedStory(storyId);
+
+  // 4. Clear caches so next fetch is fresh
   _cachedOfficialStories = null;
   try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
   try {

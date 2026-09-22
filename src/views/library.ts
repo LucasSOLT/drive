@@ -1,5 +1,5 @@
 import type { UserStory, Story } from '../types.ts';
-import { getTrackedStories, removeTrackedStory, type TrackedStory } from '../lib/reading-tracker.ts';
+import { getTrackedStories, removeTrackedStory, cleanupOrphanedTrackedStories, type TrackedStory } from '../lib/reading-tracker.ts';
 import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteUserStory, getUserPlan, getUserSubscription, canCreateStory, getTokensRemaining, getCreditsBalance, getBookmarkedStoryIds, isBookmarked, toggleBookmark } from '../state.ts';
 import { navigate } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
@@ -549,7 +549,7 @@ export function render(): string {
           </div>
         </div>
 
-        <div class="library-unlocked__content slide-up stagger-2" style="margin-top: 1rem; margin-bottom: 2rem;">
+        <div class="library-unlocked__content slide-up stagger-2" id="lib-reading-journeys-shelf" style="margin-top: 1rem; margin-bottom: 2rem;">
           ${(() => {
             const tracked = getTrackedStories();
             if (tracked.length > 0) {
@@ -1023,34 +1023,65 @@ export function init(): void {
     }
   }
 
-  // Continue reading tracked stories
-  container.querySelectorAll('[data-continue-reading]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const storyId = btn.getAttribute('data-continue-reading');
-      if (storyId) navigate(`story/${storyId}`);
-    });
-  });
-
-  // Remove tracked story from reading history
-  container.querySelectorAll('[data-remove-tracked]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const storyId = btn.getAttribute('data-remove-tracked');
-      if (!storyId) return;
-      showModal({
-        title: 'Remove from Reading History',
-        content: '<p style="line-height:1.6;">Remove this story from your reading journeys? (You can always restart it anytime from the catalog.)</p>',
-        confirmText: 'Remove',
-        cancelText: 'Cancel',
-        onConfirm: () => {
-          removeTrackedStory(storyId);
-          const viewContainer = document.getElementById('view-container');
-          if (viewContainer) {
-            viewContainer.innerHTML = render();
-            init();
-          }
-        }
+  // Helper to wire reading journey listeners
+  function wireReadingJourneyListeners(root: HTMLElement) {
+    root.querySelectorAll('[data-continue-reading]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const storyId = btn.getAttribute('data-continue-reading');
+        if (storyId) navigate(`story/${storyId}`);
       });
     });
+
+    root.querySelectorAll('[data-remove-tracked]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const storyId = btn.getAttribute('data-remove-tracked');
+        if (!storyId) return;
+        showModal({
+          title: 'Remove from Reading History',
+          content: '<p style="line-height:1.6;">Remove this story from your reading journeys? (You can always restart it anytime from the catalog.)</p>',
+          confirmText: 'Remove',
+          cancelText: 'Cancel',
+          onConfirm: () => {
+            removeTrackedStory(storyId);
+            const viewContainer = document.getElementById('view-container');
+            if (viewContainer) {
+              viewContainer.innerHTML = render();
+              init();
+            }
+          }
+        });
+      });
+    });
+  }
+
+  // Initial wiring for reading journeys
+  wireReadingJourneyListeners(container);
+
+  // Background check: purge any tracked journeys whose stories were deleted from admin/catalog
+  cleanupOrphanedTrackedStories().then(changed => {
+    if (changed) {
+      const shelf = document.getElementById('lib-reading-journeys-shelf');
+      if (shelf) {
+        const tracked = getTrackedStories();
+        if (tracked.length > 0) {
+          shelf.innerHTML = `<div class="lib-grid">${tracked.map(s => renderTrackedReadingCard(s)).join('')}</div>`;
+        } else {
+          shelf.innerHTML = `
+            <div class="library-empty text-center" style="padding: 2rem 1.5rem; background: var(--color-surface); border-radius: var(--radius-xl); border: 1px dashed var(--color-border);">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.5rem; opacity: 0.6;">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+              </svg>
+              <h3 style="font-family: var(--font-heading); margin-bottom: 0.25rem; color: var(--color-text-primary); font-size: 1rem;">No stories started yet</h3>
+              <p class="text-muted" style="font-size: 0.82rem; margin: 0 0 1rem 0;">Start reading Episode 1 of any story to track your journey here!</p>
+              <button class="btn btn--primary btn--sm" id="btn-empty-browse" style="border-radius: 20px; font-size:0.8rem;">Explore Stories</button>
+            </div>
+          `;
+          document.getElementById('btn-empty-browse')?.addEventListener('click', () => navigate('home'));
+        }
+        wireReadingJourneyListeners(shelf);
+      }
+    }
   });
 
   // Friends button in library

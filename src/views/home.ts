@@ -25,10 +25,19 @@ async function renderFeaturedRows(allCards: Story[]): Promise<string> {
           console.error('Fallback story fetch failed:', err);
         }
       }
+      if (story && !isContentManagementMode()) {
+        const isLive = !story.officialStatus || story.officialStatus === 'live' || (story as any).status === 'live';
+        if (!isLive) return null;
+      }
       return story || null;
     }
     // No override: use unique story at this slot index (never duplicate!)
-    return allCards[index] || null;
+    const candidate = allCards[index];
+    if (candidate && !isContentManagementMode()) {
+      const isLive = !candidate.officialStatus || candidate.officialStatus === 'live' || (candidate as any).status === 'live';
+      if (!isLive) return null;
+    }
+    return candidate || null;
   };
 
   const card1 = await getStoryForSlot(0);
@@ -145,7 +154,7 @@ export function render(): string {
         </div>
         <div class="bestselling-carousel-wrapper" style="margin: 0 var(--space-md); overflow: hidden;">
           <div class="scroll-row no-scrollbar" id="home-bestselling-grid" style="padding: 0 0 var(--space-sm) 0; margin: 0;">
-            ${renderBestsellingRow([...stories].sort((a, b) => b.readCount - a.readCount))}
+            ${renderBestsellingRow([])}
           </div>
         </div>
       </section>
@@ -240,11 +249,18 @@ export function init(): void {
         fetchUnifiedExploreStories()
       ]);
       
+      const isLiveStory = (s: Story) => {
+        if (isContentManagementMode()) return true;
+        const status = (s as any).officialStatus || (s as any).status;
+        return !status || status === 'live';
+      };
+
       const featuredGrid = document.getElementById('home-featured-grid');
       if (featuredGrid) {
-        const editorPicks = getEditorPicks();
-        const staticFeatured = getFeaturedStories();
-        const allCards = [...new Map([...featuredLive, ...editorPicks, ...staticFeatured].map(s => [s.id, s])).values()];
+        const editorPicks = getEditorPicks().filter(isLiveStory);
+        const staticFeatured = getFeaturedStories().filter(isLiveStory);
+        const allCards = [...new Map([...featuredLive, ...editorPicks, ...staticFeatured].map(s => [s.id, s])).values()]
+          .filter(isLiveStory);
         const newFeaturedHtml = await renderFeaturedRows(allCards);
         // Only update DOM if content actually changed (prevents flash from DOM rebuild)
         if (featuredGrid.innerHTML !== newFeaturedHtml) {
@@ -256,8 +272,8 @@ export function init(): void {
 
       const bestGrid = document.getElementById('home-bestselling-grid');
       if (bestGrid) {
-        const staticStories = [...stories];
-        const allBestselling = [...new Map([...allExplore, ...staticStories].map(s => [s.id, s])).values()]
+        const allBestselling = [...new Map([...allExplore].map(s => [s.id, s])).values()]
+          .filter(isLiveStory)
           .sort((a, b) => b.readCount - a.readCount);
         const newBestHtml = renderBestsellingRow(allBestselling);
         // Only update DOM if content actually changed (prevents flash from DOM rebuild)

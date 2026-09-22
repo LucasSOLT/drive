@@ -1,3 +1,5 @@
+import { supabase } from './supabase.ts';
+
 // ─── READING TRACKER ENGINE (Engine A - Module 1) ───
 
 export type ReadingLifecycleStatus = 
@@ -122,3 +124,53 @@ export function removeTrackedStory(storyId: string): void {
     console.error('Failed to remove tracked story:', e);
   }
 }
+
+/**
+ * Validates tracked stories against Supabase and local user stories.
+ * Permanently removes any tracked stories that were deleted from the database.
+ * Returns true if any stories were pruned.
+ */
+export async function cleanupOrphanedTrackedStories(): Promise<boolean> {
+  try {
+    const tracked = getTrackedStories();
+    if (tracked.length === 0) return false;
+
+    const [offRes, userRes] = await Promise.all([
+      supabase.from('official_stories').select('id'),
+      supabase.from('user_stories').select('id')
+    ]);
+
+    // Safety check: if DB query failed (e.g. offline), do NOT wipe reading tracker
+    if (offRes.error) {
+      console.warn('[ReadingTracker] Skip cleanup due to query error:', offRes.error);
+      return false;
+    }
+
+    const validIds = new Set<string>();
+    if (offRes.data) offRes.data.forEach((r: any) => validIds.add(r.id));
+    if (userRes.data) userRes.data.forEach((r: any) => validIds.add(r.id));
+
+    // Also preserve local user creation drafts on this device
+    try {
+      const rawUser = localStorage.getItem('drive_user_stories');
+      if (rawUser) {
+        const arr = JSON.parse(rawUser);
+        if (Array.isArray(arr)) arr.forEach((s: any) => { if (s?.id) validIds.add(s.id); });
+      }
+    } catch {}
+
+    const originalCount = tracked.length;
+    const remaining = tracked.filter(t => validIds.has(t.storyId));
+
+    if (remaining.length !== originalCount) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining));
+      console.log(`[ReadingTracker] Cleaned up ${originalCount - remaining.length} deleted/orphaned reading journeys`);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[ReadingTracker] Error running reading tracker cleanup:', err);
+    return false;
+  }
+}
+
