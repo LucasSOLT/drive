@@ -26,7 +26,7 @@ export function getRouteParam(): string | null {
 const PROTECTED_ROUTES = ['library', 'create', 'profile', 'admin', 'admin-create', 'path-select', 'squad-lobby', 'lfg-bio', 'lfg-browse', 'sparc'];
 
 // Routes that require admin/game_master role
-const ADMIN_ROUTES = ['admin', 'admin-create'];
+const ADMIN_ROUTES = ['admin'];
 
 export function isProtectedRoute(route: string): boolean {
   const base = route.split('/')[0].split('?')[0];

@@ -7,7 +7,7 @@ import {
   getStoryLikes, hasUserLiked, toggleStoryLike,
   isBookmarked, toggleBookmark
 } from '../state.ts';
-import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAudio, seekAudio, formatTime, getCurrentAlignment, setWordHighlightCallback } from '../lib/tts.ts';
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { getSoloEpisodeCount, getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
@@ -281,7 +281,7 @@ export function render(): string {
           <button class="reader__action-btn" id="btn-comments" aria-label="Comments">
             <span class="reader__action-icon">${ICON.comment}</span>
           </button>
-          <button class="reader__action-btn" id="btn-cc" aria-label="Captions">
+          <button class="reader__action-btn active" id="btn-cc" aria-label="Captions">
             <span class="reader__action-icon reader__cc-icon">CC</span>
           </button>
         </div>
@@ -306,6 +306,7 @@ export function render(): string {
 }
 
 export async function init(): Promise<void> {
+  let captionsOpen = true;
   const container = document.getElementById('reader-container');
   if (!container) return;
 
@@ -633,6 +634,7 @@ export async function init(): Promise<void> {
   });
 
   // ─── Book format page navigation ───
+  captionsOpen = true; // CC ON by default — declared here so it's available in book page navigation
   if (story.format === 'book') {
     var currentPage = 0;
     let scriptVisible = false;
@@ -781,7 +783,7 @@ export async function init(): Promise<void> {
                   const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
                   const hasDialogueAudio = audioUrls.some((u: any) => !!u);
                   if (hasDialogueAudio) {
-                    playAudioSequence(audioUrls, undefined, onAudioFinished);
+                    playAudioSequence(audioUrls, (idx) => { (window as any).__activeCaptionLineIdx = idx; }, onAudioFinished);
                   } else {
                     playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
                   }
@@ -800,7 +802,7 @@ export async function init(): Promise<void> {
                 const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
                 const hasDialogueAudio = audioUrls.some((u: any) => !!u);
                 if (hasDialogueAudio) {
-                  playAudioSequence(audioUrls, undefined, onAudioFinished);
+                  playAudioSequence(audioUrls, (idx) => { (window as any).__activeCaptionLineIdx = idx; }, onAudioFinished);
                 } else {
                   playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
                 }
@@ -906,6 +908,11 @@ export async function init(): Promise<void> {
     });
 
     updatePage();
+    // Auto-render captions on initial load (CC is ON by default)
+    if (captionsOpen) {
+      const s = getStoryById(storyId);
+      if (s) renderCaptionsOverlay(s, currentPage);
+    }
   }
 
   // Waterfall autoplay with IntersectionObserver
@@ -1002,7 +1009,6 @@ export async function init(): Promise<void> {
   });
 
   // ─── CC captions toggle ───
-  var captionsOpen = false;
   document.getElementById('btn-cc')?.addEventListener('click', () => {
     const story = getStoryById(storyId);
     if (!story) return;
@@ -1033,6 +1039,12 @@ export async function init(): Promise<void> {
     }
   });
 
+  function wrapWordsInSpans(text: string, lineIdx: number): string {
+    return text.split(/\s+/).map((word, i) => 
+      `<span class="cc-word" data-line-idx="${lineIdx}" data-word-idx="${i}">${word}</span>`
+    ).join(' ');
+  }
+
   function renderCaptionsOverlay(story: any, pageIdx: number) {
     const existing = document.getElementById('reader-captions-overlay');
     if (existing) existing.remove();
@@ -1043,35 +1055,55 @@ export async function init(): Promise<void> {
 
     let content = '';
     if (dialogueLines.length > 0) {
-      content = dialogueLines.map((line: any) => {
+      content = dialogueLines.map((line: any, idx: number) => {
         const isNarrator = line.characterId === 'narrator';
-        const name = isNarrator ? '🎙️ Narrator' : (line.characterName || 'Speaker');
-        return `<div class="bv-caption-line"><span class="bv-caption-speaker">${name}</span><span class="bv-caption-text">${line.text}</span></div>`;
+        const name = isNarrator ? 'Narrator' : (line.characterName || 'Speaker');
+        const nameColor = isNarrator ? '#a78bfa' : '#60a5fa';
+        return `
+          <div style="margin-bottom:8px;">
+            <span style="font-size:0.7rem; font-weight:700; color:${nameColor}; text-transform:uppercase; letter-spacing:0.5px;">${name}</span>
+            <div class="cc-caption-text" style="font-size:0.88rem; color:#e2e8f0; line-height:1.55; margin-top:2px;">${wrapWordsInSpans(line.text, idx)}</div>
+          </div>
+        `;
       }).join('');
     } else if (scriptText) {
-      content = `<div class="bv-caption-line"><span class="bv-caption-text">${scriptText}</span></div>`;
+      content = `<div class="cc-caption-text" style="font-size:0.88rem; color:#e2e8f0; line-height:1.55;">${wrapWordsInSpans(scriptText, 0)}</div>`;
     }
 
     if (!content) return;
 
     const overlay = document.createElement('div');
     overlay.id = 'reader-captions-overlay';
-    overlay.className = 'book-viewer__captions-card';
-    overlay.innerHTML = `
-      <div class="bv-captions-header">
-        <span>Dialogue Captions</span>
-        <button class="bv-captions-close" id="reader-cc-close" aria-label="Close captions">✕</button>
-      </div>
-      ${content}
-    `;
-    overlay.style.cssText = 'position:fixed; bottom:80px; left:50%; transform:translateX(-50%); z-index:9999; width:90%; max-width:440px;';
-    document.body.appendChild(overlay);
+    overlay.style.cssText = 'padding: 12px 20px 16px; max-width: 600px; margin: 0 auto;';
+    overlay.innerHTML = content;
 
-    document.getElementById('reader-cc-close')?.addEventListener('click', () => {
-      captionsOpen = false;
-      const ccBtn = document.getElementById('btn-cc');
-      if (ccBtn) ccBtn.classList.remove('active');
-      overlay.remove();
+    // Insert below the page image inside .reader__book-content
+    const bookContent = document.querySelector('.reader__book-content');
+    const pageNav = document.querySelector('.reader__page-nav');
+    if (bookContent && pageNav) {
+      bookContent.insertBefore(overlay, pageNav);
+    } else if (bookContent) {
+      bookContent.appendChild(overlay);
+    } else {
+      // Fallback: append to reader content
+      const readerContent = document.getElementById('reader-content');
+      if (readerContent) readerContent.appendChild(overlay);
+    }
+
+    setWordHighlightCallback((charIndex: number) => {
+      const alignment = getCurrentAlignment();
+      if (!alignment) return;
+      let wordIdx = 0;
+      for (let i = 0; i < charIndex; i++) {
+        if (alignment.characters[i] === ' ') wordIdx++;
+      }
+      
+      const activeSpans = overlay.querySelectorAll('.cc-word--active');
+      activeSpans.forEach(span => span.classList.remove('cc-word--active'));
+      const targetSpan = overlay.querySelector(`.cc-word[data-line-idx="${(window as any).__activeCaptionLineIdx || 0}"][data-word-idx="${wordIdx}"]`);
+      if (targetSpan) {
+        targetSpan.classList.add('cc-word--active');
+      }
     });
   }
 }

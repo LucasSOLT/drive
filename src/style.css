@@ -13712,3 +13712,13 @@ body.content-management-mode .story-card:hover {
     padding-bottom: 0 !important;
   }
 }
+
+.cc-word {
+  transition: color 0.1s, background 0.1s;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.cc-word--active {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+}

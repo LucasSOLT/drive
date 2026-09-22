@@ -77,44 +77,72 @@ export async function uploadMedia(file: File, folder = 'stories'): Promise<Uploa
   const isVideo = file.type.startsWith('video/');
   const ext = file.name ? file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg') : (isVideo ? 'mp4' : 'jpg');
   const cleanExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${cleanExt}`;
 
-  try {
-    let payload: Blob = file;
-    let contentType = file.type;
-
-    if (!isVideo) {
-      payload = await compressImageToBlob(file);
-      contentType = payload.type || 'image/jpeg';
-    }
-
-    const { data, error } = await supabase.storage
-      .from(MEDIA_BUCKET)
-      .upload(fileName, payload, {
-        cacheControl: '31536000', // 1 year CDN cache
-        upsert: true,
-        contentType: contentType || (isVideo ? 'video/mp4' : 'image/jpeg'),
-      });
-
-    if (!error && data?.path) {
-      const { data: pubData } = supabase.storage
-        .from(MEDIA_BUCKET)
-        .getPublicUrl(data.path);
-
-      if (pubData?.publicUrl) {
-        console.log('[Storage] Upload succeeded:', pubData.publicUrl);
-        return { url: pubData.publicUrl, isRemote: true };
-      }
-    }
-
-    if (error) {
-      console.warn('[Storage] Remote upload failed, switching to local fallback:', error.message);
-    }
-  } catch (err: any) {
-    console.warn('[Storage] Exception during upload, switching to local fallback:', err?.message || err);
+  // Warn on very large files (>50MB)
+  if (file.size > 50 * 1024 * 1024) {
+    console.warn(`[Storage] Large file: ${(file.size / (1024 * 1024)).toFixed(1)}MB — upload may be slow`);
   }
 
-  // Graceful fallback to local dataUrl so user is never blocked
+  let payload: Blob = file;
+  let contentType = file.type;
+
+  if (!isVideo) {
+    try {
+      payload = await compressImageToBlob(file);
+      contentType = payload.type || 'image/jpeg';
+    } catch (e) {
+      console.warn('[Storage] Image compression failed, using original:', e);
+    }
+  }
+
+  // Try up to 2 times (retry once on failure)
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${cleanExt}`;
+
+    try {
+      // On retry, refresh auth session
+      if (attempt > 1) {
+        console.log('[Storage] Retrying upload (attempt 2), refreshing session...');
+        try { await supabase.auth.refreshSession(); } catch {}
+      }
+
+      const { data, error } = await supabase.storage
+        .from(MEDIA_BUCKET)
+        .upload(fileName, payload, {
+          cacheControl: '31536000', // 1 year CDN cache
+          upsert: true,
+          contentType: contentType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+        });
+
+      if (!error && data?.path) {
+        const { data: pubData } = supabase.storage
+          .from(MEDIA_BUCKET)
+          .getPublicUrl(data.path);
+
+        if (pubData?.publicUrl) {
+          console.log('[Storage] Upload succeeded:', pubData.publicUrl);
+          return { url: pubData.publicUrl, isRemote: true };
+        }
+      }
+
+      if (error) {
+        console.warn(`[Storage] Upload attempt ${attempt} failed:`, error.message);
+        if (attempt < 2) continue; // Retry
+      }
+    } catch (err: any) {
+      console.warn(`[Storage] Exception during upload attempt ${attempt}:`, err?.message || err);
+      if (attempt < 2) continue; // Retry
+    }
+  }
+
+  // Both attempts failed — fallback to local dataUrl for images
+  if (isVideo) {
+    // Videos as base64 are too large for database storage — show error
+    console.error('[Storage] Video upload failed after 2 attempts. Cannot fall back to base64 for videos.');
+    throw new Error('Video upload failed. Please check your connection and try again.');
+  }
+
+  console.warn('[Storage] Image upload failed after 2 attempts, using local fallback.');
   const localUrl = await fallbackLocalDataUrl(file);
   return { url: localUrl, isRemote: false };
 }

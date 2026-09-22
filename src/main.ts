@@ -198,7 +198,10 @@ function renderView(route: string) {
     case 'featured': viewModule = featuredView; title = 'Featured'; break;
     case 'explore': viewModule = exploreView; title = 'Explore'; break;
     case 'library': viewModule = libraryView; title = 'My Library'; break;
-    case 'create': viewModule = createView; title = 'Create'; break;
+    case 'create': 
+      // Redirect to unified create flow in user mode
+      navigate('admin-create?mode=user&format=book&new=true');
+      return;
     case 'help': viewModule = helpView; title = 'Help'; break;
     case 'about': viewModule = aboutView; title = 'About'; break;
     case 'profile': viewModule = profileView; title = 'Profile'; break;

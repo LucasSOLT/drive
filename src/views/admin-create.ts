@@ -23,6 +23,7 @@ let storyCoverVideo = '';
 let storyCustomGenre = '';
 
 // Squad Gate & SPARC Checkpoint State
+const isUserMode = () => window.location.hash.includes('mode=user');
 let soloEpisodeCount: 1 | 2 | 3 = 1;
 let sparcPromptText = '';
 let sparcPromptMediaUrls: string[] = [];
@@ -547,7 +548,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
           </div>
         </div>
 
-        ${(episodeNumber > 1 || (episodeStoryGroupId && episodeNumber > 1)) ? `
+        ${isUserMode() ? '' : (episodeNumber > 1 || (episodeStoryGroupId && episodeNumber > 1)) ? `
           <div class="ss-section">
             <div class="ss-section__label">🚨 Squad Gate Configuration</div>
             <p style="font-size:0.82rem; color:var(--color-text-muted); margin:4px 0 8px;">Episodes Playable Solo BEFORE Squad Gate Hits</p>
@@ -1363,7 +1364,7 @@ function renderScrollCanvas(): string {
           </div>
         </div>
 
-        ${renderSparcAdminEditor()}
+        ${isUserMode() ? '' : renderSparcAdminEditor()}
 
         <!-- Bottom Actions -->
         <div class="scroll-bottom-actions">
@@ -2143,7 +2144,7 @@ function openStoryboard(): void {
     <div class="sb-track" id="sb-track">
       ${cardsHtml}
       <div class="sb-card sb-card--sparc" style="min-width:420px; max-width:460px; overflow-y:auto; padding:8px 12px; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px;">
-        ${renderSparcAdminEditor()}
+        ${isUserMode() ? '' : renderSparcAdminEditor()}
       </div>
     </div>
   `;
@@ -3517,9 +3518,13 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       fileInput?.addEventListener('change', async () => {
         const file = fileInput.files?.[0];
         if (file) {
-          const res = await uploadMedia(file, 'stories');
-          bookPages[i].image = res.url;
-          updateView();
+          try {
+            const res = await uploadMedia(file, 'stories');
+            bookPages[i].image = res.url;
+            updateView();
+          } catch (err: any) {
+            alert('Upload failed: ' + (err?.message || 'Please check your connection and try again.'));
+          }
         }
       });
 

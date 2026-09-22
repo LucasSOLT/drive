@@ -39,6 +39,19 @@ export function getPunctuationVoiceSettings(punctuation: string): { stability: n
   }
 }
 
+let currentAlignment: {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+} | null = null;
+
+export function getCurrentAlignment() { return currentAlignment; }
+
+let onWordHighlight: ((charIndex: number) => void) | null = null;
+export function setWordHighlightCallback(cb: ((charIndex: number) => void) | null) {
+  onWordHighlight = cb;
+}
+
 let currentAudio: HTMLAudioElement | null = null;
 let currentObjectURL: string | null = null;
 
@@ -49,6 +62,11 @@ function speakWithBrowserTTS(text: string): void {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
+    utterance.onboundary = (event) => {
+      if (event.name === 'word') {
+        onWordHighlight?.(event.charIndex);
+      }
+    };
     window.speechSynthesis.speak(utterance);
   } catch (e) {
     console.warn('[TTS] Web Speech API failed:', e);
@@ -71,6 +89,7 @@ export function stopSpeaking(): void {
       window.speechSynthesis.cancel();
     } catch {}
   }
+  currentAlignment = null;
 }
 
 /** Returns whether TTS audio is currently playing. */
@@ -90,7 +109,7 @@ export async function speakText(text: string): Promise<void> {
   try {
     const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
       body: {
-        endpoint: `/v1/text-to-speech/${voiceId}`,
+        endpoint: `/v1/text-to-speech/${voiceId}/with-timestamps`,
         method: 'POST',
         body: {
           text,
@@ -107,6 +126,8 @@ export async function speakText(text: string): Promise<void> {
       return;
     }
 
+    currentAlignment = data.alignment || null;
+
     // The proxy returns { audio_base64, content_type }
     const binaryStr = atob(data.audio_base64);
     const bytes = new Uint8Array(binaryStr.length);
@@ -118,6 +139,24 @@ export async function speakText(text: string): Promise<void> {
     const audio = new Audio(url);
     currentAudio = audio;
     currentObjectURL = url;
+
+    audio.addEventListener('timeupdate', () => {
+      if (currentAudio === audio && currentAlignment) {
+        const time = audio.currentTime;
+        const starts = currentAlignment.character_start_times_seconds;
+        const ends = currentAlignment.character_end_times_seconds;
+        let activeCharIndex = -1;
+        for (let i = 0; i < starts.length; i++) {
+          if (time >= starts[i] && time <= ends[i]) {
+            activeCharIndex = i;
+            break;
+          }
+        }
+        if (activeCharIndex >= 0) {
+          onWordHighlight?.(activeCharIndex);
+        }
+      }
+    });
 
     audio.addEventListener('ended', () => {
       if (currentAudio === audio) {
@@ -410,6 +449,21 @@ export function playAudioUrl(
   audio.addEventListener('timeupdate', () => {
     if (currentAudio === audio) {
       onTimeUpdate?.(audio.currentTime, audio.duration || 0);
+      if (currentAlignment) {
+        const time = audio.currentTime;
+        const starts = currentAlignment.character_start_times_seconds;
+        const ends = currentAlignment.character_end_times_seconds;
+        let activeCharIndex = -1;
+        for (let i = 0; i < starts.length; i++) {
+          if (time >= starts[i] && time <= ends[i]) {
+            activeCharIndex = i;
+            break;
+          }
+        }
+        if (activeCharIndex >= 0) {
+          onWordHighlight?.(activeCharIndex);
+        }
+      }
     }
   });
 

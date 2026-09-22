@@ -907,7 +907,7 @@ export function init(): void {
   const createBtn = document.getElementById('create-new-btn');
   if (createBtn) {
     createBtn.addEventListener('click', () => {
-      navigate('create');
+      navigate('admin-create?mode=user&format=book&new=true');
     });
   }
 
@@ -916,7 +916,7 @@ export function init(): void {
     btn.addEventListener('click', () => {
       const storyId = btn.getAttribute('data-edit-user');
       if (storyId) {
-        navigate(`create/${storyId}`);
+        navigate(`admin-create/${storyId}?mode=user`);
       }
     });
   });
