@@ -3371,7 +3371,7 @@ button.profile-avatar {
 .reader {
   position: fixed;
   inset: 0;
-  background: var(--color-eggshell);
+  background: var(--story-theme-color, var(--color-eggshell));
   z-index: 500;
   overflow-y: auto;
   overflow-x: hidden;
@@ -6155,7 +6155,7 @@ button.profile-avatar {
   position: fixed;
   inset: 0;
   z-index: 10000;
-  background: var(--color-eggshell);
+  background: var(--story-theme-color, var(--color-eggshell));
   display: flex;
   flex-direction: column;
   animation: sbSlideIn 0.3s ease forwards;
@@ -14895,7 +14895,7 @@ body.content-management-mode .story-card:hover {
     border-left: none !important;
     border-right: none !important;
     box-shadow: none !important;
-    background: #000;
+    background: var(--story-theme-color, #000);
   }
   .reader__progress-track {
     width: 100% !important;

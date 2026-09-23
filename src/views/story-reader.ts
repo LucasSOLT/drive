@@ -242,8 +242,10 @@ export function render(): string {
     `;
   }
 
+  const themeColor = story.themeColor || (story as any).theme_color || '#141424';
+
   return `
-    <div class="reader" id="reader-container" data-story-id="${storyId}">
+    <div class="reader" id="reader-container" data-story-id="${storyId}" style="--story-theme-color: ${themeColor}; background: ${themeColor} !important;">
 
       <!-- Progress bar -->
       <div class="reader__progress-track">
@@ -293,7 +295,7 @@ export function render(): string {
       </header>
 
       <!-- Story content -->
-      <div class="reader__content" id="reader-content">
+      <div class="reader__content" id="reader-content" style="background: ${themeColor};">
         ${contentHtml}
       </div>
 
@@ -338,6 +340,12 @@ export async function init(): Promise<void> {
     });
     return;
   }
+
+  const themeColor = story.themeColor || (story as any).theme_color || '#141424';
+  container.style.setProperty('--story-theme-color', themeColor);
+  container.style.setProperty('background', themeColor, 'important');
+  const contentEl = document.getElementById('reader-content');
+  if (contentEl) contentEl.style.setProperty('background', themeColor, 'important');
 
   let siblingEpisodes: { id: string; episodeNumber: number }[] = [];
   if (story.storyGroupId) {

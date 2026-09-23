@@ -2476,6 +2476,10 @@ function openStoryboard(): void {
 
   const overlay = document.createElement('div');
   overlay.className = 'storyboard-overlay';
+  if (storyThemeColor) {
+    overlay.style.setProperty('--story-theme-color', storyThemeColor);
+    overlay.style.backgroundColor = storyThemeColor;
+  }
 
   const cardsHtml = bookPages.map((page, i) => `
     <div class="sb-card" data-sb-card="${i}" draggable="true">
@@ -2931,7 +2935,7 @@ function renderPhase(): string {
 
 export function render(): string {
   return `
-    <div class="view-create view-create--canvas" id="admin-create-container">
+    <div class="view-create view-create--canvas" id="admin-create-container" style="--story-theme-color: ${storyThemeColor || '#141424'};">
       <div class="admin-create-wizard admin-create-wizard--canvas slide-up stagger-1" id="admin-admin-create-wizard">
         ${renderPhase()}
       </div>
@@ -3111,6 +3115,10 @@ export function init(): void {
 
     updateView = () => {
       saveDraft();
+      const container = document.getElementById('admin-create-container');
+      if (container && storyThemeColor) {
+        container.style.setProperty('--story-theme-color', storyThemeColor);
+      }
       const wiz = document.getElementById('admin-admin-create-wizard');
       if (wiz) {
         wiz.innerHTML = renderPhase();
