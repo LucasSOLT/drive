@@ -186,6 +186,7 @@ let bookPages: BookPage[] = [
 
 // Story Characters for multi-voice dialogue
 const CHAR_COLORS = ['#8a63d2','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#f97316','#6366f1','#14b8a6'];
+const CHARACTER_PALETTE = ['#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#f97316', '#ef4444', '#ec4899'];
 let storyCharacters: StoryCharacter[] = [];
 let currentPage = 0;
 let activeDraftId: string | null = null;
@@ -798,24 +799,91 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
 
         <!-- ── TAB 4: CHARACTERS ── -->
         <div class="ss-tab-pane ${activeStorySettingsTab === 'characters' ? 'ss-tab-pane--active' : ''}" id="ss-pane-characters">
-          <div class="ss-section" id="ss-characters-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
-            <div class="ss-section__label">Characters & Cast Voices</div>
-            <div class="ss-characters-card" id="ss-characters-card">
-              ${storyCharacters.map((ch, ci) => {
-                const voiceOptionsHtml = renderGroupedVoiceOptions(ch.voiceId);
-                return `
-                <div class="ss-char-row" data-char-idx="${ci}">
-                  <div class="ss-char-badge" style="background:${ch.color || CHAR_COLORS[ci % CHAR_COLORS.length]}">${ch.name.charAt(0) || '?'}</div>
-                  <input class="ss-char-name-input" data-char-name="${ci}" value="${ch.name}" placeholder="Character name" maxlength="30" />
-                  <select class="ss-char-voice-select" data-char-voice="${ci}">${voiceOptionsHtml}</select>
-                  <button class="ss-char-audition-btn" data-char-audition="${ci}" type="button">🔊 Audition</button>
-                  <button class="ss-char-delete-btn" data-char-delete="${ci}" type="button">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                </div>`;
-              }).join('')}
-              <button class="ss-add-char-btn" id="ss-add-char-btn" type="button">+ Add Character</button>
+          <div class="ss-section" id="ss-characters-section">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+              <div>
+                <div class="ss-section__label" style="margin-bottom:3px;">Cast & Character Voices</div>
+                <p style="font-size:0.76rem; color:var(--color-text-muted); margin:0;">
+                  Give recurring characters distinct voices and color badges in dialogue bubbles.
+                </p>
+              </div>
+              <span class="ss-narrator-tag" style="font-size:0.75rem; padding:4px 10px;">
+                ${storyCharacters.length} Character${storyCharacters.length === 1 ? '' : 's'}
+              </span>
             </div>
+
+            ${storyAudioMode !== 'make_audio' ? `
+              <div style="background:rgba(234, 179, 8, 0.1); border:1px solid rgba(234, 179, 8, 0.3); border-radius:12px; padding:12px 14px; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <div style="font-size:0.78rem; color:var(--color-text-primary); line-height:1.4;">
+                  ℹ️ Character voices activate when <strong>Audio Experience Mode</strong> is set to <strong>"Make audio as you go"</strong>.
+                </div>
+                <button type="button" id="ss-enable-audio-mode-btn" class="btn btn--sm btn--primary" style="white-space:nowrap; font-size:0.74rem;">Enable AI Audio</button>
+              </div>
+            ` : ''}
+
+            ${storyCharacters.length === 0 ? `
+              <div class="ss-char-empty">
+                <div class="ss-char-empty__icon">👥</div>
+                <div class="ss-char-empty__title">No Characters Created Yet</div>
+                <div class="ss-char-empty__desc">
+                  Characters give dialogue lines their own actor voice and a custom color badge in your story panels.
+                </div>
+                <button type="button" class="btn btn--primary" id="ss-empty-add-char-btn" style="padding:10px 20px; font-size:0.84rem; font-weight:700;">
+                  + Add Your First Character
+                </button>
+              </div>
+            ` : `
+              <div class="ss-char-container">
+                ${storyCharacters.map((ch, ci) => {
+                  const voiceOptionsHtml = renderGroupedVoiceOptions(ch.voiceId);
+                  const charColor = ch.color || CHARACTER_PALETTE[ci % CHARACTER_PALETTE.length];
+                  return `
+                  <div class="ss-char-card" data-char-idx="${ci}">
+                    <!-- Card Top: Avatar, Name, Delete -->
+                    <div class="ss-char-card__top">
+                      <div class="ss-char-card__badge" style="background-color:${charColor}; box-shadow:0 3px 12px ${charColor}40;">
+                        ${(ch.name.trim().charAt(0) || '?').toUpperCase()}
+                      </div>
+                      <div class="ss-char-card__name-wrap">
+                        <span class="ss-char-card__name-label">Character Name</span>
+                        <input class="ss-char-card__name-input" data-char-name="${ci}" value="${ch.name}" placeholder="e.g. Elena, Shadow, Commander Jax" maxlength="30" />
+                      </div>
+                      <button class="ss-char-card__delete-btn" data-char-delete="${ci}" type="button" title="Delete character">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                      </button>
+                    </div>
+
+                    <!-- Card Middle: Color Dot Palette -->
+                    <div class="ss-char-card__palette-wrap">
+                      <span class="ss-char-card__palette-label">Theme:</span>
+                      <div class="ss-char-color-dots">
+                        ${CHARACTER_PALETTE.map(c => `
+                          <button type="button" class="ss-char-color-dot ${charColor.toLowerCase() === c.toLowerCase() ? 'ss-char-color-dot--active' : ''}" data-char-idx="${ci}" data-char-color-dot="${c}" style="background-color:${c};" title="Select color"></button>
+                        `).join('')}
+                      </div>
+                    </div>
+
+                    <!-- Card Bottom: Voice Selector & Audition -->
+                    <div class="ss-char-card__voice-wrap">
+                      <span class="ss-char-card__voice-label">Voice Actor</span>
+                      <div class="ss-char-card__voice-row">
+                        <select class="ss-char-voice-select" data-char-voice="${ci}">
+                          ${voiceOptionsHtml}
+                        </select>
+                        <button class="ss-char-audition-btn" data-char-audition="${ci}" type="button">
+                          🔊 Audition
+                        </button>
+                      </div>
+                    </div>
+                  </div>`;
+                }).join('')}
+
+                <button class="ss-char-add-card" id="ss-add-char-btn" type="button">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  + Add Another Character
+                </button>
+              </div>
+            `}
           </div>
         </div>
 
@@ -1009,24 +1077,58 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
   });
 
   // ── Character Cast Management ──
-  // Rename
+  // Switch to audio mode from helper banner
+  document.getElementById('ss-enable-audio-mode-btn')?.addEventListener('click', () => {
+    storyAudioMode = 'make_audio';
+    saveDraft();
+    openStorySettings({ preserveScroll: true });
+  });
+
+  // Rename character
   wizard.querySelectorAll('[data-char-name]').forEach(input => {
     input.addEventListener('input', () => {
       const idx = parseInt((input as HTMLElement).getAttribute('data-char-name') || '0');
+      if (!storyCharacters[idx]) return;
       storyCharacters[idx].name = (input as HTMLInputElement).value;
-      const badge = (input as HTMLElement).parentElement?.querySelector('.ss-char-badge') as HTMLElement;
-      if (badge) badge.textContent = storyCharacters[idx].name.charAt(0) || '?';
+      const card = (input as HTMLElement).closest('.ss-char-card');
+      const badge = card?.querySelector('.ss-char-card__badge') as HTMLElement | null;
+      if (badge) badge.textContent = (storyCharacters[idx].name.trim().charAt(0) || '?').toUpperCase();
       saveDraft();
     });
   });
+
+  // Color palette chip selection
+  wizard.querySelectorAll('[data-char-color-dot]').forEach(dot => {
+    dot.addEventListener('click', () => {
+      const idx = parseInt((dot as HTMLElement).getAttribute('data-char-idx') || '0');
+      const color = (dot as HTMLElement).getAttribute('data-char-color-dot') || '#8b5cf6';
+      if (!storyCharacters[idx]) return;
+      storyCharacters[idx].color = color;
+      
+      const card = (dot as HTMLElement).closest('.ss-char-card');
+      const badge = card?.querySelector('.ss-char-card__badge') as HTMLElement | null;
+      if (badge) {
+        badge.style.backgroundColor = color;
+        badge.style.boxShadow = `0 3px 12px ${color}40`;
+      }
+
+      card?.querySelectorAll('.ss-char-color-dot').forEach(d => d.classList.remove('ss-char-color-dot--active'));
+      dot.classList.add('ss-char-color-dot--active');
+
+      saveDraft();
+    });
+  });
+
   // Voice change
   wizard.querySelectorAll('[data-char-voice]').forEach(sel => {
     sel.addEventListener('change', () => {
       const idx = parseInt((sel as HTMLElement).getAttribute('data-char-voice') || '0');
+      if (!storyCharacters[idx]) return;
       storyCharacters[idx].voiceId = (sel as HTMLSelectElement).value;
       saveDraft();
     });
   });
+
   // Audition
   wizard.querySelectorAll('[data-char-audition]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -1042,10 +1144,40 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       setTimeout(() => { b.textContent = '🔊 Audition'; b.disabled = false; }, 3000);
     });
   });
-  // Delete
+
+  // Delete with safe confirmation
   wizard.querySelectorAll('[data-char-delete]').forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = parseInt((btn as HTMLElement).getAttribute('data-char-delete') || '0');
+      const ch = storyCharacters[idx];
+      if (!ch) return;
+
+      let usedCount = 0;
+      bookPages.forEach(p => {
+        (p.dialogueLines || []).forEach(l => {
+          if (l.characterId === ch.id) usedCount++;
+        });
+      });
+
+      const confirmMsg = usedCount > 0
+        ? `"${ch.name}" is used in ${usedCount} dialogue line${usedCount > 1 ? 's' : ''}. Deleting them will reassign those lines to Narrator. Are you sure?`
+        : `Delete character "${ch.name}"?`;
+
+      if (!confirm(confirmMsg)) return;
+
+      if (usedCount > 0) {
+        bookPages.forEach(p => {
+          if (p.dialogueLines) {
+            p.dialogueLines = p.dialogueLines.map(l => {
+              if (l.characterId === ch.id) {
+                return { ...l, characterId: 'narrator' };
+              }
+              return l;
+            });
+          }
+        });
+      }
+
       const scrollY = window.scrollY;
       const appContent = document.getElementById('app-content');
       const appScrollY = appContent?.scrollTop || 0;
@@ -1059,29 +1191,40 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       });
     });
   });
+
   // Add character
-  document.getElementById('ss-add-char-btn')?.addEventListener('click', () => {
+  const handleAddCharacter = () => {
     const scrollY = window.scrollY;
     const appContent = document.getElementById('app-content');
     const appScrollY = appContent?.scrollTop || 0;
     const newId = 'char_' + Date.now();
     const defaultVoice = VOICE_OPTIONS[storyCharacters.length % VOICE_OPTIONS.length];
+    const defaultColor = CHARACTER_PALETTE[storyCharacters.length % CHARACTER_PALETTE.length];
     storyCharacters.push({
       id: newId,
       name: 'Character ' + (storyCharacters.length + 1),
       voiceId: defaultVoice.voiceId,
-      color: CHAR_COLORS[storyCharacters.length % CHAR_COLORS.length],
+      color: defaultColor,
     });
     getFormData(); // sync form fields before re-render
     saveDraft();
     openStorySettings({ preserveScroll: true }); // re-render preserving tab
     
-    // Restore scroll position after re-render
+    // Restore scroll position after re-render and focus on the new character input
     requestAnimationFrame(() => {
       window.scrollTo({ top: scrollY, behavior: 'instant' });
       if (appContent) appContent.scrollTop = appScrollY;
+      const inputs = wizard.querySelectorAll<HTMLInputElement>('.ss-char-card__name-input');
+      const lastInput = inputs[inputs.length - 1];
+      if (lastInput) {
+        lastInput.focus();
+        lastInput.select();
+      }
     });
-  });
+  };
+
+  document.getElementById('ss-add-char-btn')?.addEventListener('click', handleAddCharacter);
+  document.getElementById('ss-empty-add-char-btn')?.addEventListener('click', handleAddCharacter);
 
   // ── Squad Gate Episodes Before Gate Selector ──
   wizard.querySelectorAll('[data-gate-count]').forEach(btn => {

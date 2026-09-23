@@ -12537,118 +12537,278 @@ body.content-management-mode .story-card:hover {
    MULTI-CHARACTER DIALOGUE SYSTEM
    ═══════════════════════════════════════════════════════════════ */
 
-/* --- Story Settings: Characters Card --- */
-.ss-characters-card {
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  margin-top: 12px;
+/* --- Story Settings: Workshoped Characters UI --- */
+.ss-char-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
 }
-.ss-char-row {
+
+.ss-char-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.ss-char-card:hover {
+  border-color: var(--color-purple-light);
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.08);
+}
+
+.ss-char-card__top {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-border);
+  gap: 12px;
 }
-.ss-char-row:last-of-type {
-  border-bottom: none;
-}
-.ss-char-badge {
-  width: 32px;
-  height: 32px;
+
+.ss-char-card__badge {
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #fff;
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #ffffff;
   flex-shrink: 0;
   text-transform: uppercase;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+  transition: background-color 0.2s, transform 0.2s;
 }
-.ss-char-name-input {
+
+.ss-char-card__name-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ss-char-card__name-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-muted);
+}
+
+.ss-char-card__name-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 10px;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.ss-char-card__name-input:focus {
+  border-color: var(--color-purple);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.ss-char-card__delete-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.ss-char-card__delete-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+/* Palette Dots */
+.ss-char-card__palette-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 2px;
+}
+
+.ss-char-card__palette-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  width: 52px;
+  flex-shrink: 0;
+}
+
+.ss-char-color-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ss-char-color-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.ss-char-color-dot:hover {
+  transform: scale(1.2);
+}
+
+.ss-char-color-dot--active {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-purple);
+}
+
+/* Voice Selection & Audition */
+.ss-char-card__voice-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ss-char-card__voice-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-muted);
+}
+
+.ss-char-card__voice-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ss-char-voice-select {
   flex: 1;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: 10px;
   font-family: var(--font-body);
   font-size: 0.82rem;
+  font-weight: 500;
   color: var(--color-text-primary);
-  background: var(--color-eggshell);
-  outline: none;
-}
-.ss-char-name-input:focus {
-  border-color: var(--color-purple);
-}
-.ss-char-voice-select {
-  flex: 1.2;
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-family: var(--font-body);
-  font-size: 0.78rem;
-  color: var(--color-text-primary);
-  background: var(--color-eggshell);
+  background: var(--color-bg);
   outline: none;
   cursor: pointer;
+  transition: border-color 0.2s;
 }
+
 .ss-char-voice-select:focus {
   border-color: var(--color-purple);
 }
+
 .ss-char-audition-btn {
-  padding: 5px 10px;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-eggshell);
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s ease;
-}
-.ss-char-audition-btn:hover {
-  border-color: var(--color-purple);
-  color: var(--color-purple);
-}
-.ss-char-delete-btn {
-  padding: 4px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  border-radius: 6px;
-  transition: color 0.15s;
-}
-.ss-char-delete-btn:hover {
-  color: var(--color-danger, #ef4444);
-}
-.ss-add-char-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
+  border: 1.5px solid var(--color-purple);
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.08);
+  color: var(--color-purple);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.ss-char-audition-btn:hover {
+  background: var(--color-purple);
+  color: #ffffff;
+}
+
+.ss-char-audition-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* Empty State */
+.ss-char-empty {
+  background: var(--color-surface);
+  border: 2px dashed var(--color-border);
+  border-radius: 16px;
+  padding: 32px 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   margin-top: 10px;
-  border: 1.5px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  background: transparent;
+}
+
+.ss-char-empty__icon {
+  font-size: 2.2rem;
+  margin-bottom: 4px;
+}
+
+.ss-char-empty__title {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.ss-char-empty__desc {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  max-width: 360px;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+/* Add Character Card Button */
+.ss-char-add-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 20px;
+  border: 2px dashed rgba(139, 92, 246, 0.4);
+  border-radius: 14px;
+  background: rgba(139, 92, 246, 0.04);
   color: var(--color-purple);
   font-family: var(--font-heading);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.88rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   width: 100%;
-  justify-content: center;
 }
-.ss-add-char-btn:hover {
+
+.ss-char-add-card:hover {
+  background: rgba(139, 92, 246, 0.1);
   border-color: var(--color-purple);
-  background: rgba(138, 99, 210, 0.06);
+  transform: translateY(-1px);
 }
+
 
 /* --- Multi-Character Dialogue Lines (Storyboard + Mobile Canvas) --- */
 .sb-dialog-lines {
@@ -14820,20 +14980,74 @@ body.content-management-mode .story-card:hover {
     margin: 0 auto;
   }
 
-  /* ─── Phase 8: Squad Lobby ─── */
+  /* ─── Phase 8: Squad Lobby & SPARC Checkpoint ─── */
   .view-squad-lobby {
-    max-width: 800px;
+    max-width: 860px;
+    width: 100%;
     margin: 0 auto;
-    padding-left: 24px;
-    padding-right: 24px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+  .view-squad-lobby .squad-members-list {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)) !important;
+    gap: 12px !important;
   }
   .squad-lobby-bottom-dock {
-    max-width: 800px !important;
+    max-width: 860px !important;
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0 auto !important;
+    border-radius: 16px 16px 0 0 !important;
+    border-left: 1.5px solid var(--color-border) !important;
+    border-right: 1.5px solid var(--color-border) !important;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.12) !important;
+  }
+  .view-sparc-checkpoint {
+    max-width: 860px;
+    width: 100%;
+    margin: 0 auto;
+    padding-left: 32px;
+    padding-right: 32px;
   }
 
-  /* ─── General: Modals ─── */
+  /* ─── Phase 9: Profile, About & Help Desktop Views ─── */
+  .view-profile {
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+  .view-profile .profile-hero {
+    max-width: 640px;
+    margin: 1.5rem auto 2rem auto;
+  }
+  .view-profile .profile-friends-btn,
+  .view-profile .profile-library-btn {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  .view-profile .story-grid {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
+  }
+
+  .view-about,
+  .view-help {
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 2rem 32px 4rem 32px;
+  }
+
+  /* ─── General: Modals & Dialogs ─── */
+  .modal-overlay {
+    backdrop-filter: blur(8px) !important;
+  }
   .modal-overlay .modal-card {
     max-width: 520px;
+    border-radius: var(--radius-xl);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   }
 
   /* ─── General: Beta/Auth pages ─── */
