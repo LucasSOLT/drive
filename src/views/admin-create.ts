@@ -23,6 +23,38 @@ let storyContentRating: 'All Ages' | 'PG-13' | 'Mature' = 'All Ages';
 let storyCoverVideo = '';
 let storyCustomGenre = '';
 let storyThemeColor: string = '#141424';
+let activeStorySettingsTab: 'general' | 'theme' | 'audio' | 'characters' | 'squad' = 'general';
+
+const THEME_COLOR_PRESETS = [
+  { id: 'drive-purple', name: 'DRiVE Signature', hex: '#141424', desc: 'Default deep indigo aesthetic' },
+  { id: 'oled-black', name: 'OLED Black', hex: '#000000', desc: 'Ultra-dark pure black canvas' },
+  { id: 'midnight-navy', name: 'Midnight Navy', hex: '#0a0e1a', desc: 'Cool starry oceanic tone' },
+  { id: 'charcoal-slate', name: 'Charcoal Slate', hex: '#18181b', desc: 'Modern neutral dark slate' },
+  { id: 'warm-sepia', name: 'Warm Sepia', hex: '#1c1815', desc: 'Cozy antique novel warmth' },
+  { id: 'dark-crimson', name: 'Dark Crimson', hex: '#18080c', desc: 'Moody dramatic dark velvet' },
+];
+
+function renderGroupedVoiceOptions(selectedVoiceId: string): string {
+  const femaleIds = new Set(['sarah', 'rachel', 'domi', 'elli', 'charlotte', 'alice', 'lily', 'matilda', 'grace']);
+  const maleIds = new Set(['roger', 'liam', 'george', 'adam', 'antoni', 'josh', 'sam', 'arnold', 'daniel', 'james', 'callum']);
+  const youthIds = new Set(['fin', 'freya']);
+
+  const femaleVoices = VOICE_OPTIONS.filter(v => femaleIds.has(v.id));
+  const maleVoices = VOICE_OPTIONS.filter(v => maleIds.has(v.id));
+  const youthVoices = VOICE_OPTIONS.filter(v => youthIds.has(v.id));
+  const characterVoices = VOICE_OPTIONS.filter(v => !femaleIds.has(v.id) && !maleIds.has(v.id) && !youthIds.has(v.id));
+
+  const renderGroup = (label: string, list: typeof VOICE_OPTIONS) => `
+    <optgroup label="${label}">
+      ${list.map(v => `<option value="${v.voiceId}" ${v.voiceId === selectedVoiceId ? 'selected' : ''}>${v.name} — ${v.description}</option>`).join('')}
+    </optgroup>
+  `;
+
+  return renderGroup('Female Voices', femaleVoices) +
+         renderGroup('Male Voices', maleVoices) +
+         renderGroup('Youth Voices', youthVoices) +
+         renderGroup('Character & Dynamic Voices', characterVoices);
+}
 
 // Squad Gate & SPARC Checkpoint State
 const isUserMode = () => window.location.hash.includes('mode=user');
@@ -405,6 +437,10 @@ function getFormData(): void {
   storyGenre = (((document.getElementById('ss-genre') as HTMLSelectElement)?.value || storyGenre || 'Fantasy')) as Genre;
   storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || storySynopsis || '';
   storyContentRating = (((document.getElementById('ss-rating') as HTMLSelectElement)?.value || storyContentRating || 'All Ages')) as any;
+  const customColorVal = (document.getElementById('ss-theme-color-custom') as HTMLInputElement)?.value;
+  if (customColorVal) storyThemeColor = customColorVal;
+  const narratorVoiceVal = (document.getElementById('ss-narrator-voice') as HTMLSelectElement)?.value;
+  if (narratorVoiceVal) storyNarratorVoiceId = narratorVoiceVal;
 }
 
 function buildStory(status: 'draft' | 'live'): Story {
@@ -553,7 +589,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
   wizard.innerHTML = `
     <div class="story-settings-fs">
       <div class="story-settings-fs__header">
-        <button class="story-settings-fs__back" id="ss-back" type="button">
+        <button class="story-settings-fs__back" id="ss-back" type="button" title="Back to editor">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
         </button>
         <h2 class="story-settings-fs__title">Story Settings</h2>
@@ -561,170 +597,287 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       </div>
 
       <div class="story-settings-fs__body">
-        <div class="ss-section">
-          <div class="ss-section__label">Thumbnail Image/Video</div>
-          <div class="ss-field">
-            <div id="modal-cover-thumb-zone" style="width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: var(--color-surface);">
-              <div id="modal-cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${(_coverThumbnail || storyCoverVideo) ? 'display: none;' : ''}">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload thumbnail image or video</p>
-              </div>
-              <img id="modal-cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${(_coverThumbnail && !isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
-              <video id="modal-cover-video-preview" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover; ${(storyCoverVideo || isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${(storyCoverVideo || _coverThumbnail) ? `src="${storyCoverVideo || _coverThumbnail}"` : ''}></video>
-            </div>
-            <input type="file" id="modal-cover-thumb-input" accept="image/*,video/*" style="display: none;" />
+        <!-- Shared Settings Banner -->
+        <div class="ss-shared-banner">
+          <div class="ss-shared-banner__icon">🌐</div>
+          <div class="ss-shared-banner__content">
+            <span class="ss-shared-banner__title">Shared Story Settings</span>
+            <span class="ss-shared-banner__sub">Title, cover, theme color, narrator voice, characters, and audio settings are synchronized across all episodes in this story.</span>
           </div>
         </div>
 
-        <div class="ss-section">
-          <div class="ss-section__label">Story Information</div>
-          <div class="ss-field">
-            <label class="ss-field__label" for="ss-title">Title <span class="ss-required">*</span></label>
-            <input type="text" id="ss-title" class="ss-field__input" value="${storyTitle}" placeholder="Give your story a name..." maxlength="80" />
-          </div>
-          <div class="ss-field">
-            <label class="ss-field__label" for="ss-author">Author Name</label>
-            <input type="text" id="ss-author" class="ss-field__input" value="${storyAuthorName}" placeholder="Your pen name or display name..." maxlength="40" />
-          </div>
-          <div class="ss-field">
-            <label class="ss-field__label" for="ss-synopsis">Synopsis</label>
-            <textarea id="ss-synopsis" class="ss-field__textarea" placeholder="Give readers a preview of your story..." rows="3" maxlength="500">${storySynopsis}</textarea>
-            <div class="ss-field__hint" style="text-align:right;">${storySynopsis.length}/500</div>
-          </div>
+        <!-- Tabbed Navigation -->
+        <div class="ss-tabs-nav" id="ss-tabs-nav">
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'general' ? 'ss-tab-btn--active' : ''}" data-tab="general">
+            <span>📝</span> General
+          </button>
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'theme' ? 'ss-tab-btn--active' : ''}" data-tab="theme">
+            <span>🎨</span> Visual & Theme
+          </button>
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'audio' ? 'ss-tab-btn--active' : ''}" data-tab="audio">
+            <span>🎙️</span> Audio & Narrator
+          </button>
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'characters' ? 'ss-tab-btn--active' : ''}" data-tab="characters">
+            <span>👥</span> Characters (${storyCharacters.length})
+          </button>
+          ${isUserMode() ? '' : `
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'squad' ? 'ss-tab-btn--active' : ''}" data-tab="squad">
+            <span>🛡️</span> Squad Gate
+          </button>
+          `}
         </div>
 
-        <div class="ss-section">
-          <div class="ss-section__label">Classification & Media</div>
-          <div class="ss-field">
-            <label class="ss-field__label" for="ss-genre">Genre</label>
-            <select id="ss-genre" class="ss-field__select">
-              ${allGenres.map(g => `<option value="${g}" ${storyGenre === g ? 'selected' : ''}>${g}</option>`).join('')}
-            </select>
-          </div>
-          <div class="ss-field">
-            <label class="ss-field__label" for="ss-rating">Content Rating</label>
-            <select id="ss-rating" class="ss-field__select">
-              <option value="All Ages" ${storyContentRating === 'All Ages' ? 'selected' : ''}>All Ages</option>
-              <option value="PG-13" ${storyContentRating === 'PG-13' ? 'selected' : ''}>PG-13</option>
-              <option value="Mature" ${storyContentRating === 'Mature' ? 'selected' : ''}>Mature</option>
-            </select>
-          </div>
-        </div>
-
-        ${isUserMode() ? '' : (episodeNumber > 1 || (episodeStoryGroupId && episodeNumber > 1)) ? `
+        <!-- ── TAB 1: GENERAL ── -->
+        <div class="ss-tab-pane ${activeStorySettingsTab === 'general' ? 'ss-tab-pane--active' : ''}" id="ss-pane-general">
           <div class="ss-section">
-            <div class="ss-section__label">🚨 Squad Gate Configuration</div>
-            <p style="font-size:0.82rem; color:var(--color-text-muted); margin:4px 0 8px;">Episodes Playable Solo BEFORE Squad Gate Hits</p>
-            <div style="display:flex; gap:8px;">
-              <div style="padding:10px 20px; border-radius:var(--radius-md); background:var(--color-purple); color:white; font-weight:700; font-size:0.88rem;">${soloEpisodeCount} Episode${soloEpisodeCount > 1 ? 's' : ''}</div>
-            </div>
-            <p style="font-size:0.72rem; color:var(--color-text-muted); margin:8px 0 0;">ℹ️ Squad gate is configured on Episode 1. Edit Episode 1's settings to change this.</p>
-          </div>
-        ` : `
-          <div class="ss-section" id="ss-squad-gate-section">
-            <div class="ss-section__label">🛡️ Squad Gate Configuration</div>
+            <div class="ss-section__label">Story Information</div>
             <div class="ss-field">
-              <label class="ss-field__label">Episodes Playable Solo BEFORE Squad Gate Hits</label>
-              <div class="ss-gate-selector" id="ss-gate-selector" style="display: flex; gap: 10px; margin-top: 8px;">
-                <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? 'btn-gate-option--active' : ''}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
-                  1 Episode
-                </button>
-                <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? 'btn-gate-option--active' : ''}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
-                  2 Episodes
-                </button>
-                <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? 'btn-gate-option--active' : ''}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 3 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
-                  3 Episodes
-                </button>
+              <label class="ss-field__label" for="ss-title">Title <span class="ss-required">*</span></label>
+              <input type="text" id="ss-title" class="ss-field__input" value="${storyTitle}" placeholder="Give your story a name..." maxlength="80" />
+            </div>
+            <div class="ss-field">
+              <label class="ss-field__label" for="ss-author">Author Name</label>
+              <input type="text" id="ss-author" class="ss-field__input" value="${storyAuthorName}" placeholder="Your pen name or display name..." maxlength="40" />
+            </div>
+            <div class="ss-field">
+              <label class="ss-field__label" for="ss-synopsis">Synopsis</label>
+              <textarea id="ss-synopsis" class="ss-field__textarea" placeholder="Give readers a preview of your story..." rows="3" maxlength="500">${storySynopsis}</textarea>
+              <div class="ss-field__hint" id="ss-synopsis-count" style="text-align:right;">${storySynopsis.length}/500</div>
+            </div>
+          </div>
+
+          <div class="ss-section">
+            <div class="ss-section__label">Classification</div>
+            <div class="ss-field">
+              <label class="ss-field__label" for="ss-genre">Genre</label>
+              <select id="ss-genre" class="ss-field__select">
+                ${allGenres.map(g => `<option value="${g}" ${storyGenre === g ? 'selected' : ''}>${g}</option>`).join('')}
+              </select>
+            </div>
+            <div class="ss-field">
+              <label class="ss-field__label" for="ss-rating">Content Rating</label>
+              <select id="ss-rating" class="ss-field__select">
+                <option value="All Ages" ${storyContentRating === 'All Ages' ? 'selected' : ''}>All Ages</option>
+                <option value="PG-13" ${storyContentRating === 'PG-13' ? 'selected' : ''}>PG-13</option>
+                <option value="Mature" ${storyContentRating === 'Mature' ? 'selected' : ''}>Mature</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TAB 2: VISUAL & THEME ── -->
+        <div class="ss-tab-pane ${activeStorySettingsTab === 'theme' ? 'ss-tab-pane--active' : ''}" id="ss-pane-theme">
+          <div class="ss-section">
+            <div class="ss-section__label">Thumbnail Cover Media</div>
+            <div class="ss-field">
+              <div id="modal-cover-thumb-zone" style="width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: var(--color-surface);">
+                <div id="modal-cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${(_coverThumbnail || storyCoverVideo) ? 'display: none;' : ''}">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload thumbnail image or video</p>
+                </div>
+                <img id="modal-cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${(_coverThumbnail && !isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
+                <video id="modal-cover-video-preview" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover; ${(storyCoverVideo || isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${(storyCoverVideo || _coverThumbnail) ? `src="${storyCoverVideo || _coverThumbnail}"` : ''}></video>
               </div>
-              <div class="ss-field__hint" id="ss-gate-hint" style="font-size: 0.76rem; color: var(--color-text-muted); margin-top: 8px; line-height: 1.45;">
-                ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.
+              <input type="file" id="modal-cover-thumb-input" accept="image/*,video/*" style="display: none;" />
+            </div>
+          </div>
+
+          <div class="ss-section">
+            <div class="ss-section__label">Story Canvas & Background Theme</div>
+            <p style="font-size:0.78rem; color:var(--color-text-muted); margin:0 0 12px;">Choose the backdrop theme for reader mode and the creator canvas behind story panels.</p>
+            
+            <div class="ss-theme-grid" id="ss-theme-preset-grid">
+              ${THEME_COLOR_PRESETS.map(p => `
+                <div class="ss-theme-card ${(storyThemeColor || '#141424').toLowerCase() === p.hex.toLowerCase() ? 'ss-theme-card--active' : ''}" data-theme-hex="${p.hex}">
+                  <div class="ss-theme-preview" style="background:${p.hex};">
+                    <span style="color:rgba(255,255,255,0.7); font-size:0.7rem;">Aa</span>
+                  </div>
+                  <span class="ss-theme-name">${p.name}</span>
+                  <span class="ss-theme-desc">${p.desc}</span>
+                </div>
+              `).join('')}
+            </div>
+
+            <div class="ss-custom-color-row">
+              <input type="color" id="ss-theme-color-custom" class="ss-color-picker-input" value="${storyThemeColor || '#141424'}" title="Pick custom color" />
+              <div style="flex:1;">
+                <div style="font-size:0.8rem; font-weight:600; color:var(--color-text-primary);">Custom Hex Color</div>
+                <div style="font-size:0.7rem; color:var(--color-text-muted);">Pick any color across the full color spectrum</div>
+              </div>
+              <input type="text" id="ss-theme-color-hex" class="ss-color-hex-input" value="${storyThemeColor || '#141424'}" maxlength="7" />
+            </div>
+
+            <!-- Live Preview Box -->
+            <div class="ss-live-preview-box" id="ss-live-preview-box" style="background-color:${storyThemeColor || '#141424'};">
+              <div class="ss-live-preview-label">Live Canvas & Reader Preview</div>
+              <div class="ss-live-preview-canvas">
+                <div class="ss-mock-panel">
+                  <div class="ss-mock-panel-line" style="width:70%;"></div>
+                  <div class="ss-mock-panel-line" style="width:45%;"></div>
+                </div>
+                <div class="ss-mock-panel" style="height:105px;">
+                  <div class="ss-mock-panel-line" style="width:80%;"></div>
+                  <div class="ss-mock-panel-line" style="width:60%;"></div>
+                </div>
+                <div class="ss-mock-panel">
+                  <div class="ss-mock-panel-line" style="width:50%;"></div>
+                  <div class="ss-mock-panel-line" style="width:75%;"></div>
+                </div>
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- ── TAB 3: AUDIO & NARRATOR ── -->
+        <div class="ss-tab-pane ${activeStorySettingsTab === 'audio' ? 'ss-tab-pane--active' : ''}" id="ss-pane-audio">
+          <div class="ss-section">
+            <div class="ss-section__label">Audio Experience Mode</div>
+            <div class="ss-audio-mode-selector" id="ss-audio-mode-selector">
+              <button class="ss-audio-mode-btn ${storyAudioMode === 'make_audio' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="make_audio" type="button">
+                <span class="ss-audio-mode-icon">🎙️</span>
+                <span class="ss-audio-mode-title">Make audio as you go</span>
+                <span class="ss-audio-mode-desc">Multi-character AI voice dialogue & narration with punctuation expression</span>
+              </button>
+              <button class="ss-audio-mode-btn ${storyAudioMode === 'simple_upload' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="simple_upload" type="button">
+                <span class="ss-audio-mode-icon">📁</span>
+                <span class="ss-audio-mode-title">Simple audio upload</span>
+                <span class="ss-audio-mode-desc">Upload your own audio files per page with optional manual captions</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="ss-section" id="ss-narrator-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
+            <div class="ss-section__label">🎙️ Narrator Voice</div>
+            <div class="ss-narrator-card">
+              <div class="ss-narrator-header">
+                <div class="ss-narrator-badge">
+                  <span>🎙️</span> Official Story Narrator
+                </div>
+                <span class="ss-narrator-tag">Master Narration</span>
+              </div>
+              <p style="font-size:0.76rem; color:var(--color-text-secondary); margin:0; line-height:1.4;">
+                This voice narrates story text and dialogue lines assigned to <strong>"🎙️ Narrator"</strong> across every episode.
+              </p>
+              <div class="ss-field" style="display:flex; gap:8px; align-items:center; margin-bottom:0;">
+                <select id="ss-narrator-voice" class="ss-field__select" style="flex:1;">
+                  ${renderGroupedVoiceOptions(storyNarratorVoiceId)}
+                </select>
+                <button type="button" id="ss-narrator-audition" class="ss-char-audition-btn" style="white-space:nowrap;">🔊 Audition</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Background Music (BGM) -->
+          <div class="ss-section" id="ss-bgm-section">
+            <div class="ss-section__label">🎵 Background Music (BGM)</div>
+            <p style="font-size:0.78rem; color:var(--color-text-muted); margin: 0 0 10px 0;">Loops softly across all pages underneath dialogue.</p>
+            <div style="display:flex; flex-direction:column; gap:10px; background:var(--color-bg); padding:12px; border-radius:12px; border:1px solid var(--color-border);">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <span id="ss-bgm-name" style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                  ${storyBgmUrl ? '🎵 Music attached' : 'No music uploaded'}
+                </span>
+                <div style="display:flex; gap:6px;">
+                  <button id="ss-bgm-upload-btn" class="btn btn--sm btn--secondary" type="button">Upload BGM</button>
+                  ${storyBgmUrl ? `
+                    <button id="ss-bgm-play-btn" class="btn btn--sm btn--ghost" type="button">▶</button>
+                    <button id="ss-bgm-remove-btn" class="btn btn--sm btn--ghost" type="button" style="color:#ef4444;">✕</button>
+                  ` : ''}
+                </div>
+                <input type="file" id="ss-bgm-file-input" accept="audio/*,video/*" hidden>
+              </div>
+              ${storyBgmUrl ? `
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:0.75rem; color:var(--color-text-secondary); width:55px;">Volume:</span>
+                  <input type="range" id="ss-bgm-vol-slider" min="5" max="60" value="${Math.round(storyBgmVolume * 100)}" style="flex:1;">
+                  <span id="ss-bgm-vol-val" style="font-size:0.75rem; font-weight:700; color:var(--color-purple); width:32px;">${Math.round(storyBgmVolume * 100)}%</span>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TAB 4: CHARACTERS ── -->
+        <div class="ss-tab-pane ${activeStorySettingsTab === 'characters' ? 'ss-tab-pane--active' : ''}" id="ss-pane-characters">
+          <div class="ss-section" id="ss-characters-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
+            <div class="ss-section__label">Characters & Cast Voices</div>
+            <div class="ss-characters-card" id="ss-characters-card">
+              ${storyCharacters.map((ch, ci) => {
+                const voiceOptionsHtml = renderGroupedVoiceOptions(ch.voiceId);
+                return `
+                <div class="ss-char-row" data-char-idx="${ci}">
+                  <div class="ss-char-badge" style="background:${ch.color || CHAR_COLORS[ci % CHAR_COLORS.length]}">${ch.name.charAt(0) || '?'}</div>
+                  <input class="ss-char-name-input" data-char-name="${ci}" value="${ch.name}" placeholder="Character name" maxlength="30" />
+                  <select class="ss-char-voice-select" data-char-voice="${ci}">${voiceOptionsHtml}</select>
+                  <button class="ss-char-audition-btn" data-char-audition="${ci}" type="button">🔊 Audition</button>
+                  <button class="ss-char-delete-btn" data-char-delete="${ci}" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>`;
+              }).join('')}
+              <button class="ss-add-char-btn" id="ss-add-char-btn" type="button">+ Add Character</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TAB 5: SQUAD GATE ── -->
+        ${isUserMode() ? '' : `
+        <div class="ss-tab-pane ${activeStorySettingsTab === 'squad' ? 'ss-tab-pane--active' : ''}" id="ss-pane-squad">
+          ${(episodeNumber > 1 || (episodeStoryGroupId && episodeNumber > 1)) ? `
+            <div class="ss-section">
+              <div class="ss-section__label">🚨 Squad Gate Configuration</div>
+              <p style="font-size:0.82rem; color:var(--color-text-muted); margin:4px 0 8px;">Episodes Playable Solo BEFORE Squad Gate Hits</p>
+              <div style="display:flex; gap:8px;">
+                <div style="padding:10px 20px; border-radius:var(--radius-md); background:var(--color-purple); color:white; font-weight:700; font-size:0.88rem;">${soloEpisodeCount} Episode${soloEpisodeCount > 1 ? 's' : ''}</div>
+              </div>
+              <p style="font-size:0.72rem; color:var(--color-text-muted); margin:8px 0 0;">ℹ️ Squad gate is configured on Episode 1. Edit Episode 1's settings to change this.</p>
+            </div>
+          ` : `
+            <div class="ss-section" id="ss-squad-gate-section">
+              <div class="ss-section__label">🛡️ Squad Gate Configuration</div>
+              <div class="ss-field">
+                <label class="ss-field__label">Episodes Playable Solo BEFORE Squad Gate Hits</label>
+                <div class="ss-gate-selector" id="ss-gate-selector" style="display: flex; gap: 10px; margin-top: 8px;">
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? 'btn-gate-option--active' : ''}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                    1 Episode
+                  </button>
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? 'btn-gate-option--active' : ''}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                    2 Episodes
+                  </button>
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? 'btn-gate-option--active' : ''}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                    3 Episodes
+                  </button>
+                </div>
+                <div class="ss-field__hint" id="ss-gate-hint" style="font-size: 0.76rem; color: var(--color-text-muted); margin-top: 8px; line-height: 1.45;">
+                  ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.
+                </div>
+              </div>
+            </div>
+          `}
+        </div>
         `}
-
-        <div class="ss-section">
-          <div class="ss-section__label">Audio Experience Mode</div>
-          <div class="ss-audio-mode-selector" id="ss-audio-mode-selector">
-            <button class="ss-audio-mode-btn ${storyAudioMode === 'make_audio' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="make_audio" type="button">
-              <span class="ss-audio-mode-icon">🎙️</span>
-              <span class="ss-audio-mode-title">Make audio as you go</span>
-              <span class="ss-audio-mode-desc">Multi-character AI voice dialogue & narration with punctuation expression</span>
-            </button>
-            <button class="ss-audio-mode-btn ${storyAudioMode === 'simple_upload' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="simple_upload" type="button">
-              <span class="ss-audio-mode-icon">📁</span>
-              <span class="ss-audio-mode-title">Simple audio upload</span>
-              <span class="ss-audio-mode-desc">Upload your own audio files per page with optional manual captions</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="ss-section" id="ss-narrator-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
-          <div class="ss-section__label">🎙️ Narrator Voice</div>
-          <div class="ss-field" style="display:flex; gap:8px; align-items:center;">
-            <select id="ss-narrator-voice" class="ss-field__select" style="flex:1;">
-              ${VOICE_OPTIONS.map(v =>
-                `<option value="${v.voiceId}" ${storyNarratorVoiceId === v.voiceId ? 'selected' : ''}>${v.name} — ${v.description}</option>`
-              ).join('')}
-            </select>
-            <button type="button" id="ss-narrator-audition" class="ss-char-audition-btn" style="white-space:nowrap;">🔊 Audition</button>
-          </div>
-          <div class="ss-field__hint" style="font-size:0.72rem; color:var(--color-text-muted); margin-top:4px;">Used for dialogue lines assigned to "🎙️ Narrator" in the page editor.</div>
-        </div>
-
-        <div class="ss-section" id="ss-characters-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
-          <div class="ss-section__label">Characters & Cast Voices</div>
-          <div class="ss-characters-card" id="ss-characters-card">
-            ${storyCharacters.map((ch, ci) => {
-              const voiceOptionsHtml = VOICE_OPTIONS.map(v =>
-                `<option value="${v.voiceId}" ${ch.voiceId === v.voiceId ? 'selected' : ''}>${v.name} — ${v.description}</option>`
-              ).join('');
-              return `
-              <div class="ss-char-row" data-char-idx="${ci}">
-                <div class="ss-char-badge" style="background:${ch.color || CHAR_COLORS[ci % CHAR_COLORS.length]}">${ch.name.charAt(0)}</div>
-                <input class="ss-char-name-input" data-char-name="${ci}" value="${ch.name}" placeholder="Character name" maxlength="30" />
-                <select class="ss-char-voice-select" data-char-voice="${ci}">${voiceOptionsHtml}</select>
-                <button class="ss-char-audition-btn" data-char-audition="${ci}" type="button">🔊 Audition</button>
-                <button class="ss-char-delete-btn" data-char-delete="${ci}" type="button">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>`;
-            }).join('')}
-            <button class="ss-add-char-btn" id="ss-add-char-btn" type="button">+ Add Character</button>
-          </div>
-        </div>
-
-        <!-- Background Music (BGM) -->
-        <div class="ss-section" id="ss-bgm-section">
-          <div class="ss-section__label">🎵 Background Music (BGM)</div>
-          <p style="font-size:0.78rem; color:var(--color-text-muted); margin: 0 0 10px 0;">Loops softly across all pages underneath dialogue.</p>
-          <div style="display:flex; flex-direction:column; gap:10px; background:var(--color-bg); padding:12px; border-radius:12px; border:1px solid var(--color-border);">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-              <span id="ss-bgm-name" style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                ${storyBgmUrl ? '🎵 Music attached' : 'No music uploaded'}
-              </span>
-              <div style="display:flex; gap:6px;">
-                <button id="ss-bgm-upload-btn" class="btn btn--sm btn--secondary" type="button">Upload BGM</button>
-                ${storyBgmUrl ? `
-                  <button id="ss-bgm-play-btn" class="btn btn--sm btn--ghost" type="button">▶</button>
-                  <button id="ss-bgm-remove-btn" class="btn btn--sm btn--ghost" type="button" style="color:#ef4444;">✕</button>
-                ` : ''}
-              </div>
-              <input type="file" id="ss-bgm-file-input" accept="audio/*,video/*" hidden>
-            </div>
-            ${storyBgmUrl ? `
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:0.75rem; color:var(--color-text-secondary); width:55px;">Volume:</span>
-                <input type="range" id="ss-bgm-vol-slider" min="5" max="60" value="${Math.round(storyBgmVolume * 100)}" style="flex:1;">
-                <span id="ss-bgm-vol-val" style="font-size:0.75rem; font-weight:700; color:var(--color-purple); width:32px;">${Math.round(storyBgmVolume * 100)}%</span>
-              </div>
-            ` : ''}
-          </div>
-        </div>
       </div>
     </div>
   `;
 
+  // ── Tab Switching ──
+  wizard.querySelectorAll('.ss-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetTab = (btn as HTMLElement).getAttribute('data-tab') as any;
+      if (!targetTab) return;
+      activeStorySettingsTab = targetTab;
+      
+      // Update active button state
+      wizard.querySelectorAll('.ss-tab-btn').forEach(b => b.classList.remove('ss-tab-btn--active'));
+      btn.classList.add('ss-tab-btn--active');
+
+      // Update active pane state
+      wizard.querySelectorAll('.ss-tab-pane').forEach(p => p.classList.remove('ss-tab-pane--active'));
+      const activePane = document.getElementById(`ss-pane-${targetTab}`);
+      if (activePane) activePane.classList.add('ss-tab-pane--active');
+    });
+  });
+
+  // ── Cover Media Upload ──
   const modalThumbZone = document.getElementById('modal-cover-thumb-zone');
   const modalThumbInput = document.getElementById('modal-cover-thumb-input') as HTMLInputElement;
   const modalThumbPreview = document.getElementById('modal-cover-thumb-preview') as HTMLImageElement;
@@ -769,14 +922,60 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   }
 
+  // ── Story Canvas & Background Theme ──
+  const updateThemeColor = (hex: string) => {
+    storyThemeColor = hex;
+    const customColorInput = document.getElementById('ss-theme-color-custom') as HTMLInputElement | null;
+    const hexInput = document.getElementById('ss-theme-color-hex') as HTMLInputElement | null;
+    const livePreviewBox = document.getElementById('ss-live-preview-box');
 
+    if (customColorInput) customColorInput.value = hex;
+    if (hexInput) hexInput.value = hex;
+    if (livePreviewBox) livePreviewBox.style.backgroundColor = hex;
 
+    // Highlight matching preset card if any
+    wizard.querySelectorAll('.ss-theme-card').forEach(card => {
+      const cardHex = (card as HTMLElement).getAttribute('data-theme-hex');
+      if (cardHex && cardHex.toLowerCase() === hex.toLowerCase()) {
+        card.classList.add('ss-theme-card--active');
+      } else {
+        card.classList.remove('ss-theme-card--active');
+      }
+    });
+
+    saveDraft();
+  };
+
+  wizard.querySelectorAll('.ss-theme-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const hex = (card as HTMLElement).getAttribute('data-theme-hex');
+      if (hex) updateThemeColor(hex);
+    });
+  });
+
+  const customColorInput = document.getElementById('ss-theme-color-custom') as HTMLInputElement | null;
+  customColorInput?.addEventListener('input', () => {
+    if (customColorInput.value) updateThemeColor(customColorInput.value);
+  });
+
+  const hexInput = document.getElementById('ss-theme-color-hex') as HTMLInputElement | null;
+  hexInput?.addEventListener('change', () => {
+    let val = hexInput.value.trim();
+    if (!val.startsWith('#')) val = '#' + val;
+    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+      updateThemeColor(val);
+    } else {
+      hexInput.value = storyThemeColor;
+    }
+  });
+
+  // ── Back Button ──
   document.getElementById('ss-back')?.addEventListener('click', () => {
     getFormData();
     updateView();
   });
 
-  // --- Audio Mode Switching ---
+  // ── Audio Mode Switching ──
   wizard.querySelectorAll('[data-audio-mode]').forEach(btn => {
     btn.addEventListener('click', () => {
       const mode = (btn as HTMLElement).getAttribute('data-audio-mode') as StoryAudioMode;
@@ -793,7 +992,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   });
 
-  // --- Narrator Voice ---
+  // ── Narrator Voice ──
   document.getElementById('ss-narrator-voice')?.addEventListener('change', (e) => {
     storyNarratorVoiceId = (e.target as HTMLSelectElement).value;
     saveDraft();
@@ -809,7 +1008,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     setTimeout(() => { btn.textContent = '🔊 Audition'; btn.disabled = false; }, 3000);
   });
 
-  // --- Character Cast Management ---
+  // ── Character Cast Management ──
   // Rename
   wizard.querySelectorAll('[data-char-name]').forEach(input => {
     input.addEventListener('input', () => {
@@ -853,7 +1052,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       storyCharacters.splice(idx, 1);
       getFormData();
       saveDraft();
-      openStorySettings({ preserveScroll: true }); // re-render
+      openStorySettings({ preserveScroll: true }); // re-render preserving tab
       requestAnimationFrame(() => {
         window.scrollTo({ top: scrollY, behavior: 'instant' });
         if (appContent) appContent.scrollTop = appScrollY;
@@ -875,7 +1074,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
     getFormData(); // sync form fields before re-render
     saveDraft();
-    openStorySettings({ preserveScroll: true }); // re-render
+    openStorySettings({ preserveScroll: true }); // re-render preserving tab
     
     // Restore scroll position after re-render
     requestAnimationFrame(() => {
@@ -884,7 +1083,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   });
 
-  // Squad Gate Episodes Before Gate Selector
+  // ── Squad Gate Episodes Before Gate Selector ──
   wizard.querySelectorAll('[data-gate-count]').forEach(btn => {
     btn.addEventListener('click', () => {
       const count = parseInt((btn as HTMLElement).getAttribute('data-gate-count') || '1', 10) as 1 | 2 | 3;
@@ -909,7 +1108,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   });
 
-  // --- Background Music (BGM) Wiring ---
+  // ── Background Music (BGM) Wiring ──
   let bgmAudioPreview: HTMLAudioElement | null = null;
   const stopBgmAudioPreview = () => {
     if (bgmAudioPreview) {
@@ -1003,14 +1202,25 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     stopBgmAudioPreview();
   });
 
-  // Auto-save on text field changes
+  // ── Auto-save on Form Changes ──
   ['ss-title', 'ss-author', 'ss-synopsis'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', () => {
+      if (id === 'ss-synopsis') {
+        const count = document.getElementById('ss-synopsis-count');
+        const val = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || '';
+        if (count) count.textContent = `${val.length}/500`;
+      }
       getFormData();
       saveDraft();
     });
   });
 
+  ['ss-genre', 'ss-rating'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      getFormData();
+      saveDraft();
+    });
+  });
 }
 
 
@@ -1559,6 +1769,7 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
   container.querySelectorAll('[data-open-char-settings]').forEach(btn => {
     btn.addEventListener('click', () => {
       getFormData();
+      activeStorySettingsTab = 'characters';
       openStorySettings();
       setTimeout(() => {
         const card = document.querySelector('.ss-characters-card');
