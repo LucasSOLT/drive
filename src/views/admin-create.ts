@@ -4,7 +4,7 @@ import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
 
-import { saveOfficialStory, fetchOfficialStories } from '../lib/db.ts';
+import { saveOfficialStory, fetchOfficialStories, updateSharedStorySettings } from '../lib/db.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { uploadMedia } from '../lib/storage.ts';
 import { uploadAudioData } from '../lib/storage.ts';
@@ -22,6 +22,7 @@ let storyAuthorName = 'DRiVE Studios';
 let storyContentRating: 'All Ages' | 'PG-13' | 'Mature' = 'All Ages';
 let storyCoverVideo = '';
 let storyCustomGenre = '';
+let storyThemeColor: string = '#141424';
 
 // Squad Gate & SPARC Checkpoint State
 const isUserMode = () => window.location.hash.includes('mode=user');
@@ -57,10 +58,32 @@ async function saveStoryForMode(story: Story): Promise<void> {
       bgmVolume: story.bgmVolume,
       pageFocalPositions: story.pageFocalPositions,
       author_name: story.author,
+      themeColor: story.themeColor,
     };
     await addUserStory(userStory);
   } else {
     await saveOfficialStory(story);
+  }
+
+  // If this episode is part of a story group, automatically sync shared settings across all episodes
+  const groupId = story.storyGroupId || episodeStoryGroupId;
+  if (groupId) {
+    updateSharedStorySettings(groupId, {
+      title: story.title,
+      author: story.author,
+      genre: story.genre,
+      synopsis: story.synopsis,
+      contentRating: story.contentRating,
+      coverImage: story.coverImage,
+      coverVideo: story.coverVideo,
+      characters: story.characters,
+      narratorVoiceId: story.narratorVoiceId,
+      bgmUrl: story.bgmUrl,
+      bgmVolume: story.bgmVolume,
+      audioMode: story.audioMode,
+      soloEpisodeCount: story.soloEpisodeCount,
+      themeColor: story.themeColor,
+    }, isUserMode()).catch(err => console.warn('[AdminCreate] Failed to sync shared settings:', err));
   }
 }
 
@@ -239,6 +262,7 @@ interface DraftEntry {
   sparcPromptMediaUrls?: string[];
   episodeStoryGroupId?: string | null;
   episodeNumber?: number;
+  storyThemeColor?: string;
 }
 
 function getDraft(): DraftEntry | null {
@@ -279,6 +303,7 @@ function saveDraft() {
     sparcPromptMediaUrls,
     episodeStoryGroupId,
     episodeNumber,
+    storyThemeColor,
   };
   
   // Pre-check: strip base64 data URLs to keep under localStorage limit
@@ -360,6 +385,7 @@ function loadDraft(draft: DraftEntry) {
   sparcPromptMediaUrls = draft.sparcPromptMediaUrls || [];
   episodeStoryGroupId = draft.episodeStoryGroupId || null;
   episodeNumber = draft.episodeNumber || 1;
+  storyThemeColor = draft.storyThemeColor || '#141424';
 }
 
 function clearDraft() {
@@ -460,6 +486,7 @@ function buildStory(status: 'draft' | 'live'): Story {
     bgmVolume: storyBgmVolume,
     pageFocalPositions: Object.keys(pageFocalPositions).length > 0 ? pageFocalPositions : undefined,
     soloEpisodeCount,
+    themeColor: storyThemeColor,
     sparcPrompt: (sparcPromptText.trim() || sparcPromptMediaUrls.length > 0) ? {
       text: sparcPromptText.trim(),
       mediaUrls: sparcPromptMediaUrls.length > 0 ? sparcPromptMediaUrls : undefined,
@@ -2610,6 +2637,7 @@ export function init(): void {
         storyAudioMode = storyToEdit.audioMode || 'make_audio';
         storyNarratorVoiceId = storyToEdit.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM';
         soloEpisodeCount = storyToEdit.soloEpisodeCount || 1;
+        storyThemeColor = storyToEdit.themeColor || '#141424';
         if (storyToEdit.sparcPrompt) {
           sparcPromptText = storyToEdit.sparcPrompt.text || '';
           sparcPromptMediaUrls = storyToEdit.sparcPrompt.mediaUrls ? [...storyToEdit.sparcPrompt.mediaUrls] : [];
@@ -2683,6 +2711,7 @@ export function init(): void {
           if (!audioModeParam && ep1.audioMode) storyAudioMode = ep1.audioMode;
           if (!voiceIdParam && ep1.narratorVoiceId) storyNarratorVoiceId = ep1.narratorVoiceId;
           if (!soloEpParam && ep1.soloEpisodeCount) soloEpisodeCount = ep1.soloEpisodeCount as 1 | 2 | 3;
+          if (ep1.themeColor) storyThemeColor = ep1.themeColor;
         }
       } catch (err) {
         console.warn('[AdminCreate] Could not fetch Episode 1 for settings inheritance:', err);

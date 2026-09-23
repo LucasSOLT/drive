@@ -56,6 +56,7 @@ export interface Story {
     text: string;                        // The challenge/question/prompt text
     mediaUrls?: string[];                // Attached images or videos
   };
+  themeColor?: string;                   // Custom background / atmosphere color (e.g. #000000, #141424)
 }
 
 export interface UserStory {
@@ -90,6 +91,7 @@ export interface UserStory {
   bgmUrl?: string;
   bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
+  themeColor?: string;
 }
 
 export type UserPlan = 'free' | 'starter' | 'creator';

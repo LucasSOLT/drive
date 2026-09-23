@@ -330,39 +330,62 @@ export async function saveUserStory(story: UserStory): Promise<void> {
       bgm_url: story.bgmUrl || null,
       bgm_volume: story.bgmVolume ?? 0.25,
       page_focal_positions: story.pageFocalPositions || {},
+      theme_color: story.themeColor || '#141424',
+      narrator_voice_id: story.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM',
     };
 
-    // Retry loop: attempt insert, strip unknown columns on failure, retry
-    let attempts = 0;
-    const maxAttempts = 5;
+    // Check if this story already exists in Supabase (has a valid UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isExistingStory = uuidRegex.test(story.id);
     let savedId: string | null = null;
 
-    while (attempts < maxAttempts) {
-      attempts++;
-      const { data, error } = await supabase
+    if (isExistingStory) {
+      // Update existing story
+      const { error } = await supabase
         .from('user_stories')
-        .insert(payload)
-        .select('id')
-        .single();
+        .update(payload)
+        .eq('id', story.id)
+        .eq('user_id', userId);
 
-      if (!error && data?.id) {
-        savedId = data.id;
-        break;
+      if (!error) {
+        savedId = story.id;
+      } else {
+        console.warn('[DB] Update failed, will try insert:', error.message);
       }
+    }
 
-      if (error) {
-        // Check if the error is about a missing column
-        const colMatch = error.message?.match(/Could not find the '(\w+)' column/);
-        if (colMatch && colMatch[1]) {
-          const badCol = colMatch[1];
-          console.warn(`[DB] Column '${badCol}' not in user_stories, stripping and retrying (attempt ${attempts})...`);
-          delete payload[badCol];
-          continue;
+    if (!savedId) {
+      // Insert new story — retry loop to strip unknown columns
+      let attempts = 0;
+      const maxAttempts = 5;
+
+      while (attempts < maxAttempts) {
+        attempts++;
+        const { data, error } = await supabase
+          .from('user_stories')
+          .insert(payload)
+          .select('id')
+          .single();
+
+        if (!error && data?.id) {
+          savedId = data.id;
+          break;
         }
 
-        // Non-column error — throw immediately
-        console.error('Failed to save user story to Supabase:', error);
-        throw error;
+        if (error) {
+          // Check if the error is about a missing column
+          const colMatch = error.message?.match(/Could not find the '(\w+)' column/);
+          if (colMatch && colMatch[1]) {
+            const badCol = colMatch[1];
+            console.warn(`[DB] Column '${badCol}' not in user_stories, stripping and retrying (attempt ${attempts})...`);
+            delete payload[badCol];
+            continue;
+          }
+
+          // Non-column error — throw immediately
+          console.error('Failed to save user story to Supabase:', error);
+          throw error;
+        }
       }
     }
 
@@ -848,6 +871,7 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     pageFocalPositions: s.page_focal_positions || undefined,
     soloEpisodeCount: s.solo_episode_count || 1,
     sparcPrompt: s.sparc_prompt || undefined,
+    themeColor: s.theme_color || '#141424',
   };
 }
 
@@ -992,6 +1016,8 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     page_focal_positions: story.pageFocalPositions || {},
     solo_episode_count: story.soloEpisodeCount || 1,
     sparc_prompt: story.sparcPrompt || null,
+    theme_color: story.themeColor || '#141424',
+    narrator_voice_id: story.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM',
   };
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);
@@ -1146,6 +1172,80 @@ export async function unarchiveOfficialStory(storyId: string): Promise<void> {
     .update({ status: 'draft', updated_at: new Date().toISOString() })
     .eq('id', storyId);
   if (error) throw error;
+  _cachedOfficialStories = null;
+  try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
+}
+
+/** Update shared story settings across ALL episodes within a story group (Supabase & localStorage drafts) */
+export async function updateSharedStorySettings(
+  storyGroupId: string,
+  settings: Partial<Story>,
+  isUserMode: boolean = false
+): Promise<void> {
+  if (!storyGroupId) return;
+
+  const sharedPayload: Record<string, any> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (settings.title !== undefined) sharedPayload.title = settings.title;
+  if (settings.author !== undefined) sharedPayload.author = settings.author;
+  if (settings.genre !== undefined) sharedPayload.genre = settings.genre;
+  if (settings.synopsis !== undefined) sharedPayload.synopsis = settings.synopsis;
+  if (settings.contentRating !== undefined) sharedPayload.content_rating = settings.contentRating;
+  if (settings.coverImage !== undefined) sharedPayload.cover_image = settings.coverImage;
+  if (settings.coverVideo !== undefined) sharedPayload.cover_video = settings.coverVideo;
+  if (settings.characters !== undefined) sharedPayload.characters = settings.characters;
+  if (settings.narratorVoiceId !== undefined) sharedPayload.narrator_voice_id = settings.narratorVoiceId;
+  if (settings.bgmUrl !== undefined) sharedPayload.bgm_url = settings.bgmUrl;
+  if (settings.bgmVolume !== undefined) sharedPayload.bgm_volume = settings.bgmVolume;
+  if (settings.audioMode !== undefined) sharedPayload.audio_mode = settings.audioMode;
+  if (settings.soloEpisodeCount !== undefined) sharedPayload.solo_episode_count = settings.soloEpisodeCount;
+  if (settings.themeColor !== undefined) sharedPayload.theme_color = settings.themeColor;
+
+  // 1. Update all matching rows in Supabase
+  try {
+    const table = isUserMode ? 'user_stories' : 'official_stories';
+    const { error } = await supabase
+      .from(table)
+      .update(sharedPayload)
+      .eq('story_group_id', storyGroupId);
+
+    if (error) {
+      console.warn('[DB] Supabase error updating shared story settings:', error.message);
+    } else {
+      console.log(`[DB] Successfully synced shared settings to all episodes in group ${storyGroupId}`);
+    }
+  } catch (err) {
+    console.warn('[DB] Exception updating shared story settings on Supabase:', err);
+  }
+
+  // 2. Update all matching local drafts in localStorage
+  try {
+    const raw = localStorage.getItem('drive_official_drafts');
+    if (raw) {
+      const drafts = JSON.parse(raw);
+      if (Array.isArray(drafts)) {
+        let changed = false;
+        const updatedDrafts = drafts.map((d: Story) => {
+          if ((d.storyGroupId || d.id) === storyGroupId) {
+            changed = true;
+            return {
+              ...d,
+              ...settings,
+            };
+          }
+          return d;
+        });
+        if (changed) {
+          localStorage.setItem('drive_official_drafts', JSON.stringify(updatedDrafts));
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[DB] Error syncing shared settings to local drafts:', err);
+  }
+
+  // 3. Clear cached official stories to force re-fetch
   _cachedOfficialStories = null;
   try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
 }
@@ -2018,7 +2118,7 @@ export async function getSparcResponses(
 ): Promise<SparcPost[]> {
   const { data, error } = await supabase
     .from('sparc_responses')
-    .select('*, profiles:user_id(username, avatar_index)')
+    .select('*')
     .eq('squad_id', squadId)
     .eq('story_group_id', storyGroupId)
     .eq('episode_number', episodeNumber)
@@ -2029,18 +2129,34 @@ export async function getSparcResponses(
     return [];
   }
 
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    squadId: row.squad_id,
-    storyGroupId: row.story_group_id,
-    episodeNumber: row.episode_number,
-    userId: row.user_id,
-    username: row.profiles?.username || 'Unknown',
-    avatarIndex: row.profiles?.avatar_index ?? 0,
-    content: row.content,
-    mediaUrls: row.media_urls || [],
-    createdAt: row.created_at,
-  }));
+  if (!data || data.length === 0) return [];
+
+  // Fetch profiles separately (defensive — no FK join needed)
+  const userIds = [...new Set(data.map((r: any) => r.user_id).filter(Boolean))];
+  let profileMap = new Map<string, any>();
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_index')
+      .in('id', userIds);
+    if (profiles) profileMap = new Map(profiles.map((p: any) => [p.id, p]));
+  }
+
+  return data.map((row: any) => {
+    const prof = profileMap.get(row.user_id);
+    return {
+      id: row.id,
+      squadId: row.squad_id,
+      storyGroupId: row.story_group_id,
+      episodeNumber: row.episode_number,
+      userId: row.user_id,
+      username: prof?.username || 'Unknown',
+      avatarIndex: prof?.avatar_index ?? 0,
+      content: row.content,
+      mediaUrls: row.media_urls || [],
+      createdAt: row.created_at,
+    };
+  });
 }
 
 /** Toggle an emoji reaction on a SPARC post */
@@ -2143,22 +2259,34 @@ export async function getSparcReplies(
 
   const { data, error } = await supabase
     .from('sparc_replies')
-    .select('*, profiles:user_id(username, avatar_index)')
+    .select('*')
     .in('response_id', responseIds)
     .order('created_at', { ascending: true });
 
   if (error || !data) return {};
+
+  // Fetch profiles separately (defensive — no FK join needed)
+  const userIds = [...new Set(data.map((r: any) => r.user_id).filter(Boolean))];
+  let profileMap = new Map<string, any>();
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_index')
+      .in('id', userIds);
+    if (profiles) profileMap = new Map(profiles.map((p: any) => [p.id, p]));
+  }
 
   const result: Record<string, Array<{ id: string; userId: string; username: string; avatarIndex: number; content: string; createdAt: string }>> = {};
 
   for (const row of data as any[]) {
     const rid = row.response_id;
     if (!result[rid]) result[rid] = [];
+    const prof = profileMap.get(row.user_id);
     result[rid].push({
       id: row.id,
       userId: row.user_id,
-      username: row.profiles?.username || 'Unknown',
-      avatarIndex: row.profiles?.avatar_index ?? 0,
+      username: prof?.username || 'Unknown',
+      avatarIndex: prof?.avatar_index ?? 0,
       content: row.content,
       createdAt: row.created_at,
     });

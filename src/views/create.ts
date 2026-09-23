@@ -3766,22 +3766,9 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           confirmText: 'Submit',
           cancelText: 'Cancel',
           onConfirm: async () => {
-            const pages = selectedFormat === 'book'
-              ? bookPages.map(p => ({ image: p.image, text: p.text }))
-              : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
-            const newStory: UserStory = {
-              id: 'us-' + Date.now(),
-              title: storyTitle,
-              genre: storyGenre,
-              format: selectedFormat as StoryFormat,
-              synopsis: storySynopsis,
-              status: 'under-review',
-              createdAt: new Date().toISOString(),
-              pages,
-              coverImage: _coverThumbnail || pages[0]?.image || '',
-            };
             try {
-              await addUserStory(newStory);
+              getFormData();
+              await addUserStory(buildStory('under-review'));
               clearDraft();
               navigate('library');
             } catch (err) {

@@ -69,7 +69,7 @@ export function render(): string {
     : `<span style="background: var(--color-purple); color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px;">🛡️ ADMIN</span>`;
 
   return `
-    <div class="view-admin fade-in" id="admin-container" style="display: flex; flex-direction: column; min-height: 100%; font-family: var(--font-body); padding-bottom: 90px;">
+    <div class="view-admin fade-in" id="admin-container" style="display: flex; flex-direction: column; flex: 1; font-family: var(--font-body);">
       
       <!-- Top Header Bar -->
       <header style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--color-border); background-color: var(--color-surface); gap: 8px;">

@@ -119,19 +119,41 @@ export function render(): string {
           <div class="hero__splatter hero__splatter--3"></div>
         </div>
 
-        <div class="hero__content">
-          <h1 class="hero__title">
-            <span class="hero__title-letter hero__title-letter--d">D</span><span
-              class="hero__title-letter hero__title-letter--r">R</span><span
-              class="hero__title-letter hero__title-letter--i">i</span><span
-              class="hero__title-letter hero__title-letter--v">V</span><span
-              class="hero__title-letter hero__title-letter--e">E</span>
-          </h1>
-          <p class="hero__tagline">Stories that move you</p>
-          <div class="hero__cta-row">
-            <button class="btn btn--primary hero__cta" id="hero-explore-btn">Start Exploring</button>
+        <div class="hero__container">
+          <div class="hero__content">
+            <h1 class="hero__title">
+              <span class="hero__title-letter hero__title-letter--d">D</span><span
+                class="hero__title-letter hero__title-letter--r">R</span><span
+                class="hero__title-letter hero__title-letter--i">i</span><span
+                class="hero__title-letter hero__title-letter--v">V</span><span
+                class="hero__title-letter hero__title-letter--e">E</span>
+            </h1>
+            <p class="hero__tagline">Stories that move you</p>
+            <p class="hero__desc">Discover interactive webtoons, illustrated storybooks, and cooperative squad reading where you never read alone.</p>
+            <div class="hero__cta-row">
+              <button class="btn btn--primary hero__cta" id="hero-explore-btn">Start Exploring</button>
+              <button class="btn hero__cta-secondary" id="hero-create-btn">Create Story</button>
+            </div>
+            <button class="hero__signup-link" id="hero-signup-btn">Sign Up Free</button>
           </div>
-          <button class="hero__signup-link" id="hero-signup-btn">Sign Up</button>
+
+          <!-- Desktop Hero Spotlight Preview (Desktop only) -->
+          <div class="hero__spotlight" id="hero-spotlight-card">
+            <div class="hero__spotlight-card" data-route="explore">
+              <div class="hero__spotlight-media-wrap">
+                <img src="/logo.jpg" alt="DRiVE Spotlight" class="hero__spotlight-cover" />
+                <span class="hero__spotlight-pill">🔥 Trending Now</span>
+              </div>
+              <div class="hero__spotlight-body">
+                <div class="hero__spotlight-tag">DRiVE Originals · Interactive</div>
+                <h3 class="hero__spotlight-title">Adventures Await</h3>
+                <p class="hero__spotlight-meta">Join thousands of readers in multiplayer squad reading</p>
+                <div class="hero__spotlight-btn-wrap">
+                  <span class="hero__spotlight-btn">Read Stories →</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -294,6 +316,22 @@ export function init(): void {
     // Hero CTA
     const cta = target.closest('#hero-explore-btn');
     if (cta) {
+      e.preventDefault();
+      navigate('explore');
+      return;
+    }
+
+    // Hero Create CTA
+    const createBtn = target.closest('#hero-create-btn');
+    if (createBtn) {
+      e.preventDefault();
+      navigate('admin-create?mode=user&format=book&new=true');
+      return;
+    }
+
+    // Hero Spotlight Card
+    const spotlightCard = target.closest('#hero-spotlight-card');
+    if (spotlightCard) {
       e.preventDefault();
       navigate('explore');
       return;

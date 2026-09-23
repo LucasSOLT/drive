@@ -50,10 +50,10 @@ export function renderNav(activeTab: string): string {
 }
 
 export function initNav(): void {
-  document.querySelectorAll('.nav-item').forEach(item => {
+  document.querySelectorAll('.nav-item, .desktop-nav-link').forEach(item => {
     item.addEventListener('click', (e) => {
       const target = e.currentTarget as HTMLElement;
-      if (target.classList.contains('nav-item--cm-disabled')) {
+      if (target.classList.contains('nav-item--cm-disabled') || target.classList.contains('desktop-nav-link--cm-disabled')) {
         showCMDisabledToast();
         return;
       }

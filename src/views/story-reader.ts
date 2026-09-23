@@ -267,6 +267,11 @@ export function render(): string {
           <span class="reader__header-meta">${story.author} · ${story.genre}</span>
         </div>
 
+        <div class="reader__desktop-hint">
+          <span><kbd>←</kbd> / <kbd>→</kbd> Turn Page</span>
+          <span><kbd>Esc</kbd> Exit</span>
+        </div>
+
         <div class="reader__header-actions">
           <button class="reader__action-btn ${bookmarked ? 'active' : ''}" id="btn-bookmark" aria-label="Bookmark">
             <span class="reader__action-icon" id="bookmark-icon">${bookmarked ? ICON.bookmarkOn : ICON.bookmarkOff}</span>
@@ -432,9 +437,36 @@ export async function init(): Promise<void> {
     soloEpCount = count;
   }).catch(() => {});
 
+  // ─── Solo Episode Guard ───
+  // Prevent direct URL access to post-gate episodes without a squad
+  const squadId = localStorage.getItem('drive_active_squad_id') || '';
+  if (isPostGateEpisode && !squadId) {
+    const content = container.querySelector('#reader-content') || container;
+    content.innerHTML = `
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:80dvh; gap:16px; text-align:center; padding:20px;">
+        <div style="font-size:3rem;">🔒</div>
+        <h2 style="font-family:var(--font-heading); font-size:1.3rem; margin:0;">Squad Required</h2>
+        <p style="color:var(--color-text-secondary); font-size:0.9rem; line-height:1.6; max-width:360px;">
+          This episode is part of a squad reading experience. Join or create a squad to continue the story together.
+        </p>
+        <button id="gate-guard-btn" class="btn btn--primary" style="padding:12px 28px; font-weight:700;">Open Squad Gate</button>
+        <button class="btn btn--secondary" onclick="window.history.length > 1 ? window.history.back() : window.location.hash = 'explore'" style="padding:8px 20px;">← Back</button>
+      </div>
+    `;
+    document.getElementById('gate-guard-btn')?.addEventListener('click', () => {
+      openSquadGateModal({
+        storyId: story!.id,
+        storyTitle: story!.title,
+        storyGroupId,
+        episodeNumber,
+        soloEpisodeCount: soloEpCount,
+      });
+    });
+    return;
+  }
+
   // 48h Timer for post-gate episodes
   let activeSession: SquadSession | null = null;
-  const squadId = localStorage.getItem('drive_active_squad_id') || '';
   if (isPostGateEpisode && squadId) {
     getSquadSession(squadId).then(session => {
       activeSession = session;
@@ -513,8 +545,50 @@ export async function init(): Promise<void> {
     }
   });
 
-  window.addEventListener('hashchange', stopBgm, { once: true });
-  window.addEventListener('popstate', stopBgm, { once: true });
+  // ─── Desktop Keyboard Navigation ───
+  const handleKeyNav = (e: KeyboardEvent) => {
+    const activeTag = (document.activeElement as HTMLElement)?.tagName;
+    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+    if (e.key === 'ArrowRight' || e.code === 'KeyD') {
+      if (story.format === 'book') {
+        e.preventDefault();
+        document.getElementById('book-next')?.click();
+      } else if (story.format === 'scroll') {
+        e.preventDefault();
+        container.scrollBy({ top: window.innerHeight * 0.75, behavior: 'smooth' });
+      }
+    } else if (e.key === 'ArrowLeft' || e.code === 'KeyA') {
+      if (story.format === 'book') {
+        e.preventDefault();
+        document.getElementById('book-prev')?.click();
+      } else if (story.format === 'scroll') {
+        e.preventDefault();
+        container.scrollBy({ top: -window.innerHeight * 0.75, behavior: 'smooth' });
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      document.getElementById('reader-back')?.click();
+    } else if (e.code === 'Space') {
+      e.preventDefault();
+      const bookAudioBtn = document.getElementById('reader-audio-toggle');
+      if (bookAudioBtn) {
+        bookAudioBtn.click();
+      }
+    }
+  };
+
+  window.addEventListener('keydown', handleKeyNav);
+
+  const cleanupReader = () => {
+    stopBgm();
+    window.removeEventListener('keydown', handleKeyNav);
+    window.removeEventListener('hashchange', cleanupReader);
+    window.removeEventListener('popstate', cleanupReader);
+  };
+
+  window.addEventListener('hashchange', cleanupReader, { once: true });
+  window.addEventListener('popstate', cleanupReader, { once: true });
 
   // ─── Auto-hide header on scroll ───
   let lastScroll = 0;

@@ -284,6 +284,15 @@ export function init(): void {
               const pending = JSON.parse(pendingSquad);
               if (Date.now() - pending.timestamp < 30 * 60 * 1000) {
                 localStorage.removeItem('drive_pending_squad_join');
+                // If code is empty or 'auto-create', navigate to the story to re-trigger squad gate
+                if (!pending.squadCode || pending.squadCode === 'auto-create') {
+                  if (pending.storyId) {
+                    navigate('story/' + pending.storyId);
+                  } else {
+                    navigate('home');
+                  }
+                  return;
+                }
                 dbJoinSquadByCode(pending.squadCode)
                   .then(result => {
                     if (result) navigate('squad-lobby/' + result.squadId);
@@ -333,6 +342,15 @@ export function init(): void {
                 const pending = JSON.parse(pendingSquadSignup);
                 if (Date.now() - pending.timestamp < 30 * 60 * 1000) {
                   localStorage.removeItem('drive_pending_squad_join');
+                  // If code is empty or 'auto-create', navigate to the story to re-trigger squad gate
+                  if (!pending.squadCode || pending.squadCode === 'auto-create') {
+                    if (pending.storyId) {
+                      navigate('story/' + pending.storyId);
+                    } else {
+                      navigate('home');
+                    }
+                    return;
+                  }
                   dbJoinSquadByCode(pending.squadCode)
                     .then(result => {
                       if (result) navigate('squad-lobby/' + result.squadId);

@@ -10,7 +10,7 @@ import { applyTheme, applyTextSize } from './lib/settings.ts';
 import { MONSTER_AVATARS } from './data/avatars.ts';
 import { getSelectedAvatar, isContentManagementMode, setContentManagementMode, initSlotOverrides } from './state.ts';
 import { initAuth, isAuthenticated, onAuthChange } from './lib/auth.ts';
-import { loadUserData, migrateLocalData, clearCache, joinSquadByCode, fetchSquadByCode, getSquadMembers } from './lib/db.ts';
+import { loadUserData, migrateLocalData, clearCache, joinSquadByCode, fetchSquadByCode, getSquadMembers, hasAdminPrivileges } from './lib/db.ts';
 
 // Lazy import views
 import * as homeView from './views/home.ts';
@@ -157,6 +157,15 @@ async function initApp() {
   if (settingsBtn) {
     settingsBtn.addEventListener('click', () => openSettings());
   }
+
+  // Desktop brand click → navigate home
+  document.getElementById('desktop-brand')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    navigate('home');
+  });
+
+  // Initialize desktop nav click listeners
+  initNav();
 
   onRouteChange(renderView);
   
@@ -424,6 +433,36 @@ function renderView(route: string) {
           item.classList.toggle('active', itemRoute === baseRoute);
         }
       });
+    }
+
+    // Update active tab highlighting on desktop nav links
+    document.querySelectorAll('.desktop-nav-link').forEach(link => {
+      const itemRoute = link.getAttribute('data-route');
+      if (itemRoute) {
+        link.classList.toggle('active', itemRoute === baseRoute);
+      }
+    });
+
+    // In Content Management mode, disable Library in desktop nav
+    const desktopLibraryLink = document.querySelector('.desktop-nav-link[data-route="library"]');
+    if (desktopLibraryLink) {
+      desktopLibraryLink.classList.toggle('desktop-nav-link--cm-disabled', isCMActive);
+      if (isCMActive) {
+        desktopLibraryLink.setAttribute('title', 'Library is unavailable in Content Management View');
+      } else {
+        desktopLibraryLink.removeAttribute('title');
+      }
+    }
+
+    // Add Admin link to desktop nav if user has admin privileges and it isn't added yet
+    const desktopNav = document.getElementById('desktop-nav');
+    if (desktopNav && hasAdminPrivileges() && !desktopNav.querySelector('[data-route="admin"]')) {
+      const adminLink = document.createElement('a');
+      adminLink.className = `desktop-nav-link ${baseRoute === 'admin' ? 'active' : ''}`;
+      adminLink.setAttribute('data-route', 'admin');
+      adminLink.innerHTML = `<span style="color:#A78BFA; font-weight:700;">🛡️ Admin</span>`;
+      adminLink.addEventListener('click', () => navigate('admin'));
+      desktopNav.appendChild(adminLink);
     }
 
     // Refresh header avatar (may have changed on profile page)

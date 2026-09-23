@@ -16,7 +16,9 @@ export interface SquadGateOptions {
   storyId: string;
   storyTitle: string;
   storyCoverImage?: string;
+  storyGroupId?: string;
   episodeNumber?: number;
+  soloEpisodeCount?: number;
   onReplay?: () => void;
   onClose?: () => void;
 }
@@ -51,7 +53,7 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
       localStorage.setItem('drive_pending_squad_join', JSON.stringify({
         storyId: options.storyId,
         storyTitle: options.storyTitle,
-        squadCode: '',
+        squadCode: currentInviteCode || 'auto-create',
         timestamp: Date.now()
       }));
       authOverlay.remove();
