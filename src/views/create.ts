@@ -1287,6 +1287,11 @@ function openPageFullscreen(pageIndex: number): void {
       const isOpen = panel.style.display !== 'none';
       panel.style.display = isOpen ? 'none' : 'block';
       if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+      if (!isOpen) {
+        setTimeout(() => {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
+      }
     }
   });
 
@@ -3635,6 +3640,11 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           const isOpen = panel.style.display !== 'none';
           panel.style.display = isOpen ? 'none' : 'block';
           if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+          if (!isOpen) {
+            setTimeout(() => {
+              panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 50);
+          }
         }
       });
 

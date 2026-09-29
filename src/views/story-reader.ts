@@ -228,15 +228,9 @@ export function render(): string {
           </div>
         ` : ''}
         <div class="reader__page-nav">
-          <button class="reader__page-btn" id="book-prev" aria-label="Previous page">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          </button>
           <div class="reader__page-dots" id="book-dots">
             ${Array.from({ length: story.panels.length + 1 }).map((_, i) => `<span class="reader__dot ${i === 0 ? 'active' : ''} ${i >= story.panels.length ? 'reader__dot--info' : ''}" data-page="${i}" title="${i >= story.panels.length ? 'End' : 'Page ' + (i + 1)}"></span>`).join('')}
           </div>
-          <button class="reader__page-btn" id="book-next" aria-label="Next page">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
         </div>
       </div>
     `;
@@ -293,6 +287,16 @@ export function render(): string {
           </button>
         </div>
       </header>
+
+      ${story.format === 'book' ? `
+        <!-- Side Navigation Arrows: Left & Right, vertically halfway up -->
+        <button class="reader__side-arrow reader__side-arrow--prev" id="book-prev" aria-label="Previous page" title="Previous page (← or A)">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button class="reader__side-arrow reader__side-arrow--next" id="book-next" aria-label="Next page" title="Next page (→ or D)">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      ` : ''}
 
       <!-- Story content -->
       <div class="reader__content" id="reader-content" style="background: ${themeColor};">
@@ -553,40 +557,47 @@ export async function init(): Promise<void> {
     }
   });
 
-  // ─── Desktop Keyboard Navigation ───
-  const handleKeyNav = (e: KeyboardEvent) => {
-    const activeTag = (document.activeElement as HTMLElement)?.tagName;
-    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+    // ─── Desktop Keyboard Navigation ───
+    const handleKeyNav = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement as HTMLElement)?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
 
-    if (e.key === 'ArrowRight' || e.code === 'KeyD') {
-      if (story.format === 'book') {
+      if (e.key === 'ArrowRight' || e.code === 'KeyD') {
+        if (story.format === 'book') {
+          e.preventDefault();
+          document.getElementById('book-next')?.click();
+        } else if (story.format === 'scroll') {
+          e.preventDefault();
+          container.scrollBy({ top: window.innerHeight * 0.75, behavior: 'smooth' });
+        }
+      } else if (e.key === 'ArrowLeft' || e.code === 'KeyA') {
+        if (story.format === 'book') {
+          e.preventDefault();
+          document.getElementById('book-prev')?.click();
+        } else if (story.format === 'scroll') {
+          e.preventDefault();
+          container.scrollBy({ top: -window.innerHeight * 0.75, behavior: 'smooth' });
+        }
+      } else if (e.key === 'Escape') {
         e.preventDefault();
-        document.getElementById('book-next')?.click();
-      } else if (story.format === 'scroll') {
+        document.getElementById('reader-back')?.click();
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        // Activate Let's Begin button on gate page
+        const letsBeginBtn = document.getElementById('btn-book-lets-begin');
+        if (letsBeginBtn) {
+          e.preventDefault();
+          letsBeginBtn.click();
+          return;
+        }
+      } else if (e.code === 'Space') {
         e.preventDefault();
-        container.scrollBy({ top: window.innerHeight * 0.75, behavior: 'smooth' });
+        const bookAudioBtn = document.getElementById('reader-audio-toggle');
+        if (bookAudioBtn) {
+          bookAudioBtn.click();
+        }
       }
-    } else if (e.key === 'ArrowLeft' || e.code === 'KeyA') {
-      if (story.format === 'book') {
-        e.preventDefault();
-        document.getElementById('book-prev')?.click();
-      } else if (story.format === 'scroll') {
-        e.preventDefault();
-        container.scrollBy({ top: -window.innerHeight * 0.75, behavior: 'smooth' });
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      document.getElementById('reader-back')?.click();
-    } else if (e.code === 'Space') {
-      e.preventDefault();
-      const bookAudioBtn = document.getElementById('reader-audio-toggle');
-      if (bookAudioBtn) {
-        bookAudioBtn.click();
-      }
-    }
-  };
-
-  window.addEventListener('keydown', handleKeyNav);
+    };
+    window.addEventListener('keydown', handleKeyNav);
 
   const cleanupReader = () => {
     stopBgm();
@@ -938,6 +949,12 @@ export async function init(): Promise<void> {
       }
       if (progressBar) {
         progressBar.style.width = `${((currentPage + 1) / totalPages) * 100}%`;
+      }
+      const prevBtn = document.getElementById('book-prev') as HTMLButtonElement | null;
+      if (prevBtn) {
+        prevBtn.disabled = currentPage === 0;
+        prevBtn.style.opacity = currentPage === 0 ? '0.2' : '1';
+        prevBtn.style.pointerEvents = currentPage === 0 ? 'none' : 'auto';
       }
     };
 

@@ -462,7 +462,7 @@ function renderOriginalsContent(area: HTMLElement): void {
                   <div style="flex: 1; min-width: 0;">
                     <div style="font-weight: 600; font-size: 0.85rem; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ep1.title || 'Untitled'}</div>
                     <div style="font-size: 0.75rem; color: var(--color-text-muted);">${episodes.length} episode${episodes.length > 1 ? 's' : ''} · ${ep1.genre}</div>
-                    <div style="font-size: 0.7rem; color: #f59e0b; margin-top: 2px;">📦 ARCHIVED</div>
+                    <div style="font-size: 0.7rem; color: #92400e; margin-top: 2px;">📦 ARCHIVED</div>
                   </div>
                   <div style="display: flex; gap: 6px; flex-shrink: 0;">
                     <button data-unarchive-group="${groupId}" style="background: rgba(139,92,246,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #8b5cf6; cursor: pointer; font-weight: 600;" title="Restore to DRiVE Originals">↩ Restore</button>
@@ -643,7 +643,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
             ${escapeHtml(ep1.author)} · ${ep1.genre}
           </div>
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: auto;">
-            <span style="font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: ${isLive ? 'rgba(16,185,129,0.1)' : 'rgba(234,179,8,0.1)'}; color: ${isLive ? '#10b981' : '#eab308'};">${statusLabel}</span>
+            <span style="font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: ${isLive ? 'rgba(5,150,105,0.12)' : 'rgba(161,98,7,0.12)'}; color: ${isLive ? '#059669' : '#a16207'};">${statusLabel}</span>
             <span style="font-size: 0.75rem; color: var(--color-text-secondary); font-weight: 600;">${totalEps} Episode${totalEps > 1 ? 's' : ''}</span>
           </div>
         </div>
@@ -825,8 +825,26 @@ function attachOfficialCardListeners(): void {
           const sid = menuItem.dataset.previewAdmin;
           // Register from admin cache so reader finds it even if not live
           const cached = currentOfficialStories.find(s => s.id === sid);
-          if (cached) registerStory(cached);
-          navigate('story/' + sid);
+          if (cached) {
+            registerStory(cached);
+            navigate('story/' + sid);
+          } else {
+            // Stories not loaded yet — fetch individually, then navigate
+            try {
+              const stories = await fetchOfficialStories();
+              currentOfficialStories = stories;
+              const found = stories.find((s: any) => s.id === sid);
+              if (found) {
+                registerStory(found);
+                navigate('story/' + sid);
+              } else {
+                alert('Story not found. It may have been deleted.');
+              }
+            } catch (err) {
+              console.error('Failed to fetch story for preview:', err);
+              alert('Failed to load story for preview.');
+            }
+          }
         } else if (menuItem.dataset.toggleEpisodes) {
           const groupId = menuItem.dataset.toggleEpisodes;
           const group = document.querySelector(`.story-group[data-group-id="${groupId}"]`) as HTMLElement;

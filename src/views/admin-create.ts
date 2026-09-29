@@ -2413,6 +2413,11 @@ function openPageFullscreen(pageIndex: number): void {
       const isOpen = panel.style.display !== 'none';
       panel.style.display = isOpen ? 'none' : 'block';
       if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+      if (!isOpen) {
+        setTimeout(() => {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
+      }
     }
   });
 
@@ -4290,6 +4295,11 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           const isOpen = panel.style.display !== 'none';
           panel.style.display = isOpen ? 'none' : 'block';
           if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+          if (!isOpen) {
+            setTimeout(() => {
+              panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 50);
+          }
         }
       });
 
@@ -4413,12 +4423,22 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
   window.addEventListener('beforeunload', handleBeforeUnload);
 
   // Cleanup on navigation away
-  const handleHashChange = () => {
+  const handleHashChange = async () => {
     getFormData();
     saveDraft();
     clearInterval(autoSaveInterval);
     window.removeEventListener('beforeunload', handleBeforeUnload);
     window.removeEventListener('hashchange', handleHashChange);
+    // Best-effort cloud save on navigation
+    try {
+      if (!storyTitle.trim()) storyTitle = 'Untitled';
+      const story = buildStory('draft');
+      registerStory(story);
+      await preUploadBase64Images();
+      await saveStoryForMode(story);
+    } catch (err) {
+      console.warn('[AdminCreate] Best-effort cloud save on navigate failed:', err);
+    }
   };
   window.addEventListener('hashchange', handleHashChange, { once: true });
 }
