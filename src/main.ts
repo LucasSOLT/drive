@@ -79,9 +79,10 @@ async function initApp() {
       return; // Skip the initial SIGNED_IN / session-restore event
     }
 
-    // Don't re-render on beta invite route — it manages its own auth flow
-    const currentBase = getCurrentRoute().split('/')[0];
-    if (currentBase === 'beta') return;
+    // Don't re-render on routes with active in-progress forms — auth token
+    // renewals would destroy the storyboard/editor DOM and wipe user work.
+    const currentBase = getCurrentRoute().split('/')[0].split('?')[0];
+    if (['beta', 'admin-create', 'create'].includes(currentBase)) return;
 
     if (authUser) {
       await loadUserData();

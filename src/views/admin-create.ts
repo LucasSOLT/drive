@@ -3092,6 +3092,15 @@ export function init(): void {
     } else {
       const isNew = window.location.hash.includes('new=true') || window.location.hash.includes('new=1');
       if (isNew) {
+        // Strip new=true/new=1 from URL IMMEDIATELY so subsequent re-renders
+        // (auth token refresh, tab restore, F5) load the draft instead of wiping it.
+        const cleanHash = window.location.hash
+          .replace(/[&?]new=true/g, '')
+          .replace(/[&?]new=1/g, '')
+          .replace(/\?&/, '?')       // fix orphaned ?& 
+          .replace(/\?$/, '');        // fix trailing ?
+        history.replaceState(null, '', cleanHash || '#admin-create');
+
         clearDraft();
         editStoryId = null;
         selectedFormat = (qFormat as StoryFormat) || 'book';
@@ -4411,12 +4420,41 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
 
   // Auto-save every 15 seconds
   const autoSaveInterval = setInterval(() => {
+    syncStoryboardToState();
     getFormData();
     saveDraft();
   }, 15000);
 
+  // Sync all storyboard textareas back into bookPages[] state.
+  // Called before any save operation to ensure DOM edits aren't lost.
+  function syncStoryboardToState(): void {
+    const overlay = document.querySelector('.storyboard-overlay');
+    if (!overlay) return;
+    overlay.querySelectorAll<HTMLTextAreaElement>('[data-sb-text]').forEach(ta => {
+      const idx = parseInt(ta.getAttribute('data-sb-text') || '0');
+      if (bookPages[idx]) bookPages[idx].text = ta.value;
+    });
+    overlay.querySelectorAll<HTMLTextAreaElement>('[data-sb-dd]').forEach(ta => {
+      const idx = parseInt(ta.getAttribute('data-sb-dd') || '0');
+      if (bookPages[idx]) bookPages[idx].deeperDiveContent = ta.value;
+    });
+  }
+
+  // Auto-save when user switches tabs, minimises, or locks screen.
+  // This is the critical safety net — if the browser tab goes to sleep and
+  // Supabase fires a session-restore event, the draft is already persisted.
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      syncStoryboardToState();
+      getFormData();
+      saveDraft();
+    }
+  };
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
   // Save on page unload
   const handleBeforeUnload = () => {
+    syncStoryboardToState();
     getFormData();
     saveDraft();
   };
@@ -4424,9 +4462,11 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
 
   // Cleanup on navigation away
   const handleHashChange = async () => {
+    syncStoryboardToState();
     getFormData();
     saveDraft();
     clearInterval(autoSaveInterval);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('beforeunload', handleBeforeUnload);
     window.removeEventListener('hashchange', handleHashChange);
     // Best-effort cloud save on navigation

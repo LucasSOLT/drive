@@ -23,6 +23,13 @@ export function initAuth(): Promise<User | null> {
         return;
       }
 
+      // Suppress SIGNED_IN events that are just session renewals for the same user.
+      // These happen when the browser tab returns from sleep / background and Supabase
+      // re-establishes the session — there's no actual user change to react to.
+      if (event === 'SIGNED_IN' && _currentUser?.id === session?.user?.id) {
+        return;
+      }
+
       _authCallbacks.forEach(cb => cb(_currentUser));
     });
 
