@@ -8,9 +8,10 @@ export function showModal(options: {
   confirmText?: string; 
   cancelText?: string; 
   extraText?: string;
-  onConfirm?: () => void; 
+  extraClass?: string;
+  onConfirm?: () => void | boolean | Promise<void | boolean>; 
   onCancel?: () => void; 
-  onExtra?: () => void;
+  onExtra?: () => void | boolean | Promise<void | boolean>;
   hideActions?: boolean;
   showCloseBtn?: boolean;
 }): void {
@@ -29,7 +30,7 @@ export function showModal(options: {
         <div class="modal-content">${options.content}</div>
         ${options.hideActions ? '' : `
           <div class="modal-actions">
-            ${options.extraText ? `<button class="btn btn--secondary" id="modal-extra-btn">${options.extraText}</button>` : ''}
+            ${options.extraText ? `<button class="btn btn--secondary ${options.extraClass || ''}" id="modal-extra-btn">${options.extraText}</button>` : ''}
             ${options.cancelText ? `<button class="btn btn--ghost" id="modal-cancel-btn">${options.cancelText}</button>` : ''}
             ${options.confirmText ? `<button class="btn btn--primary" id="modal-confirm-btn">${options.confirmText}</button>` : ''}
           </div>
@@ -66,9 +67,12 @@ export function showModal(options: {
   }
   
   if (confirmBtn) {
-    confirmBtn.addEventListener('click', () => {
+    confirmBtn.addEventListener('click', async () => {
       const prevTitle = container.querySelector('.modal-title')?.textContent;
-      if (options.onConfirm) options.onConfirm();
+      if (options.onConfirm) {
+        const res = await (options.onConfirm as any)();
+        if (res === false) return;
+      }
       // Only auto-close if the onConfirm didn't open a new modal
       const newTitle = container.querySelector('.modal-title')?.textContent;
       if (newTitle === prevTitle || !container.querySelector('.modal-backdrop')) {
@@ -78,12 +82,12 @@ export function showModal(options: {
   }
 
   if (extraBtn) {
-    extraBtn.addEventListener('click', () => {
+    extraBtn.addEventListener('click', async () => {
       if (options.onExtra) {
-        options.onExtra();
-      } else {
-        close();
+        const res = await (options.onExtra as any)();
+        if (res === false) return;
       }
+      close();
     });
   }
 }

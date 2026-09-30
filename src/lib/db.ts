@@ -1838,63 +1838,119 @@ export function setCachedFriendCode(code: string): void {
 
 /** Fetch a story by its ID from either official_stories or user_stories */
 export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
-  // 1. Check official_stories
-  try {
-    const { data: offData, error: offErr } = await supabase
-      .from('official_stories')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+  // Defensive check: only query Postgres UUID columns if id is a valid UUID
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-    if (!offErr && offData) {
-      return mapOfficialStoryRecord(offData);
+  if (isUuid) {
+    // 1. Check official_stories
+    try {
+      const { data: offData, error: offErr } = await supabase
+        .from('official_stories')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (!offErr && offData) {
+        return mapOfficialStoryRecord(offData);
+      }
+    } catch (e) {
+      console.warn('[DB] Error querying official_stories by id:', e);
     }
-  } catch (e) {
-    console.warn('[DB] Error querying official_stories by id:', e);
+
+    // 2. Check user_stories
+    try {
+      const { data: uData, error: uErr } = await supabase
+        .from('user_stories')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (!uErr && uData) {
+        const pages = uData.live_pages || uData.pages || [];
+        const panels = pages.map((p: any) => p?.image).filter(Boolean);
+        const pageScripts: Record<number, string> = {};
+        const pageVideos: Record<number, string> = {};
+        pages.forEach((p: any, idx: number) => {
+          if (p?.text) pageScripts[idx] = p.text;
+          if (p?.image && isVideoMedia(p.image)) pageVideos[idx] = p.image;
+        });
+
+        const rawCoverVideo = uData.cover_video;
+        const coverVideo = (rawCoverVideo && isVideoMedia(rawCoverVideo))
+          ? rawCoverVideo
+          : (panels[0] && isVideoMedia(panels[0]))
+            ? panels[0]
+            : undefined;
+
+        return {
+          id: uData.id,
+          title: uData.title,
+          author: uData.author_name || 'DRiVE Author',
+          genre: uData.genre,
+          format: uData.format || 'book',
+          synopsis: uData.synopsis || '',
+          coverImage: uData.cover_image || panels[0] || '',
+          coverVideo,
+          readCount: uData.read_count || 0,
+          isFeatured: uData.is_featured || false,
+          isEditorPick: uData.is_editors_pick || false,
+          panels,
+          pageVideos,
+          pageScripts,
+          pageAudio: uData.page_audio || {},
+          characters: uData.characters || [],
+          pageDialogue: uData.page_dialogue || {},
+          bgmUrl: uData.bgm_url || undefined,
+          bgmVolume: typeof uData.bgm_volume === 'number' ? uData.bgm_volume : 0.25,
+          pageFocalPositions: uData.page_focal_positions || undefined,
+        };
+      }
+    } catch (e) {
+      console.warn('[DB] Error querying user_stories by id:', e);
+    }
   }
 
-  // 2. Check user_stories
-  try {
-    const { data: uData, error: uErr } = await supabase
-      .from('user_stories')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+  // Fallback: check cached/localStorage user stories (handles non-UUID string IDs like 'us-...')
+  const cachedUserStory = getCachedStoryById(id);
+  if (cachedUserStory) {
+    const pages = cachedUserStory.live_pages || cachedUserStory.pages || [];
+    const panels = pages.map((p: any) => p?.image).filter(Boolean);
+    const pageScripts: Record<number, string> = {};
+    const pageVideos: Record<number, string> = {};
+    pages.forEach((p: any, idx: number) => {
+      if (p?.text) pageScripts[idx] = p.text;
+      if (p?.image && isVideoMedia(p.image)) pageVideos[idx] = p.image;
+    });
 
-    if (!uErr && uData) {
-      const pages = uData.live_pages || uData.pages || [];
-      const panels = pages.map((p: any) => p?.image).filter(Boolean);
-      const pageScripts: Record<number, string> = {};
-      const pageVideos: Record<number, string> = {};
-      pages.forEach((p: any, idx: number) => {
-        if (p?.text) pageScripts[idx] = p.text;
-        if (p?.image && isVideoMedia(p.image)) pageVideos[idx] = p.image;
-      });
+    const rawCoverVideo = cachedUserStory.coverVideo;
+    const coverVideo = (rawCoverVideo && isVideoMedia(rawCoverVideo))
+      ? rawCoverVideo
+      : (panels[0] && isVideoMedia(panels[0]))
+        ? panels[0]
+        : undefined;
 
-      return {
-        id: uData.id,
-        title: uData.title,
-        author: uData.author_name || 'DRiVE Author',
-        genre: uData.genre,
-        format: uData.format || 'book',
-        synopsis: uData.synopsis || '',
-        coverImage: uData.cover_image || panels[0] || '',
-        readCount: uData.read_count || 0,
-        isFeatured: uData.is_featured || false,
-        isEditorPick: uData.is_editors_pick || false,
-        panels,
-        pageVideos,
-        pageScripts,
-        pageAudio: uData.page_audio || {},
-        characters: uData.characters || [],
-        pageDialogue: uData.page_dialogue || {},
-        bgmUrl: uData.bgm_url || undefined,
-        bgmVolume: typeof uData.bgm_volume === 'number' ? uData.bgm_volume : 0.25,
-        pageFocalPositions: uData.page_focal_positions || undefined,
-      };
-    }
-  } catch (e) {
-    console.warn('[DB] Error querying user_stories by id:', e);
+    return {
+      id: cachedUserStory.id,
+      title: cachedUserStory.title,
+      author: cachedUserStory.author_name || 'DRiVE Author',
+      genre: cachedUserStory.genre,
+      format: cachedUserStory.format || 'book',
+      synopsis: cachedUserStory.synopsis || '',
+      coverImage: cachedUserStory.coverImage || panels[0] || '',
+      coverVideo,
+      readCount: 0,
+      isFeatured: false,
+      isEditorPick: false,
+      panels,
+      pageVideos,
+      pageScripts,
+      pageAudio: cachedUserStory.page_audio || {},
+      characters: cachedUserStory.characters || [],
+      pageDialogue: cachedUserStory.page_dialogue || {},
+      bgmUrl: cachedUserStory.bgmUrl || undefined,
+      bgmVolume: typeof cachedUserStory.bgmVolume === 'number' ? cachedUserStory.bgmVolume : 0.25,
+      pageFocalPositions: cachedUserStory.pageFocalPositions || undefined,
+    };
   }
 
   return null;

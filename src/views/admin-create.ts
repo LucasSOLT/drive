@@ -2747,6 +2747,29 @@ function showDesktopRequiredModal(): void {
   });
 }
 
+function showDraftSavedToast(message: string = 'Draft saved successfully'): void {
+  const existing = document.getElementById('storyboard-draft-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'storyboard-draft-toast';
+  toast.className = 'storyboard-draft-toast';
+  toast.innerHTML = `
+    <span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; background:rgba(34,197,94,0.2); border-radius:50%; color:#22c55e; font-size:0.85rem; font-weight:800;">✓</span>
+    <span>${message}</span>
+  `;
+  document.body.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    toast.classList.add('show');
+  });
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 400);
+  }, 2600);
+}
+
 function openStoryboard(): void {
   if (!isDesktopScreen()) {
     showDesktopRequiredModal();
@@ -2894,21 +2917,73 @@ function openStoryboard(): void {
   // Close button behavior depends on screen size:
   // Desktop → save draft and return to admin dashboard (no mobile editor available)
   // Mobile  → switch back to mobile editor view
-  document.getElementById('sb-close')?.addEventListener('click', async () => {
-    if (isDesktopScreen()) {
-      getFormData();
-      saveDraft();
-      try {
-        await preUploadBase64Images();
-        await saveStoryForMode(buildStory('draft'));
-      } catch (err) {
-        console.error('Cloud save on close failed:', err);
-      }
-      overlay.remove();
-      navigate('admin');
-    } else {
+  document.getElementById('sb-close')?.addEventListener('click', () => {
+    if (!isDesktopScreen()) {
       switchToMobileView();
+      return;
     }
+
+    const currentTitle = storyTitle.trim();
+    const hasExistingTitle = Boolean(currentTitle && currentTitle.toLowerCase() !== 'untitled' && currentTitle.toLowerCase() !== 'untitled draft');
+
+    showModal({
+      title: 'Exit Storyboard',
+      content: `
+        <div style="font-size: 0.95rem; line-height: 1.6; color: var(--color-text-secondary);">
+          <p style="margin: 0 0 16px;">Would you like to save your story before exiting?</p>
+          
+          <div style="margin-top: 14px; text-align: left;">
+            <label for="sb-exit-title-input" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: var(--color-text-primary);">
+              Story Title ${!hasExistingTitle ? '<span style="color: var(--color-purple);">*</span>' : ''}
+            </label>
+            <input 
+              type="text" 
+              id="sb-exit-title-input" 
+              class="form-input" 
+              placeholder="Enter story title..." 
+              value="${hasExistingTitle ? currentTitle : ''}"
+              style="width: 100%; box-sizing: border-box; padding: 10px 14px; border-radius: 8px; border: 1.5px solid var(--color-border); background: var(--color-surface); color: var(--color-text-primary); font-size: 0.95rem; outline: none;"
+            />
+            <div id="sb-exit-title-error" style="color: #ef4444; font-size: 0.8rem; margin-top: 6px; display: none;">Please enter a title to save your story.</div>
+          </div>
+        </div>
+      `,
+      confirmText: 'Save story and exit',
+      extraText: "Don't save story, and leave",
+      extraClass: 'modal-extra-btn--danger',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        const titleInput = document.getElementById('sb-exit-title-input') as HTMLInputElement | null;
+        const enteredTitle = titleInput ? titleInput.value.trim() : '';
+
+        if (!enteredTitle) {
+          if (titleInput) {
+            titleInput.focus();
+            titleInput.style.borderColor = '#ef4444';
+          }
+          const errEl = document.getElementById('sb-exit-title-error');
+          if (errEl) errEl.style.display = 'block';
+          return false;
+        }
+
+        storyTitle = enteredTitle;
+        getFormData();
+        saveDraft();
+        try {
+          await preUploadBase64Images();
+          await saveStoryForMode(buildStory('draft'));
+        } catch (err) {
+          console.error('Cloud save on close failed:', err);
+        }
+        overlay.remove();
+        navigate('admin');
+      },
+      onExtra: () => {
+        overlay.remove();
+        navigate('admin');
+      },
+      onCancel: () => {}
+    });
   });
 
   document.getElementById('sb-story-settings')?.addEventListener('click', () => {
@@ -2923,6 +2998,7 @@ function openStoryboard(): void {
     const savedIndicator = document.getElementById('sb-saved-indicator');
     getFormData();
     saveDraft(); // localStorage backup
+    showDraftSavedToast('Draft saved successfully');
     try {
       if (savedIndicator) savedIndicator.textContent = '⏳ Saving...';
       await preUploadBase64Images();
@@ -4724,6 +4800,9 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
   const handleBeforeUnload = () => {
     syncStoryboardToState();
     getFormData();
+    if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === 'untitled') {
+      storyTitle = 'Untitled Draft';
+    }
     saveDraft();
   };
   window.addEventListener('beforeunload', handleBeforeUnload);
@@ -4732,6 +4811,9 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
   const handleHashChange = async () => {
     syncStoryboardToState();
     getFormData();
+    if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === 'untitled') {
+      storyTitle = 'Untitled Draft';
+    }
     saveDraft();
     clearInterval(autoSaveInterval);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -4739,7 +4821,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
     window.removeEventListener('hashchange', handleHashChange);
     // Best-effort cloud save on navigation
     try {
-      if (!storyTitle.trim()) storyTitle = 'Untitled';
+      if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === 'untitled') storyTitle = 'Untitled Draft';
       const story = buildStory('draft');
       registerStory(story);
       await preUploadBase64Images();

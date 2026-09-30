@@ -135,16 +135,13 @@ async function loadLiveSquadData(targetIdOrCode: string): Promise<boolean> {
     let storyTitle = '';
     let storyCover = '';
     if (squadRecord.storyId) {
-      const staticStory = getStoryById(squadRecord.storyId);
-      if (staticStory) {
-        storyTitle = staticStory.title;
-        storyCover = staticStory.coverImage || '';
-      } else {
-        const dbStory = await fetchStoryByIdFromDb(squadRecord.storyId);
-        if (dbStory) {
-          storyTitle = dbStory.title;
-          storyCover = dbStory.coverImage || '';
-        }
+      let story = getStoryById(squadRecord.storyId);
+      if (!story) {
+        story = (await fetchStoryByIdFromDb(squadRecord.storyId)) || undefined;
+      }
+      if (story) {
+        storyTitle = story.title;
+        storyCover = story.coverImage || '';
       }
     }
 
@@ -581,7 +578,10 @@ function attachLobbyEventListeners(squadId: string): void {
         await updateSquadStatus(currentSquad.id, 'in-progress');
 
         // 2. Determine storyGroupId from the story data
-        const storyData = getStoryById(currentSquad.storyId);
+        let storyData = getStoryById(currentSquad.storyId);
+        if (!storyData) {
+          storyData = (await fetchStoryByIdFromDb(currentSquad.storyId)) || undefined;
+        }
         const storyGroupId = storyData?.storyGroupId || currentSquad.storyId || 'story-group-1';
 
         // 3. Get soloEpisodeCount to know which episode is the first post-gate one
@@ -598,14 +598,19 @@ function attachLobbyEventListeners(squadId: string): void {
 
         // 5. Find the actual story ID for the target episode
         const targetEpisode = session?.currentEpisodeNumber || firstSquadEpisode;
-        const episodeData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEpisode);
+        let episodeData: { id: string } | null = null;
+        try {
+          episodeData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEpisode);
+        } catch (e) {
+          console.warn('[Lobby] fetchStoryByGroupAndEpisode error:', e);
+        }
 
         // 6. Navigate to the correct episode
         countdownOverlay.remove();
-        if (episodeData) {
+        if (episodeData && episodeData.id) {
           navigate('story/' + episodeData.id);
         } else {
-          // Fallback: navigate to the squad's story (Episode 1)
+          // Fallback: navigate to the squad's story (handles single-episode user stories / Dad's story)
           console.warn('[Lobby] Could not find post-gate episode, falling back to story ID');
           navigate('story/' + currentSquad.storyId);
         }
@@ -681,17 +686,23 @@ function startLobbyPolling(squadId: string): void {
         if (currentSquad.status === 'in-progress') {
           stopLobbyPolling();
           try {
-            const storyData = getStoryById(currentSquad.storyId);
+            let storyData = getStoryById(currentSquad.storyId);
+            if (!storyData) {
+              storyData = (await fetchStoryByIdFromDb(currentSquad.storyId)) || undefined;
+            }
             const storyGroupId = storyData?.storyGroupId || currentSquad.storyId;
             const session = await getSquadSession(currentSquad.id);
             const targetEp = session?.currentEpisodeNumber || 2;
-            const epData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEp);
+            let epData: { id: string } | null = null;
+            try {
+              epData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEp);
+            } catch {}
             
             // All members navigate to the post-gate episode
             if (epData && epData.id) {
               navigate('story/' + epData.id);
             } else {
-              // Fallback: try to get post-gate episode from the session
+              // Fallback: try to get post-gate episode from the session or squad story
               navigate('story/' + (currentSquad.storyId || 'story-1'));
             }
           } catch (e) {

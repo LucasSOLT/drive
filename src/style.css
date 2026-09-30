@@ -15189,3 +15189,45 @@ body.content-management-mode .story-card:hover {
   outline: none;
   box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
 }
+
+/* Storyboard Draft Saved Toast (Desktop bottom-right) */
+.storyboard-draft-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: rgba(24, 18, 36, 0.96);
+  border: 1px solid var(--color-purple);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  padding: 12px 20px;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 100000;
+  backdrop-filter: blur(12px);
+  transform: translateY(16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.storyboard-draft-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#modal-extra-btn.modal-extra-btn--danger {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #f87171 !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+}
+
+#modal-extra-btn.modal-extra-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  color: #fca5a5 !important;
+}

@@ -1097,7 +1097,7 @@ export function init(): void {
   container.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
       const storyId = btn.getAttribute('data-view');
-      if (storyId) navigate(`book/${storyId}`);
+      if (storyId) navigate(`story/${storyId}`);
     });
   });
 
