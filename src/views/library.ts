@@ -274,10 +274,12 @@ async function loadActiveSquads(): Promise<void> {
 
     if (activeSquads.length === 0) {
       container.innerHTML = `
-        <div style="padding:24px; text-align:center; background:var(--color-surface); border-radius:var(--radius-xl); border:1px dashed var(--color-border);">
-          <div style="font-size:1.5rem; margin-bottom:8px;">🛡️</div>
-          <h3 style="font-family:var(--font-heading); font-size:0.95rem; margin:0 0 4px; color:var(--color-text-primary);">No active squad missions</h3>
-          <p style="font-size:0.82rem; color:var(--color-text-muted); margin:0;">Start reading a story past the squad gate to begin your first squad mission!</p>
+        <div class="library-empty text-center" style="padding: 2rem 1.5rem; text-align: center; background: var(--color-surface); border-radius: var(--radius-xl); border: 1px dashed var(--color-border);">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.5rem; opacity: 0.6;">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <h3 style="font-family: var(--font-heading); margin-bottom: 0.25rem; color: var(--color-text-primary); font-size: 1rem;">No active squad missions</h3>
+          <p class="text-muted" style="font-size: 0.82rem; margin: 0; color: var(--color-text-muted);">Start reading a story past the squad gate to begin your first squad mission!</p>
         </div>
       `;
       return;
