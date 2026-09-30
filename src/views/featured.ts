@@ -18,8 +18,47 @@ function renderFeaturedHero(topPick: Story | null, allStoriesList: Story[] = [])
   return topPick ? renderStoryCard(topPick, 'hero') : renderEmptySlot('featured-hero', 0, 'hero');
 }
 
-function renderStaffPicks(picks: Story[], allStoriesList: Story[] = []): string {
-  const count = Math.max(4, picks.length);
+let isStaffExpanded = false;
+let isRisingExpanded = false;
+let cachedOtherPicks: Story[] = [];
+let cachedRisingStars: Story[] = [];
+let cachedAllCombined: Story[] = [];
+
+function getDisplayCount(list: Story[], allStoriesList: Story[], slotType: string, isExpanded: boolean): number {
+  let maxAssignedIndex = -1;
+  const maxCheck = Math.max(5, list.length);
+  for (let i = 0; i < maxCheck; i++) {
+    const override = getSlotOverride(slotType, i);
+    if (override === null) continue;
+    if (typeof override === 'string') {
+      const story = allStoriesList.find(s => s.id === override) || stories.find(s => s.id === override) || list.find(s => s.id === override);
+      if (story && !story.id.startsWith('placeholder-') && !story.id.startsWith('empty-')) {
+        maxAssignedIndex = Math.max(maxAssignedIndex, i);
+      }
+    } else {
+      const cur = list[i];
+      if (cur && !cur.id.startsWith('placeholder-') && !cur.id.startsWith('empty-')) {
+        maxAssignedIndex = Math.max(maxAssignedIndex, i);
+      }
+    }
+  }
+
+  const filledCount = maxAssignedIndex + 1;
+
+  if (!isExpanded) {
+    return 5;
+  }
+
+  // When expanded, if all 5 slots are filled (or more), open up one more slot so admins can always add 'one more'
+  if (filledCount >= 5) {
+    return filledCount + 1;
+  }
+
+  return 5;
+}
+
+function renderStaffPicks(picks: Story[], allStoriesList: Story[] = [], isExpanded: boolean = false): string {
+  const count = getDisplayCount(picks, allStoriesList, 'featured-staff', isExpanded);
   const cards: string[] = [];
 
   for (let i = 0; i < count; i++) {
@@ -48,8 +87,8 @@ function renderStaffPicks(picks: Story[], allStoriesList: Story[] = []): string 
   return cards.join('');
 }
 
-function renderRisingStars(stars: Story[], allStoriesList: Story[] = []): string {
-  const count = Math.max(4, stars.length);
+function renderRisingStars(stars: Story[], allStoriesList: Story[] = [], isExpanded: boolean = false): string {
+  const count = getDisplayCount(stars, allStoriesList, 'featured-rising', isExpanded);
   const cards: string[] = [];
 
   for (let i = 0; i < count; i++) {
@@ -82,7 +121,11 @@ export function render(): string {
   const editorPicks = getEditorPicks();
   const topPick = editorPicks[0] || null;
   const otherPicks = editorPicks.slice(1);
-  const risingStars = stories.filter(s => !s.isFeatured && !s.isEditorPick).slice(0, 5);
+  const risingStars = stories.filter(s => !s.isFeatured && !s.isEditorPick).slice(0, 10);
+
+  cachedOtherPicks = otherPicks;
+  cachedRisingStars = risingStars;
+  cachedAllCombined = stories;
 
   return `
     <div class="view-featured fade-in" id="featured-container">
@@ -96,21 +139,31 @@ export function render(): string {
       </section>
 
       <section class="section slide-up stagger-2">
-        <div class="section__header">
-          <h2 class="section__title">Staff Picks</h2>
+        <div class="section__header" style="display: flex; justify-content: space-between; align-items: flex-end;">
+          <div>
+            <h2 class="section__title">Staff Picks</h2>
+          </div>
+          <button class="featured-see-all-btn" id="see-all-staff-btn" type="button" aria-expanded="${isStaffExpanded}">
+            <span>${isStaffExpanded ? 'See less' : 'See all'}</span> <span class="see-all-caret">${isStaffExpanded ? '▴' : '▾'}</span>
+          </button>
         </div>
         <div class="story-grid" id="featured-staff-picks">
-          ${renderStaffPicks(otherPicks, stories)}
+          ${renderStaffPicks(otherPicks, stories, isStaffExpanded)}
         </div>
       </section>
 
       <section class="section slide-up stagger-3">
-        <div class="section__header">
-          <h2 class="section__title">Rising Stars</h2>
-          <p class="text-muted" style="font-size: 0.8rem; margin: 0;">Emerging creators</p>
+        <div class="section__header" style="display: flex; justify-content: space-between; align-items: flex-end;">
+          <div>
+            <h2 class="section__title">Rising Stars</h2>
+            <p class="text-muted" style="font-size: 0.8rem; margin: 0;">Emerging creators</p>
+          </div>
+          <button class="featured-see-all-btn" id="see-all-rising-btn" type="button" aria-expanded="${isRisingExpanded}">
+            <span>${isRisingExpanded ? 'See less' : 'See all'}</span> <span class="see-all-caret">${isRisingExpanded ? '▴' : '▾'}</span>
+          </button>
         </div>
-        <div class="scroll-row no-scrollbar" id="featured-rising-stars">
-          ${renderRisingStars(risingStars, stories)}
+        <div class="scroll-row no-scrollbar ${isRisingExpanded ? 'is-expanded' : ''}" id="featured-rising-stars">
+          ${renderRisingStars(risingStars, stories, isRisingExpanded)}
         </div>
       </section>
     </div>
@@ -123,6 +176,42 @@ export function init(): void {
 
   // Enable hover-to-play on video covers
   initVideoCovers(container);
+
+  const wireSeeAllButtons = () => {
+    const seeAllStaffBtn = document.getElementById('see-all-staff-btn');
+    if (seeAllStaffBtn) {
+      seeAllStaffBtn.onclick = (e) => {
+        e.preventDefault();
+        isStaffExpanded = !isStaffExpanded;
+        seeAllStaffBtn.innerHTML = `<span>${isStaffExpanded ? 'See less' : 'See all'}</span> <span class="see-all-caret">${isStaffExpanded ? '▴' : '▾'}</span>`;
+        seeAllStaffBtn.setAttribute('aria-expanded', String(isStaffExpanded));
+        const staffContainer = document.getElementById('featured-staff-picks');
+        if (staffContainer) {
+          staffContainer.innerHTML = renderStaffPicks(cachedOtherPicks, cachedAllCombined, isStaffExpanded);
+          initVideoCovers(staffContainer);
+        }
+      };
+    }
+
+    const seeAllRisingBtn = document.getElementById('see-all-rising-btn');
+    if (seeAllRisingBtn) {
+      seeAllRisingBtn.onclick = (e) => {
+        e.preventDefault();
+        isRisingExpanded = !isRisingExpanded;
+        seeAllRisingBtn.innerHTML = `<span>${isRisingExpanded ? 'See less' : 'See all'}</span> <span class="see-all-caret">${isRisingExpanded ? '▴' : '▾'}</span>`;
+        seeAllRisingBtn.setAttribute('aria-expanded', String(isRisingExpanded));
+        const risingContainer = document.getElementById('featured-rising-stars');
+        if (risingContainer) {
+          risingContainer.innerHTML = renderRisingStars(cachedRisingStars, cachedAllCombined, isRisingExpanded);
+          if (isRisingExpanded) risingContainer.classList.add('is-expanded');
+          else risingContainer.classList.remove('is-expanded');
+          initVideoCovers(risingContainer);
+        }
+      };
+    }
+  };
+
+  wireSeeAllButtons();
 
   // Fetch live stories and update sections with cloud sync
   (async () => {
@@ -143,8 +232,12 @@ export function init(): void {
 
       const staticRising = stories.filter(s => !s.isFeatured && !s.isEditorPick);
       const liveRising = allStories.filter(s => !s.isFeatured && !s.isEditorPick);
-      const risingStars = [...new Map([...liveRising, ...staticRising].map(s => [s.id, s])).values()].slice(0, 10);
+      const risingStars = [...new Map([...liveRising, ...staticRising].map(s => [s.id, s])).values()].slice(0, 15);
       const allCombined = [...new Map([...featuredStories, ...allStories, ...stories].map(s => [s.id, s])).values()];
+
+      cachedOtherPicks = otherPicks;
+      cachedRisingStars = risingStars;
+      cachedAllCombined = allCombined;
 
       const heroContainer = document.getElementById('featured-hero');
       if (heroContainer) {
@@ -157,7 +250,7 @@ export function init(): void {
 
       const staffContainer = document.getElementById('featured-staff-picks');
       if (staffContainer) {
-        const newStaff = renderStaffPicks(otherPicks, allCombined);
+        const newStaff = renderStaffPicks(otherPicks, allCombined, isStaffExpanded);
         if (staffContainer.innerHTML.trim() !== newStaff.trim()) {
           staffContainer.innerHTML = newStaff;
           initVideoCovers(staffContainer);
@@ -166,12 +259,14 @@ export function init(): void {
 
       const risingContainer = document.getElementById('featured-rising-stars');
       if (risingContainer) {
-        const newRising = renderRisingStars(risingStars, allCombined);
+        const newRising = renderRisingStars(risingStars, allCombined, isRisingExpanded);
         if (risingContainer.innerHTML.trim() !== newRising.trim()) {
           risingContainer.innerHTML = newRising;
           initVideoCovers(risingContainer);
         }
       }
+
+      wireSeeAllButtons();
     } catch (err) {
       console.error('Failed to fetch live featured stories:', err);
     }

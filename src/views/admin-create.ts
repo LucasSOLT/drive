@@ -406,7 +406,16 @@ function loadDraft(draft: DraftEntry) {
   studioOpen = draft.studioOpen || false;
   bookPages = draft.bookPages || Array.from({ length: 5 }, () => defaultBookPage());
   // Ensure dialogueLines and focalPosition exist on each page (backward compat)
-  bookPages.forEach(p => { if (!p.dialogueLines) p.dialogueLines = []; if (!p.focalPosition) p.focalPosition = 'center'; });
+  bookPages.forEach(p => {
+    if (!p.dialogueLines) p.dialogueLines = [];
+    if (!p.focalPosition) p.focalPosition = 'center';
+    if (!p.text && p.dialogueLines.length > 0) {
+      p.text = p.dialogueLines.map(l => {
+        if (l.characterId === 'narrator') return l.text;
+        return `${l.characterName.toUpperCase()}: "${l.text}"`;
+      }).join('\n\n');
+    }
+  });
   currentPage = draft.currentPage || 0;
   _coverThumbnail = draft.coverThumbnail || null;
   editStoryId = draft.editStoryId || null;
@@ -480,6 +489,9 @@ function buildStory(status: 'draft' | 'live'): Story {
   const pageDialogue: Record<number, DialogueLine[]> = {};
   if (selectedFormat === 'book') {
     bookPages.forEach((bp, i) => {
+      if ((!bp.dialogueLines || bp.dialogueLines.length === 0) && bp.text) {
+        bp.dialogueLines = parseScreenplayToDialogueLines(bp.text);
+      }
       if (bp.dialogueLines && bp.dialogueLines.length > 0) {
         pageDialogue[i] = bp.dialogueLines;
       }
@@ -1591,6 +1603,36 @@ function rerenderSparcEditor(): void {
   }
 }
 
+function openSparcModal(): void {
+  document.getElementById('sparc-modal-overlay')?.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'sparc-modal-overlay';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);';
+  const card = document.createElement('div');
+  card.style.cssText = 'background:var(--color-surface);border:1px solid var(--color-border);border-radius:18px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,0.5);';
+  card.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <h3 style="margin:0;font-size:1.05rem;font-weight:700;color:var(--color-text);">⚡ SPARC Checkpoint</h3>
+      <button id="sparc-modal-close" style="background:none;border:none;color:var(--color-text-muted);font-size:1.2rem;cursor:pointer;">✕</button>
+    </div>
+    ${renderSparcAdminEditor()}
+    <div style="margin-top:16px;text-align:right;">
+      <button id="sparc-modal-done" style="padding:10px 20px;background:var(--color-purple);color:white;border:none;border-radius:10px;font-size:0.88rem;font-weight:600;cursor:pointer;font-family:var(--font-body);">Done</button>
+    </div>
+  `;
+  modal.appendChild(card);
+  document.body.appendChild(modal);
+  attachSparcAdminListeners(card);
+  const closeModal = () => {
+    modal.remove();
+    updateView();
+  };
+  document.getElementById('sparc-modal-close')?.addEventListener('click', closeModal);
+  document.getElementById('sparc-modal-done')?.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+}
+
 function renderStudioOrbs(): string {
   return `
     <div class="studio-orbs">
@@ -1802,6 +1844,218 @@ function renderScrollCanvas(): string {
   `;
 }
 
+/**
+ * Parses screenplay text into an array of DialogueLine objects for reader display & TTS.
+ * Detects patterns like:
+ *   SARAH: "We have to go!"
+ *   [Sarah]: We have to go!
+ *   SARAH: We have to go!
+ * Unprefixed lines are attributed to the Narrator.
+ * Preserves existing audioUrls if the text and character match.
+ */
+function parseScreenplayToDialogueLines(text: string, existingLines?: DialogueLine[]): DialogueLine[] {
+  if (!text || !text.trim()) return [];
+
+  const rawLines = text.split('\n');
+  const result: DialogueLine[] = [];
+  let currentNarratorBuffer: string[] = [];
+
+  const flushNarrator = () => {
+    const combined = currentNarratorBuffer.join(' ').trim();
+    if (combined) {
+      const existing = existingLines?.find(el => el.characterId === 'narrator' && el.text === combined);
+      result.push({
+        id: existing?.id || 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        characterId: 'narrator',
+        characterName: '🎙️ Narrator',
+        text: combined,
+        audioUrl: existing?.audioUrl || null,
+      });
+    }
+    currentNarratorBuffer = [];
+  };
+
+  for (const raw of rawLines) {
+    const line = raw.trim();
+    if (!line) {
+      flushNarrator();
+      continue;
+    }
+
+    // Match "SPEAKER: dialogue" or "[SPEAKER]: dialogue"
+    const charMatch = line.match(/^(?:\[([^\]]+)\]|([A-Za-z0-9_ -]+))\s*(?:\([^)]*\))?\s*:\s*["']?(.*?)["']?$/);
+
+    if (charMatch) {
+      flushNarrator();
+      const speakerRaw = (charMatch[1] || charMatch[2] || '').trim();
+      const speech = charMatch[3] !== undefined ? charMatch[3].trim() : '';
+
+      const isNarrator = /^narrator$/i.test(speakerRaw);
+      const matchedChar = isNarrator ? null : storyCharacters.find(c => c.name.toLowerCase() === speakerRaw.toLowerCase());
+
+      const charId = isNarrator ? 'narrator' : (matchedChar?.id || 'char_' + speakerRaw.toLowerCase().replace(/\s+/g, '_'));
+      const charName = isNarrator ? '🎙️ Narrator' : (matchedChar?.name || speakerRaw);
+
+      const existing = existingLines?.find(el =>
+        (el.characterId === charId || el.characterName.toLowerCase() === charName.toLowerCase()) &&
+        el.text === speech
+      );
+
+      result.push({
+        id: existing?.id || 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        characterId: charId,
+        characterName: charName,
+        text: speech || line,
+        audioUrl: existing?.audioUrl || null,
+      });
+    } else {
+      currentNarratorBuffer.push(line);
+    }
+  }
+
+  flushNarrator();
+  return result;
+}
+
+/**
+ * Inserts a character tag (e.g. 'SARAH:') at the cursor position in a screenplay textarea,
+ * wrapping in speech quotation marks.
+ */
+function insertTextAtCursor(textarea: HTMLTextAreaElement, tag: string): void {
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? textarea.value.length;
+  const val = textarea.value;
+  const before = val.substring(0, start);
+  const after = val.substring(end);
+
+  const needsLeadingNewline = before.length > 0 && !before.endsWith('\n');
+  const leading = needsLeadingNewline ? '\n\n' : (before.endsWith('\n\n') ? '' : (before.endsWith('\n') ? '\n' : ''));
+  const insertion = `${leading}${tag} "`;
+
+  textarea.value = before + insertion + after;
+  const newPos = start + insertion.length;
+  textarea.selectionStart = newPos;
+  textarea.selectionEnd = newPos;
+  textarea.focus();
+}
+
+/**
+ * Renders the unified Screenplay Editor for a page (used in both mobile canvas & desktop storyboard).
+ * Replaces the split Story Text / Character Dialogue inputs with a single screenplay-format textarea
+ * plus quick-insert character chips and audio tools.
+ */
+function renderScreenplayEditor(pageIdx: number, prefix: string): string {
+  const page = bookPages[pageIdx] || defaultBookPage();
+  const lines = page.dialogueLines || [];
+  const hasAnyAudio = lines.some(l => !!l.audioUrl);
+
+  const charChipsHtml = storyCharacters.map(ch => `
+    <button type="button" class="screenplay-chip" data-insert-tag="${prefix}-${pageIdx}" data-tag="${escapeHtml(ch.name.toUpperCase())}:" style="
+      display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px;
+      border:1px solid ${ch.color || 'var(--color-purple)'}; background:rgba(255,255,255,0.06);
+      color:var(--color-text-primary); font-size:0.75rem; font-weight:600; cursor:pointer; font-family:var(--font-body);
+      transition:background 0.15s;
+    ">
+      👤 ${escapeHtml(ch.name)}
+    </button>
+  `).join('');
+
+  return `
+  <div class="screenplay-editor" data-${prefix}-screenplay="${pageIdx}">
+    <!-- Header -->
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+      <span style="font-size:0.75rem; font-weight:700; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.04em;">
+        🎬 Screenplay & Dialogue
+      </span>
+      <button type="button" data-open-char-settings="true" style="background:none; border:none; color:var(--color-purple); font-size:0.73rem; font-weight:600; cursor:pointer; padding:0; font-family:var(--font-body);">
+        🎭 Cast & Voices (${storyCharacters.length})
+      </button>
+    </div>
+
+    <!-- Quick Character Tag Inserter -->
+    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-bottom:8px;">
+      <span style="font-size:0.72rem; color:var(--color-text-muted); font-weight:600;">Insert:</span>
+      <button type="button" class="screenplay-chip" data-insert-tag="${prefix}-${pageIdx}" data-tag="NARRATOR:" style="
+        display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px;
+        border:1px solid rgba(167,139,250,0.35); background:rgba(167,139,250,0.1);
+        color:#c084fc; font-size:0.75rem; font-weight:700; cursor:pointer; font-family:var(--font-body);
+      ">
+        🎙️ Narrator
+      </button>
+      ${charChipsHtml}
+      <button type="button" data-open-char-settings="true" style="
+        display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px;
+        border:1px dashed var(--color-border); background:none;
+        color:var(--color-text-muted); font-size:0.73rem; cursor:pointer; font-family:var(--font-body);
+      ">
+        + Add Character
+      </button>
+    </div>
+
+    <!-- Unified Textarea -->
+    <textarea class="${prefix === 'sbd' ? 'sb-card__textarea ' : 'book-tile__textarea '}screenplay-textarea"
+      data-${prefix === 'sbd' ? 'sb-text' : 'tile-text'}="${pageIdx}"
+      rows="${prefix === 'sbd' ? '8' : '6'}"
+      placeholder="Write story narration or character dialogue...&#10;&#10;e.g.&#10;The ancient gates creaked open.&#10;&#10;SARAH: &quot;Is anyone there?&quot;&#10;LUCAS: &quot;Stay close.&quot;"
+      maxlength="2000"
+      style="width:100%; box-sizing:border-box; font-family:var(--font-body); font-size:0.88rem; line-height:1.5; border-radius:10px; resize:vertical;">${escapeHtml(page.text)}</textarea>
+
+    <!-- Audio & Line Summary Strip -->
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px; padding:6px 10px; background:rgba(255,255,255,0.03); border:1px solid var(--color-border); border-radius:8px;">
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button type="button" class="sb-dialog-batch-btn" data-${prefix}-batch-rec="${pageIdx}" style="
+          padding:5px 12px; border-radius:6px; border:none; background:var(--color-purple); color:white;
+          font-size:0.75rem; font-weight:700; cursor:pointer; font-family:var(--font-body);
+        ">
+          🎙️ Pre-record Page Audio
+        </button>
+        ${hasAnyAudio ? `
+          <button type="button" class="sb-dialog-play-all" data-${prefix}-play-all="${pageIdx}" style="
+            padding:5px 10px; border-radius:6px; border:1px solid var(--color-border); background:var(--color-surface);
+            color:var(--color-text-primary); font-size:0.75rem; cursor:pointer; font-family:var(--font-body);
+          ">
+            ▶ Play All
+          </button>
+        ` : ''}
+      </div>
+      <span style="font-size:0.72rem; color:var(--color-text-muted);">
+        ${lines.length} speech line${lines.length !== 1 ? 's' : ''} detected
+      </span>
+    </div>
+
+    <!-- Collapsible Recorded Lines Details (if lines exist) -->
+    ${lines.length > 0 ? `
+      <details style="margin-top:6px;">
+        <summary style="font-size:0.72rem; color:var(--color-text-secondary); cursor:pointer; font-weight:600; padding:2px 0;">
+          🎙️ Line Audio Details (${lines.filter(l => !!l.audioUrl).length}/${lines.length} ready)
+        </summary>
+        <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
+          ${lines.map((line, li) => {
+            const isNarrator = line.characterId === 'narrator';
+            const charColor = isNarrator ? '#a78bfa' : (storyCharacters.find(c => c.id === line.characterId)?.color || '#60a5fa');
+            const hasAudio = !!line.audioUrl;
+            return `
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; padding:4px 8px; background:rgba(0,0,0,0.25); border-radius:6px; font-size:0.74rem;">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;">
+                  <span style="color:${charColor}; font-weight:700; white-space:nowrap;">${isNarrator ? '🎙️ Narrator' : line.characterName}:</span>
+                  <span style="color:var(--color-text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${escapeHtml(line.text)}"</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                  <button class="sb-dialog-line__btn ${hasAudio ? 'sb-dialog-line__btn--done' : ''}" data-${prefix}-line-rec="${pageIdx}-${li}" type="button" style="padding:2px 7px; font-size:0.68rem;">
+                    ${hasAudio ? '✅ Done' : '🎙️ Record'}
+                  </button>
+                  ${hasAudio ? `<button class="sb-dialog-line__btn" data-${prefix}-line-play="${pageIdx}-${li}" type="button" style="padding:2px 7px; font-size:0.68rem;">▶</button>` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </details>
+    ` : ''}
+  </div>
+  `;
+}
+
 /** Render multi-character dialogue lines UI for a page (used in both mobile + storyboard views) */
 function renderDialogueLines(pageIdx: number, lines: DialogueLine[], prefix: string): string {
   const charOptions = storyCharacters.map(ch =>
@@ -1918,6 +2172,33 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         const card = document.querySelector('.ss-characters-card');
         if (card) card.scrollIntoView({ behavior: 'smooth' });
       }, 150);
+    });
+  });
+
+  // Quick insert character chip into screenplay textarea
+  container.querySelectorAll('[data-insert-tag]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const attr = (btn as HTMLElement).getAttribute('data-insert-tag') || 'mob-0';
+      const lastDash = attr.lastIndexOf('-');
+      const pfx = attr.substring(0, lastDash);
+      const pageIdx = parseInt(attr.substring(lastDash + 1));
+      const tag = (btn as HTMLElement).getAttribute('data-tag') || '';
+
+      const textarea = (pfx === 'sbd'
+        ? container.querySelector(`[data-sb-text="${pageIdx}"]`)
+        : container.querySelector(`[data-tile-text="${pageIdx}"]`)) as HTMLTextAreaElement | null;
+
+      if (textarea && tag) {
+        insertTextAtCursor(textarea, tag);
+        if (bookPages[pageIdx]) {
+          bookPages[pageIdx].text = textarea.value;
+          bookPages[pageIdx].dialogueLines = parseScreenplayToDialogueLines(textarea.value, bookPages[pageIdx].dialogueLines);
+          syncDialogText(pageIdx);
+          saveDraft();
+        }
+      }
     });
   });
 
@@ -2154,16 +2435,15 @@ function renderBookCanvas(): string {
       </div>
       ` : ''}
 
-      <!-- Story text -->
-      <div class="book-tile__text-header">
-        <span>STORY TEXT</span>
-      </div>
-      <textarea class="book-tile__textarea" data-tile-text="${i}"
-        placeholder="Write the story for this page..."
-        rows="4" maxlength="1000">${page.text}</textarea>
-
-      <!-- Dialogue / Audio -->
+      <!-- Story Text & Dialogue (Screenplay Editor) -->
       ${storyAudioMode === 'simple_upload' ? `
+        <div class="book-tile__text-header">
+          <span>STORY TEXT</span>
+        </div>
+        <textarea class="book-tile__textarea" data-tile-text="${i}"
+          placeholder="Write the story for this page..."
+          rows="4" maxlength="1000">${page.text}</textarea>
+
         <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
           <span>📁 PAGE AUDIO</span>
         </div>
@@ -2207,10 +2487,7 @@ function renderBookCanvas(): string {
           placeholder="Type dialogue and captions here for hearing-impaired viewers (optional)..."
           rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
       ` : `
-        <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
-          <span>CHARACTER DIALOGUE</span>
-        </div>
-        ${renderDialogueLines(i, page.dialogueLines || [], 'mob')}
+        ${renderScreenplayEditor(i, 'mob')}
       `}
 
 
@@ -2257,7 +2534,7 @@ function renderBookCanvas(): string {
         </button>
       </div>
 
-      ${!isUserMode() && episodeNumber > soloEpisodeCount && currentPage === bookPages.length - 1 ? `
+      ${!isUserMode() && currentPage === bookPages.length - 1 ? `
         <div style="margin-top:16px; text-align:center;">
           <button type="button" id="btn-sparc-checkpoint" style="
             display:inline-flex; align-items:center; gap:8px; padding:12px 20px;
@@ -2267,7 +2544,7 @@ function renderBookCanvas(): string {
             cursor:pointer; font-family:var(--font-body); transition: all 0.2s;
           ">
             <span style="font-size:1.2rem;">⚡</span>
-            ${sparcPromptText.trim() || sparcPromptMediaUrls.length > 0 ? '✅ Edit SPARC Checkpoint' : 'Add SPARC Checkpoint'}
+            ${sparcPromptText.trim() || sparcPromptMediaUrls.length > 0 ? '✅ Edit SPARC Checkpoint' : '+ Add SPARC Checkpoint'}
           </button>
           ${sparcPromptText.trim() ? `<p style="font-size:0.72rem; color:var(--color-text-muted); margin-top:6px;">End of episode challenge configured</p>` : ''}
         </div>
@@ -2531,13 +2808,7 @@ function openStoryboard(): void {
       </div>
 
       <div class="sb-card__section">
-        <div class="sb-card__section-label">STORY TEXT</div>
-        <textarea class="sb-card__textarea" data-sb-text="${i}" rows="6" placeholder="Write the story for this page..." maxlength="1000">${page.text}</textarea>
-      </div>
-
-      <div class="sb-card__section">
-        <div class="sb-card__section-label">CHARACTER DIALOGUE</div>
-        ${renderDialogueLines(i, page.dialogueLines || [], 'sbd')}
+        ${renderScreenplayEditor(i, 'sbd')}
       </div>
 
 
@@ -2589,14 +2860,14 @@ function openStoryboard(): void {
     </div>
     <div class="sb-track" id="sb-track">
       ${cardsHtml}
-      ${!isUserMode() && episodeNumber > soloEpisodeCount ? `<div class="sb-card sb-card--sparc" style="min-width:200px; max-width:240px; display:flex; align-items:center; justify-content:center; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px; padding:16px;">
+      ${!isUserMode() ? `<div class="sb-card sb-card--sparc" style="min-width:200px; max-width:240px; display:flex; align-items:center; justify-content:center; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px; padding:16px;">
         <button type="button" id="btn-sparc-checkpoint" style="
           display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px;
           background:none; border:2px dashed rgba(99,102,241,0.4); border-radius:12px;
           color:var(--color-text-primary); cursor:pointer; font-family:var(--font-body);
         ">
           <span style="font-size:1.5rem;">⚡</span>
-          <span style="font-size:0.8rem; font-weight:600;">${sparcPromptText.trim() ? '✅ Edit SPARC' : 'Add SPARC'}</span>
+          <span style="font-size:0.8rem; font-weight:600;">${sparcPromptText.trim() || sparcPromptMediaUrls.length > 0 ? '✅ Edit SPARC' : '+ Add SPARC'}</span>
         </button>
       </div>` : ''}
     </div>
@@ -2682,6 +2953,13 @@ function openStoryboard(): void {
     }, 60);
   });
 
+  // SPARC checkpoint modal in storyboard
+  overlay.querySelector('#btn-sparc-checkpoint')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openSparcModal();
+  });
+
   // Media in-card triggers
   overlay.querySelectorAll('[data-sb-upload]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2740,6 +3018,8 @@ function openStoryboard(): void {
     const handleInput = () => {
       const idx = parseInt(ta.getAttribute('data-sb-text') || '0');
       bookPages[idx].text = (ta as HTMLTextAreaElement).value;
+      bookPages[idx].dialogueLines = parseScreenplayToDialogueLines((ta as HTMLTextAreaElement).value, bookPages[idx].dialogueLines);
+      syncDialogText(idx);
       saveDraft();
     };
     ta.addEventListener('input', handleInput);
@@ -3975,29 +4255,9 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // SPARC checkpoint button → opens modal
-      document.getElementById('btn-sparc-checkpoint')?.addEventListener('click', () => {
-        const modal = document.createElement('div');
-        modal.id = 'sparc-modal-overlay';
-        modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px;';
-        const card = document.createElement('div');
-        card.style.cssText = 'background:var(--color-surface);border:1px solid var(--color-border);border-radius:18px;padding:20px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;';
-        card.innerHTML = `
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <h3 style="margin:0;font-size:1.05rem;font-weight:700;color:var(--color-text);">⚡ SPARC Checkpoint</h3>
-            <button id="sparc-modal-close" style="background:none;border:none;color:var(--color-text-muted);font-size:1.2rem;cursor:pointer;">✕</button>
-          </div>
-          ${renderSparcAdminEditor()}
-          <div style="margin-top:16px;text-align:right;">
-            <button id="sparc-modal-done" style="padding:10px 20px;background:var(--color-purple);color:white;border:none;border-radius:10px;font-size:0.88rem;cursor:pointer;font-family:var(--font-body);">Done</button>
-          </div>
-        `;
-        modal.appendChild(card);
-        document.body.appendChild(modal);
-        attachSparcAdminListeners(card);
-        const closeModal = () => { modal.remove(); updateView(); };
-        document.getElementById('sparc-modal-close')?.addEventListener('click', closeModal);
-        document.getElementById('sparc-modal-done')?.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+      document.getElementById('btn-sparc-checkpoint')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        openSparcModal();
       });
 
       wizard.querySelectorAll('[data-dot]').forEach(dot => {
@@ -4073,7 +4333,11 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       // Save story text
       const tileText = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
       const handleTileText = () => {
-        if (tileText) bookPages[i].text = tileText.value;
+        if (tileText) {
+          bookPages[i].text = tileText.value;
+          bookPages[i].dialogueLines = parseScreenplayToDialogueLines(tileText.value, bookPages[i].dialogueLines);
+          syncDialogText(i);
+        }
         saveDraft();
       };
       tileText?.addEventListener('input', handleTileText);
@@ -4432,7 +4696,11 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
     if (!overlay) return;
     overlay.querySelectorAll<HTMLTextAreaElement>('[data-sb-text]').forEach(ta => {
       const idx = parseInt(ta.getAttribute('data-sb-text') || '0');
-      if (bookPages[idx]) bookPages[idx].text = ta.value;
+      if (bookPages[idx]) {
+        bookPages[idx].text = ta.value;
+        bookPages[idx].dialogueLines = parseScreenplayToDialogueLines(ta.value, bookPages[idx].dialogueLines);
+        syncDialogText(idx);
+      }
     });
     overlay.querySelectorAll<HTMLTextAreaElement>('[data-sb-dd]').forEach(ta => {
       const idx = parseInt(ta.getAttribute('data-sb-dd') || '0');

@@ -6,11 +6,13 @@ import { isContentManagementMode, getSlotOverride, initSlotOverrides } from '../
 import { openTileConfigModal } from '../components/tile-config-modal.ts';
 import { fetchUnifiedExploreStories } from '../lib/db.ts';
 
-/** Exact number of slots to always display on Explore (8 slots = 4 rows of 2) */
-export const EXPLORE_SLOT_COUNT = 8;
+/** Exact number of slots to always display on Explore (10 slots = 2 rows of 5 on desktop) */
+export const EXPLORE_SLOT_COUNT = 10;
 
-function renderGrid(filteredStories: Story[]): string {
-  const count = EXPLORE_SLOT_COUNT;
+let isExploreExpanded = false;
+
+function renderGrid(filteredStories: Story[], isExpanded: boolean = false): string {
+  const count = isExpanded ? Math.max(EXPLORE_SLOT_COUNT, filteredStories.length) : EXPLORE_SLOT_COUNT;
   const cards: string[] = [];
 
   for (let i = 0; i < count; i++) {
@@ -62,8 +64,13 @@ export function render(): string {
       </div>
 
       <div class="results-section slide-up stagger-3">
-        <div class="story-grid" id="explore-grid" style="padding-bottom: 2rem;">
-          ${renderGrid(staticStories)}
+        <div class="story-grid" id="explore-grid" style="padding-bottom: 1.5rem;">
+          ${renderGrid(staticStories, isExploreExpanded)}
+        </div>
+        <div class="explore-see-more-wrap" id="explore-see-more-wrap" style="text-align: center; padding-bottom: 3rem; display: none;">
+          <button class="featured-see-all-btn" id="explore-see-more-btn" type="button" aria-expanded="false" style="padding: 8px 24px; font-size: 0.9rem;">
+            <span>See more</span> <span class="see-all-caret">▾</span>
+          </button>
         </div>
       </div>
     </div>
@@ -75,6 +82,8 @@ export async function init(): Promise<void> {
   const searchInput = document.getElementById('explore-search') as HTMLInputElement;
   const genresContainer = document.getElementById('explore-genres');
   const gridContainer = document.getElementById('explore-grid');
+  const seeMoreWrap = document.getElementById('explore-see-more-wrap');
+  const seeMoreBtn = document.getElementById('explore-see-more-btn');
 
   if (!container || !searchInput || !genresContainer || !gridContainer) return;
 
@@ -105,13 +114,33 @@ export async function init(): Promise<void> {
       );
     }
     
-    const newHtml = renderGrid(filtered);
+    const newHtml = renderGrid(filtered, isExploreExpanded);
     // Prevent screen flash / refresh pop-in if HTML is already identical
     if (gridContainer.innerHTML.trim() !== newHtml.trim()) {
       gridContainer.innerHTML = newHtml;
       initVideoCovers(gridContainer);
     }
+
+    if (seeMoreWrap && seeMoreBtn) {
+      if (filtered.length > EXPLORE_SLOT_COUNT) {
+        seeMoreWrap.style.display = 'block';
+        seeMoreBtn.innerHTML = isExploreExpanded
+          ? '<span>See less</span> <span class="see-all-caret">▴</span>'
+          : '<span>See more</span> <span class="see-all-caret">▾</span>';
+        seeMoreBtn.setAttribute('aria-expanded', String(isExploreExpanded));
+      } else {
+        seeMoreWrap.style.display = 'none';
+      }
+    }
   };
+
+  if (seeMoreBtn) {
+    seeMoreBtn.onclick = (e) => {
+      e.preventDefault();
+      isExploreExpanded = !isExploreExpanded;
+      updateGrid();
+    };
+  }
 
   // Wire events immediately so UI is responsive
   searchInput.addEventListener('input', () => {

@@ -8594,6 +8594,10 @@ html.dark-mode .search-bar:focus-within {
 }
 html.dark-mode .search-input {
   color: var(--color-text-primary);
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 html.dark-mode .search-input::placeholder {
   color: var(--color-text-muted);
@@ -14668,8 +14672,9 @@ body.content-management-mode .story-card:hover {
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16) !important;
   }
   .view-featured .story-grid {
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
-    gap: var(--space-lg) !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 16px !important;
     padding: 0 !important;
   }
   .view-featured .story-grid .story-card--full {
@@ -14685,8 +14690,8 @@ body.content-management-mode .story-card:hover {
   }
   .view-featured #featured-rising-stars {
     display: grid !important;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
-    gap: var(--space-lg) !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 16px !important;
     padding: 0 !important;
     overflow-x: visible !important;
   }
@@ -14701,7 +14706,7 @@ body.content-management-mode .story-card:hover {
     height: 300px !important;
     border-radius: var(--radius-lg) !important;
   }
-  .view-featured .section-header {
+  .view-featured .section__header {
     padding-left: 0 !important;
     padding-right: 0 !important;
     margin-bottom: var(--space-md) !important;
@@ -14781,10 +14786,17 @@ body.content-management-mode .story-card:hover {
     border-color: transparent !important;
     box-shadow: 0 2px 10px rgba(139, 92, 246, 0.35) !important;
   }
+  .view-explore .search-bar .search-input {
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
   .view-explore .story-grid {
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
-    gap: var(--space-lg) !important;
-    padding: 0 0 3rem 0 !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+    padding: 0 0 1.5rem 0 !important;
   }
   .view-explore .story-grid .story-card--full {
     width: 100% !important;
@@ -15128,4 +15140,52 @@ body.content-management-mode .story-card:hover {
   .beta-card {
     max-width: 520px;
   }
+}
+
+/* Featured Page See All Button & Downward Expansion */
+.featured-see-all-btn {
+  background: transparent;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  color: var(--color-purple);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  transition: all var(--transition-fast);
+}
+
+.featured-see-all-btn:hover {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: var(--color-purple);
+  transform: translateY(-1px);
+}
+
+.featured-see-all-btn .see-all-caret {
+  font-size: 0.85rem;
+  display: inline-block;
+  transition: transform var(--transition-fast);
+}
+
+#featured-rising-stars.is-expanded {
+  flex-wrap: wrap !important;
+  overflow-x: visible !important;
+}
+
+/* Screenplay Editor Styles */
+.screenplay-chip {
+  transition: transform var(--transition-fast), filter var(--transition-fast);
+}
+.screenplay-chip:hover {
+  filter: brightness(1.2);
+  transform: translateY(-1px);
+}
+.screenplay-textarea:focus {
+  border-color: var(--color-purple) !important;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
 }
