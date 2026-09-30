@@ -23,7 +23,7 @@ export function getRouteParam(): string | null {
 }
 
 // Routes that require authentication
-const PROTECTED_ROUTES = ['library', 'create', 'profile', 'admin', 'admin-create', 'path-select', 'squad-lobby', 'lfg-bio', 'lfg-browse', 'sparc'];
+const PROTECTED_ROUTES = ['library', 'create', 'profile', 'admin', 'admin-create', 'path-select', 'squad-lobby', 'lfg-bio', 'lfg-browse', 'sparc', 'friends'];
 
 // Routes that require admin/game_master role
 const ADMIN_ROUTES = ['admin'];
