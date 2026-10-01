@@ -591,3 +591,117 @@ export function playAudioSequence(
     }
   };
 }
+
+/**
+ * Pre-record an entire page's dialogue as a single audio file with word-level
+ * alignment timestamps for karaoke highlighting.
+ *
+ * Flow:
+ * 1. For each dialogue line, call ElevenLabs with-timestamps endpoint using the
+ *    character's voice (or narrator voice for non-dialogue text).
+ * 2. Collect audio segments + alignment data.
+ * 3. Concatenate into a single audio file.
+ * 4. Return the audio URL + combined word timestamp map.
+ *
+ * @param dialogueLines - Array of { text, characterId, characterName, voiceId? }
+ * @param narratorVoiceId - Voice ID for narrator / non-dialogue lines
+ * @param characters - Character roster with voiceId mappings
+ * @returns { audioUrl: string, segments: { text, alignment, duration, lineIdx }[] }
+ */
+export async function preRecordPageAudio(
+  dialogueLines: { text: string; characterId: string; characterName: string; voiceId?: string }[],
+  narratorVoiceId: string,
+  characters: { id: string; name: string; voiceId: string }[] = [],
+  onProgress?: (current: number, total: number) => void
+): Promise<{
+  audioUrl: string;
+  segments: { text: string; alignment: any; duration: number; lineIdx: number }[];
+}> {
+  if (!dialogueLines.length) throw new Error('No dialogue lines to record.');
+
+  const segments: { text: string; alignment: any; duration: number; lineIdx: number; dataUrl: string }[] = [];
+
+  for (let i = 0; i < dialogueLines.length; i++) {
+    const line = dialogueLines[i];
+    if (!line.text?.trim()) continue;
+
+    onProgress?.(i + 1, dialogueLines.length);
+
+    // Resolve voice ID: character voice > narrator voice > default
+    let voiceId = narratorVoiceId;
+    if (line.characterId !== 'narrator') {
+      const char = characters.find(c => c.id === line.characterId);
+      if (char?.voiceId) voiceId = char.voiceId;
+      if (line.voiceId) voiceId = line.voiceId;
+    }
+
+    // Call ElevenLabs WITH timestamps for alignment data
+    const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
+      body: {
+        endpoint: `/v1/text-to-speech/${voiceId}/with-timestamps`,
+        method: 'POST',
+        body: {
+          text: line.text,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            style: 0.0,
+            use_speaker_boost: true,
+          },
+        }
+      }
+    });
+
+    if (error || data?.error || !data?.audio_base64) {
+      const msg = error?.message || data?.error?.message || data?.detail || 'TTS failed';
+      throw new Error(`Line ${i + 1} ("${line.text.substring(0, 30)}..."): ${msg}`);
+    }
+
+    const contentType = data.content_type || 'audio/mpeg';
+    const dataUrl = `data:${contentType};base64,${data.audio_base64}`;
+
+    // Get duration by decoding
+    let duration = 0;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        const b64 = data.audio_base64;
+        const binaryStr = atob(b64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let j = 0; j < binaryStr.length; j++) bytes[j] = binaryStr.charCodeAt(j);
+        const decoded = await ctx.decodeAudioData(bytes.buffer.slice(0));
+        duration = decoded.duration;
+        ctx.close().catch(() => {});
+      }
+    } catch { /* duration stays 0 */ }
+
+    segments.push({
+      text: line.text,
+      alignment: data.alignment || null,
+      duration,
+      lineIdx: i,
+      dataUrl,
+    });
+  }
+
+  // Concatenate all segments into one audio file
+  const dataUrls = segments.map(s => s.dataUrl);
+  let audioUrl: string;
+  if (dataUrls.length === 1) {
+    audioUrl = dataUrls[0];
+  } else {
+    audioUrl = await concatenateAudioSegments(dataUrls, 150);
+  }
+
+  return {
+    audioUrl,
+    segments: segments.map(s => ({
+      text: s.text,
+      alignment: s.alignment,
+      duration: s.duration,
+      lineIdx: s.lineIdx,
+    })),
+  };
+}
