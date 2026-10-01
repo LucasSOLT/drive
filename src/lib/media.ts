@@ -12,28 +12,48 @@ export function isVideoMedia(url?: string | null, vidUrl?: string | null): boole
   return /\.(mp4|webm|mov|ogg|m4v)($|\?|#)/i.test(trimmed);
 }
 
-export function ensureVideoPlayback(el?: HTMLVideoElement | HTMLElement | null): void {
+export function ensureVideoPlayback(el?: HTMLVideoElement | HTMLElement | null, muted = true): void {
   if (!el) return;
   if (el instanceof HTMLVideoElement) {
-    playSingleVideo(el);
+    playSingleVideo(el, muted);
   } else {
-    el.querySelectorAll('video').forEach(vid => playSingleVideo(vid as HTMLVideoElement));
+    el.querySelectorAll('video').forEach(vid => playSingleVideo(vid as HTMLVideoElement, muted));
   }
 }
 
-function playSingleVideo(videoEl: HTMLVideoElement): void {
+function playSingleVideo(videoEl: HTMLVideoElement, muted = true): void {
   try {
-    videoEl.muted = true;
-    videoEl.defaultMuted = true;
     videoEl.playsInline = true;
     videoEl.setAttribute('playsinline', '');
     videoEl.setAttribute('webkit-playsinline', '');
-    videoEl.setAttribute('muted', '');
+
+    if (muted) {
+      videoEl.muted = true;
+      videoEl.defaultMuted = true;
+      videoEl.setAttribute('muted', '');
+    } else {
+      videoEl.muted = false;
+      videoEl.defaultMuted = false;
+      videoEl.removeAttribute('muted');
+    }
 
     const playPromise = videoEl.play();
     if (playPromise !== undefined) {
       playPromise.catch(() => {
-        // Autoplay policy prevented playback until user interaction or scroll into view
+        if (!muted) {
+          // Unmuted autoplay blocked by browser policy — fall back to muted, then unmute on user gesture
+          videoEl.muted = true;
+          videoEl.setAttribute('muted', '');
+          videoEl.play().catch(() => {});
+          const unmuteOnGesture = () => {
+            videoEl.muted = false;
+            videoEl.removeAttribute('muted');
+            document.removeEventListener('click', unmuteOnGesture);
+            document.removeEventListener('touchstart', unmuteOnGesture);
+          };
+          document.addEventListener('click', unmuteOnGesture, { once: true });
+          document.addEventListener('touchstart', unmuteOnGesture, { once: true });
+        }
       });
     }
   } catch (err) {

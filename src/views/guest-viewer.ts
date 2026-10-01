@@ -33,7 +33,7 @@ function getStory(): UserStoryWithPages | null {
 function renderPageImage(page: StoryPage, pageIndex: number): string {
   if (page.image) {
     if (isVideoMedia(page.image)) {
-      return `<video class="guest-viewer__image guest-viewer__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:contain;"></video>`;
+      return `<video class="guest-viewer__image guest-viewer__video" src="${page.image}" autoplay loop playsinline webkit-playsinline style="width:100%;height:100%;object-fit:contain;"></video>`;
     }
     return `<img class="guest-viewer__image" src="${page.image}" alt="Page ${pageIndex + 1}">`;
   }
@@ -142,7 +142,7 @@ export function init(): void {
     wirePageControls();
 
     const vidEl = body.querySelector('.guest-viewer__video') as HTMLVideoElement | null;
-    if (vidEl) ensureVideoPlayback(vidEl);
+    if (vidEl) ensureVideoPlayback(vidEl, false);
   }
 
   // ─── Wire up interactive controls on the current page ───
@@ -194,5 +194,5 @@ export function init(): void {
   wirePageControls();
 
   const initialVid = viewer.querySelector('.guest-viewer__video') as HTMLVideoElement | null;
-  if (initialVid) ensureVideoPlayback(initialVid);
+  if (initialVid) ensureVideoPlayback(initialVid, false);
 }

@@ -172,7 +172,7 @@ export function render(): string {
           return `
           <div class="reader__panel" data-panel-index="${i}">
             ${isVideo
-              ? `<video class="reader__panel-video" src="${mediaUrl}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:auto;border-radius:8px;display:block;"></video>`
+              ? `<video class="reader__panel-video" src="${mediaUrl}" autoplay loop playsinline webkit-playsinline data-panel-idx="${i}" style="width:100%;height:auto;border-radius:8px;display:block;"></video>`
               : `<img src="${panel}" alt="Panel ${i + 1}" loading="lazy">`
             }
             ${story.pageAudio?.[i] ? `
@@ -192,7 +192,7 @@ export function render(): string {
     const isVideoPage = isVideoMedia(page0Media) || !!(story.pageVideos && story.pageVideos[0]);
     const hasAudio = !!story.pageAudio?.[0];
     const firstPageMedia = isVideoPage
-      ? `<video id="book-video" src="${page0Media}" autoplay loop muted playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"></video>`
+      ? `<video id="book-video" src="${page0Media}" autoplay loop playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"></video>`
       : `<img id="book-img" src="${story.panels?.[0] || ''}" alt="Page 1" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">`;
 
     contentHtml = `
@@ -479,15 +479,6 @@ export async function init(): Promise<void> {
     }).catch(() => {});
   }
 
-  // Ensure video playback for initial page video or scroll videos
-  const initialBookVideo = document.getElementById('book-video') as HTMLVideoElement | null;
-  if (initialBookVideo) {
-    ensureVideoPlayback(initialBookVideo);
-  }
-  document.querySelectorAll<HTMLVideoElement>('.reader__panel-video').forEach(vid => {
-    ensureVideoPlayback(vid);
-  });
-
   const progressBar = document.getElementById('reader-progress');
   const header = document.getElementById('reader-header');
 
@@ -523,6 +514,49 @@ export async function init(): Promise<void> {
       bgmAudio = null;
     }
   };
+
+  // ─── Native Video Audio: play once then loop silently ───
+  const setupNativeVideoAudio = (videoEl: HTMLVideoElement, pageIdx: number) => {
+    const pageHasSeparateAudio = !!story.pageAudio?.[pageIdx] || !!(story.pageDialogue?.[pageIdx]?.length);
+    const shouldUnmute = !pageHasSeparateAudio;
+
+    if (shouldUnmute) {
+      // Remove loop so 'ended' event fires after first play-through
+      videoEl.loop = false;
+      ensureVideoPlayback(videoEl, false);
+
+      // Duck BGM while native video audio plays
+      if (bgmAudio && !bgmAudio.paused) {
+        bgmAudio.volume = bgmVolume * 0.05;
+      }
+
+      videoEl.addEventListener('ended', () => {
+        // First play-through done — mute, re-enable loop, keep playing visually
+        videoEl.muted = true;
+        videoEl.setAttribute('muted', '');
+        videoEl.loop = true;
+        videoEl.play().catch(() => {});
+
+        // Restore BGM volume
+        if (bgmAudio) {
+          bgmAudio.volume = bgmVolume;
+        }
+      }, { once: true });
+    } else {
+      // Page has separate audio — keep video muted, loop normally
+      ensureVideoPlayback(videoEl, true);
+    }
+  };
+
+  // Ensure video playback for initial page video or scroll videos
+  const initialBookVideo = document.getElementById('book-video') as HTMLVideoElement | null;
+  if (initialBookVideo) {
+    setupNativeVideoAudio(initialBookVideo, 0);
+  }
+  document.querySelectorAll<HTMLVideoElement>('.reader__panel-video').forEach(vid => {
+    const panelIdx = parseInt(vid.getAttribute('data-panel-idx') || '0');
+    setupNativeVideoAudio(vid, panelIdx);
+  });
 
   // ─── Back button ───
   document.getElementById('reader-back')?.addEventListener('click', () => {
@@ -752,9 +786,9 @@ export async function init(): Promise<void> {
           const focalPos = story.pageFocalPositions?.[currentPage];
           const objPosStyle = focalPos && focalPos !== 'center' ? `object-position:center ${focalPos};` : '';
           if (isVideo) {
-            pageContainer.innerHTML = `<video id="book-video" src="${currentMedia}" autoplay loop muted playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;"></video>`;
+            pageContainer.innerHTML = `<video id="book-video" src="${currentMedia}" autoplay loop playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;"></video>`;
             const bv = pageContainer.querySelector('#book-video') as HTMLVideoElement | null;
-            if (bv) ensureVideoPlayback(bv);
+            if (bv) setupNativeVideoAudio(bv, currentPage);
           } else {
             pageContainer.innerHTML = `<img id="book-img" src="${story.panels?.[currentPage] || ''}" alt="Page ${currentPage + 1}" style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;">`;
           }

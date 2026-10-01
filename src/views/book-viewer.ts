@@ -69,7 +69,7 @@ function renderPageImage(page: StoryPage, pageIndex: number, focalPosition?: str
   const objPos = focalPosition && focalPosition !== 'center' ? `object-position:center ${focalPosition};` : '';
   if (page.image) {
     if (isVideoMedia(page.image)) {
-      return `<video class="book-viewer__image book-viewer__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:contain;${objPos}"></video>`;
+      return `<video class="book-viewer__image book-viewer__video" src="${page.image}" autoplay loop playsinline webkit-playsinline style="width:100%;height:100%;object-fit:contain;${objPos}"></video>`;
     }
     return `<img class="book-viewer__image" src="${page.image}" alt="Page ${pageIndex + 1}" style="${objPos}">`;
   }
@@ -337,7 +337,7 @@ export function init(): void {
     wirePageControls();
 
     const vidEl = body.querySelector('.book-viewer__video') as HTMLVideoElement | null;
-    if (vidEl) ensureVideoPlayback(vidEl);
+    if (vidEl) ensureVideoPlayback(vidEl, !hasAudio ? false : true);
 
     // Autoplay if setting is on and page has pre-recorded audio
     if (getSettings().autoPlay && hasAudio && !speaking) {
@@ -498,5 +498,5 @@ export function init(): void {
   wirePageControls();
 
   const initialVid = viewer.querySelector('.book-viewer__video') as HTMLVideoElement | null;
-  if (initialVid) ensureVideoPlayback(initialVid);
+  if (initialVid) ensureVideoPlayback(initialVid, false);
 }
