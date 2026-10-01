@@ -337,7 +337,7 @@ export function init(): void {
     wirePageControls();
 
     const vidEl = body.querySelector('.book-viewer__video') as HTMLVideoElement | null;
-    if (vidEl) ensureVideoPlayback(vidEl, !hasAudio ? false : true);
+    if (vidEl) ensureVideoPlayback(vidEl);
 
     // Autoplay if setting is on and page has pre-recorded audio
     if (getSettings().autoPlay && hasAudio && !speaking) {
@@ -498,5 +498,5 @@ export function init(): void {
   wirePageControls();
 
   const initialVid = viewer.querySelector('.book-viewer__video') as HTMLVideoElement | null;
-  if (initialVid) ensureVideoPlayback(initialVid, false);
+  if (initialVid) ensureVideoPlayback(initialVid);
 }

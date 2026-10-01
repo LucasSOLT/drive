@@ -525,48 +525,13 @@ export async function init(): Promise<void> {
       bgmAudio = null;
     }
   };
-
-  // ─── Native Video Audio: play once then loop silently ───
-  const setupNativeVideoAudio = (videoEl: HTMLVideoElement, pageIdx: number) => {
-    const pageAudioSrc = story.pageAudioSource?.[pageIdx];
-    const shouldUnmute = pageAudioSrc === 'native' || (!pageAudioSrc && !story.pageAudio?.[pageIdx] && !(story.pageDialogue?.[pageIdx]?.length));
-
-    if (shouldUnmute) {
-      // Remove loop so 'ended' event fires after first play-through
-      videoEl.loop = false;
-      ensureVideoPlayback(videoEl, false);
-
-      // Duck BGM while native video audio plays
-      if (bgmAudio && !bgmAudio.paused) {
-        bgmAudio.volume = bgmVolume * 0.05;
-      }
-
-      videoEl.addEventListener('ended', () => {
-        // First play-through done — mute, re-enable loop, keep playing visually
-        videoEl.muted = true;
-        videoEl.setAttribute('muted', '');
-        videoEl.loop = true;
-        videoEl.play().catch(() => {});
-
-        // Restore BGM volume
-        if (bgmAudio) {
-          bgmAudio.volume = bgmVolume;
-        }
-      }, { once: true });
-    } else {
-      // Page has separate audio — keep video muted, loop normally
-      ensureVideoPlayback(videoEl, true);
-    }
-  };
-
-  // Ensure video playback for initial page video or scroll videos
+  // Ensure video playback (always muted — audio comes from upload/AI only)
   const initialBookVideo = document.getElementById('book-video') as HTMLVideoElement | null;
   if (initialBookVideo) {
-    setupNativeVideoAudio(initialBookVideo, 0);
+    ensureVideoPlayback(initialBookVideo);
   }
   document.querySelectorAll<HTMLVideoElement>('.reader__panel-video').forEach(vid => {
-    const panelIdx = parseInt(vid.getAttribute('data-panel-idx') || '0');
-    setupNativeVideoAudio(vid, panelIdx);
+    ensureVideoPlayback(vid);
   });
 
   // ─── Back button ───
@@ -804,7 +769,7 @@ export async function init(): Promise<void> {
           if (isVideo) {
             pageContainer.innerHTML = `<video id="book-video" src="${currentMedia}" autoplay loop playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;"></video>`;
             const bv = pageContainer.querySelector('#book-video') as HTMLVideoElement | null;
-            if (bv) setupNativeVideoAudio(bv, currentPage);
+            if (bv) ensureVideoPlayback(bv);
           } else {
             pageContainer.innerHTML = `<img id="book-img" src="${story.panels?.[currentPage] || ''}" alt="Page ${currentPage + 1}" style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;">`;
           }

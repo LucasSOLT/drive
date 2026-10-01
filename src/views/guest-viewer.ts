@@ -142,7 +142,7 @@ export function init(): void {
     wirePageControls();
 
     const vidEl = body.querySelector('.guest-viewer__video') as HTMLVideoElement | null;
-    if (vidEl) ensureVideoPlayback(vidEl, false);
+    if (vidEl) ensureVideoPlayback(vidEl);
   }
 
   // ─── Wire up interactive controls on the current page ───
@@ -194,5 +194,5 @@ export function init(): void {
   wirePageControls();
 
   const initialVid = viewer.querySelector('.guest-viewer__video') as HTMLVideoElement | null;
-  if (initialVid) ensureVideoPlayback(initialVid, false);
+  if (initialVid) ensureVideoPlayback(initialVid);
 }
