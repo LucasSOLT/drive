@@ -23,7 +23,7 @@ export function renderMenu(): string {
       <!-- Brand -->
       <div class="fullmenu__brand" style="display: flex; align-items: center; gap: 12px;">
         <img src="/logo.jpg" alt="DRiVE" style="width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--color-border); object-fit: contain; background: #ffffff; padding: 2px;">
-        <span class="fullmenu__logo">DRiVE</span>
+        <span class="fullmenu__logo">SOL DRiVE</span>
       </div>
 
       <!-- Navigation links -->
@@ -75,7 +75,7 @@ export function renderMenu(): string {
           <span class="fullmenu__link-text">About</span>
         </a>
         <a class="fullmenu__link" data-route="friends">
-          <span class="fullmenu__link-icon" style="color:#A78BFA;">
+          <span class="fullmenu__link-icon" style="color:#34D399;">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
               <circle cx="9" cy="7" r="4"></circle>

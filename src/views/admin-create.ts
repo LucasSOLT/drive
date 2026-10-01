@@ -185,8 +185,8 @@ let bookPages: BookPage[] = [
 ];
 
 // Story Characters for multi-voice dialogue
-const CHAR_COLORS = ['#8a63d2','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#f97316','#6366f1','#14b8a6'];
-const CHARACTER_PALETTE = ['#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#f97316', '#ef4444', '#ec4899'];
+const CHAR_COLORS = ['#8a63d2','#3b82f6','#ef4444','#22c55e','#f59e0b','#06B6D4','#06b6d4','#f97316','#0D9488','#14b8a6'];
+const CHARACTER_PALETTE = ['#10B981', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#f97316', '#ef4444', '#06B6D4'];
 let storyCharacters: StoryCharacter[] = [];
 let currentPage = 0;
 let activeDraftId: string | null = null;
@@ -917,13 +917,13 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
               <div class="ss-field">
                 <label class="ss-field__label">Episodes Playable Solo BEFORE Squad Gate Hits</label>
                 <div class="ss-gate-selector" id="ss-gate-selector" style="display: flex; gap: 10px; margin-top: 8px;">
-                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? 'btn-gate-option--active' : ''}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? 'btn-gate-option--active' : ''}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? '#0D9488' : 'var(--color-border)'}; background: ${soloEpisodeCount === 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
                     1 Episode
                   </button>
-                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? 'btn-gate-option--active' : ''}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? 'btn-gate-option--active' : ''}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? '#0D9488' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
                     2 Episodes
                   </button>
-                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? 'btn-gate-option--active' : ''}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? '#6366f1' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? 'btn-gate-option--active' : ''}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? '#0D9488' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
                     3 Episodes
                   </button>
                 </div>
@@ -1113,7 +1113,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
   wizard.querySelectorAll('[data-char-color-dot]').forEach(dot => {
     dot.addEventListener('click', () => {
       const idx = parseInt((dot as HTMLElement).getAttribute('data-char-idx') || '0');
-      const color = (dot as HTMLElement).getAttribute('data-char-color-dot') || '#8b5cf6';
+      const color = (dot as HTMLElement).getAttribute('data-char-color-dot') || '#10B981';
       if (!storyCharacters[idx]) return;
       storyCharacters[idx].color = color;
       
@@ -1246,7 +1246,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       wizard.querySelectorAll('[data-gate-count]').forEach(b => {
         const c = parseInt((b as HTMLElement).getAttribute('data-gate-count') || '1', 10);
         const isActive = c === count;
-        (b as HTMLElement).style.borderColor = isActive ? '#6366f1' : 'var(--color-border)';
+        (b as HTMLElement).style.borderColor = isActive ? '#0D9488' : 'var(--color-border)';
         (b as HTMLElement).style.background = isActive ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)';
       });
       const hint = document.getElementById('ss-gate-hint');
@@ -1978,7 +1978,7 @@ function renderScreenplayEditor(pageIdx: number, prefix: string): string {
       <button type="button" class="screenplay-chip" data-insert-tag="${prefix}-${pageIdx}" data-tag="NARRATOR:" style="
         display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px;
         border:1px solid rgba(167,139,250,0.35); background:rgba(167,139,250,0.1);
-        color:#c084fc; font-size:0.75rem; font-weight:700; cursor:pointer; font-family:var(--font-body);
+        color:#6EE7B7; font-size:0.75rem; font-weight:700; cursor:pointer; font-family:var(--font-body);
       ">
         🎙️ Narrator
       </button>
@@ -2032,7 +2032,7 @@ function renderScreenplayEditor(pageIdx: number, prefix: string): string {
         <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
           ${lines.map((line, li) => {
             const isNarrator = line.characterId === 'narrator';
-            const charColor = isNarrator ? '#a78bfa' : (storyCharacters.find(c => c.id === line.characterId)?.color || '#60a5fa');
+            const charColor = isNarrator ? '#34D399' : (storyCharacters.find(c => c.id === line.characterId)?.color || '#60a5fa');
             const hasAudio = !!line.audioUrl;
             return `
               <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; padding:4px 8px; background:rgba(0,0,0,0.25); border-radius:6px; font-size:0.74rem;">
@@ -3257,8 +3257,8 @@ function renderPhase(): string {
   // Episode context banner — shown when creating a new episode for an existing story
   const episodeBanner = (episodeStoryGroupId && (episodeNumber > 1 || episodeParentTitle)) ? `
     <div style="
-      background: linear-gradient(135deg, rgba(139,92,246,0.1), rgba(59,130,246,0.1));
-      border: 1px solid rgba(139,92,246,0.3);
+      background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(59,130,246,0.1));
+      border: 1px solid rgba(16,185,129,0.3);
       border-radius: 14px;
       padding: 14px 18px;
       margin-bottom: 16px;
@@ -3279,7 +3279,7 @@ function renderPhase(): string {
         </div>
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <span style="
-            background: rgba(139,92,246,0.15); color: var(--color-purple);
+            background: rgba(16,185,129,0.15); color: var(--color-purple);
             padding: 2px 10px; border-radius: 8px; font-size: 0.7rem; font-weight: 700;
           ">${formatLabel}</span>
           <span style="font-size: 0.7rem; color: var(--color-text-muted);">Format locked to match existing episodes</span>
@@ -4145,7 +4145,7 @@ document.querySelectorAll('[data-edit-ov]').forEach(el => {
 });
 
 // Cycle text overlay color
-const TEXT_COLORS = ['#ffffff', '#000000', '#ef4444', '#3b82f6', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899'];
+const TEXT_COLORS = ['#ffffff', '#000000', '#ef4444', '#3b82f6', '#22c55e', '#eab308', '#f97316', '#34D399', '#06B6D4'];
 document.querySelectorAll('[data-color-ov]').forEach(btn => {
   btn.addEventListener('click', (e) => {
     e.stopPropagation();

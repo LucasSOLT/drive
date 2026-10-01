@@ -22,12 +22,12 @@ export function renderEmptySlot(slotType: string, slotIndex: number, variant: 'f
 
   if (inCM) {
     return `
-      <div class="story-card ${variantClass} story-card--cm-empty fade-in" data-story-id="placeholder-${slotIndex}" data-slot-type="${slotType}" data-slot-index="${slotIndex}" style="display:flex; flex-direction:column; justify-content:center; align-items:center; background:rgba(139,92,246,0.06); border:2px dashed rgba(139,92,246,0.4); cursor:pointer; ${minHeight} border-radius:var(--radius-lg); text-align:center; padding:16px; transition:all 0.2s;">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-purple, #8b5cf6)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px;">
+      <div class="story-card ${variantClass} story-card--cm-empty fade-in" data-story-id="placeholder-${slotIndex}" data-slot-type="${slotType}" data-slot-index="${slotIndex}" style="display:flex; flex-direction:column; justify-content:center; align-items:center; background:rgba(16,185,129,0.06); border:2px dashed rgba(16,185,129,0.4); cursor:pointer; ${minHeight} border-radius:var(--radius-lg); text-align:center; padding:16px; transition:all 0.2s;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-purple, #10B981)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px;">
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
-        <span style="font-size:0.75rem; font-weight:700; color:var(--color-purple, #8b5cf6); text-transform:uppercase; letter-spacing:0.5px;">Empty Slot • Insert</span>
+        <span style="font-size:0.75rem; font-weight:700; color:var(--color-purple, #10B981); text-transform:uppercase; letter-spacing:0.5px;">Empty Slot • Insert</span>
       </div>
     `;
   }

@@ -42,7 +42,7 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
           To join or create a DRiVE squad, you need a free account. We don't sell your data or show ads — it's just to save your reading progress.
         </p>
         <div style="display:flex; flex-direction:column; gap:10px;">
-          <button id="squad-auth-signup" style="padding:14px; background:linear-gradient(135deg, var(--color-purple), #7c3aed); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer;">Create Free Account</button>
+          <button id="squad-auth-signup" style="padding:14px; background:linear-gradient(135deg, var(--color-purple), #059669); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer;">Create Free Account</button>
           <button id="squad-auth-login" style="padding:12px; background:var(--color-eggshell); color:var(--color-text-primary); border:1px solid var(--color-border); border-radius:var(--radius-lg); font-weight:600; font-size:0.9rem; cursor:pointer;">Log In</button>
         </div>
       </div>
@@ -127,7 +127,7 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
               </div>
 
               ${existingSquad.squad.status === 'forming' ? `
-                <button id="sg-existing-lobby" style="width:100%; padding:14px; background:linear-gradient(135deg, var(--color-purple), #7c3aed); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer; margin-bottom:10px;">🛡️ Enter Squad Lobby</button>
+                <button id="sg-existing-lobby" style="width:100%; padding:14px; background:linear-gradient(135deg, var(--color-purple), #059669); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer; margin-bottom:10px;">🛡️ Enter Squad Lobby</button>
               ` : `
                 <button id="sg-existing-read" style="width:100%; padding:14px; background:linear-gradient(135deg, #10b981, #059669); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer; margin-bottom:10px;">📚 Resume Episode ${sessionEp}</button>
               `}
@@ -347,7 +347,7 @@ function renderBody(options: SquadGateOptions): string {
       <!-- Open Full Squad Lobby Button -->
       <button class="squad-open-lobby-btn" id="sg-open-lobby-btn" style="
         width: 100%; margin-top: 14px; padding: 12px 18px; border-radius: var(--radius-lg);
-        background: linear-gradient(135deg, var(--color-purple) 0%, #7c3aed 100%);
+        background: linear-gradient(135deg, var(--color-purple) 0%, #059669 100%);
         color: white; font-family: var(--font-heading); font-size: 0.95rem; font-weight: 700;
         border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
         box-shadow: 0 4px 14px rgba(138,43,226,0.35);

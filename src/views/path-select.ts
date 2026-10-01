@@ -13,8 +13,8 @@ export function render(): string {
         <!-- PATH A: CREATE -->
         <button class="path-card slide-up stagger-2" id="path-create" style="
           position: relative; overflow: hidden; display: flex; align-items: center; gap: var(--space-lg);
-          background: linear-gradient(135deg, rgba(139,92,246,0.08) 0%, rgba(139,92,246,0.02) 100%);
-          border: 1.5px solid rgba(139,92,246,0.2); border-radius: var(--radius-xl);
+          background: linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(16,185,129,0.02) 100%);
+          border: 1.5px solid rgba(16,185,129,0.2); border-radius: var(--radius-xl);
           padding: var(--space-lg); cursor: pointer; text-align: left;
           transition: transform var(--transition-bounce), box-shadow var(--transition), border-color var(--transition);
         ">
@@ -22,7 +22,7 @@ export function render(): string {
             width: 64px; height: 64px; border-radius: var(--radius-lg); flex-shrink: 0;
             background: linear-gradient(135deg, var(--color-purple) 0%, var(--color-purple-dark) 100%);
             display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 4px 16px rgba(139,92,246,0.3);
+            box-shadow: 0 4px 16px rgba(16,185,129,0.3);
           ">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 20h9"></path>

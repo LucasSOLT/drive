@@ -106,11 +106,11 @@ export function render(): string {
             <span style="color: #F59E0B; font-weight: 700;">Game Master</span>
           </div>
         ` : hasAdminPrivileges() ? `
-          <div class="profile-beta-badge" style="background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(124,58,237,0.15)); border-color: rgba(139,92,246,0.4); margin-top: 6px;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <div class="profile-beta-badge" style="background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(124,58,237,0.15)); border-color: rgba(16,185,129,0.4); margin-top: 6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
-            <span style="color: #8B5CF6; font-weight: 700;">Admin</span>
+            <span style="color: #10B981; font-weight: 700;">Admin</span>
           </div>
         ` : ''}
         <p class="profile-hero__bio text-muted" style="margin-top: 8px; font-size: 0.9rem; max-width: 260px; text-align: center; line-height: 1.5;">
@@ -132,7 +132,7 @@ export function render(): string {
       <section class="section slide-up stagger-2" style="padding: 0 var(--space-md); margin-bottom: 0.75rem;">
         <button class="profile-friends-btn" id="go-to-friends">
           <div class="profile-friends-btn__left">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C084FC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6EE7B7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
               <circle cx="9" cy="7" r="4"></circle>
               <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
@@ -380,7 +380,7 @@ export function init(): void {
             <label style="font-family:var(--font-heading); font-size:0.82rem; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.5px;">Choose Avatar</label>
             <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:8px;" id="modal-avatar-grid">
               ${MONSTER_AVATARS.map((svg: string, i: number) => `
-                <div class="modal-avatar-item${i === currentAvatar ? ' selected' : ''}" data-avatar-idx="${i}" style="width:100%; aspect-ratio:1; border-radius:12px; border:2px solid ${i === currentAvatar ? 'var(--color-purple)' : 'var(--color-border)'}; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all 0.2s; background:${i === currentAvatar ? 'rgba(139,92,246,0.08)' : 'var(--color-surface)'}; padding:4px;">
+                <div class="modal-avatar-item${i === currentAvatar ? ' selected' : ''}" data-avatar-idx="${i}" style="width:100%; aspect-ratio:1; border-radius:12px; border:2px solid ${i === currentAvatar ? 'var(--color-purple)' : 'var(--color-border)'}; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all 0.2s; background:${i === currentAvatar ? 'rgba(16,185,129,0.08)' : 'var(--color-surface)'}; padding:4px;">
                   ${svg}
                 </div>
               `).join('')}
@@ -438,7 +438,7 @@ export function init(): void {
           const htmlEl = el as HTMLElement;
           const isSelected = parseInt(htmlEl.dataset.avatarIdx || '-1') === idx;
           htmlEl.style.borderColor = isSelected ? 'var(--color-purple)' : 'var(--color-border)';
-          htmlEl.style.background = isSelected ? 'rgba(139,92,246,0.08)' : 'var(--color-surface)';
+          htmlEl.style.background = isSelected ? 'rgba(16,185,129,0.08)' : 'var(--color-surface)';
         });
       });
     }, 50);

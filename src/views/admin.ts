@@ -131,7 +131,7 @@ export function render(): string {
             ${ICON.layout} Content Management
           </button>
           <button class="admin-main-tab" data-tab="moderation" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
-            ${ICON.flag} Moderation <span style="background: #6366f1; color: #fff; padding: 1px 6px; border-radius: 8px; font-size: 0.62rem; font-weight: 800; margin-left: 2px;">WIP</span>
+            ${ICON.flag} Moderation <span style="background: #0D9488; color: #fff; padding: 1px 6px; border-radius: 8px; font-size: 0.62rem; font-weight: 800; margin-left: 2px;">WIP</span>
           </button>
           ${isGM ? `
           <button class="admin-main-tab" data-tab="gm-tools" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
@@ -465,7 +465,7 @@ function renderOriginalsContent(area: HTMLElement): void {
                     <div style="font-size: 0.7rem; color: #92400e; margin-top: 2px;">📦 ARCHIVED</div>
                   </div>
                   <div style="display: flex; gap: 6px; flex-shrink: 0;">
-                    <button data-unarchive-group="${groupId}" style="background: rgba(139,92,246,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #8b5cf6; cursor: pointer; font-weight: 600;" title="Restore to DRiVE Originals">↩ Restore</button>
+                    <button data-unarchive-group="${groupId}" style="background: rgba(16,185,129,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #10B981; cursor: pointer; font-weight: 600;" title="Restore to DRiVE Originals">↩ Restore</button>
                     <button data-delete-archived-group="${groupId}" style="background: rgba(239,68,68,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #ef4444; cursor: pointer; font-weight: 600;" title="Delete permanently">🗑</button>
                   </div>
                 </div>
@@ -669,7 +669,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
                   font-weight: 600;
                   transition: all 0.2s;
                 "
-                onmouseover="this.style.borderColor='var(--color-purple)';this.style.color='var(--color-purple)';this.style.background='rgba(139,92,246,0.05)'"
+                onmouseover="this.style.borderColor='var(--color-purple)';this.style.color='var(--color-purple)';this.style.background='rgba(16,185,129,0.05)'"
                 onmouseout="this.style.borderColor='var(--color-border)';this.style.color='var(--color-text-muted)';this.style.background='transparent'">
           ${ICON.plus} Add New Episode
         </button>
@@ -776,13 +776,13 @@ function attachOfficialCardListeners(): void {
           position: absolute; right: 10px; top: 44px;
         `;
         dropdown.innerHTML = `
-          <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Story</div>
-          <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview Story</div>
-          <div class="menu-item" data-toggle-episodes="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">${isExpanded ? '▲ Collapse' : '📋 Show All Episodes'}</div>
-          ${!isLive ? `<div class="menu-item" data-go-live-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">🚀 Go Live</div>` : `<div class="menu-item" data-take-offline="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">📴 Take Offline</div>`}
+          <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Story</div>
+          <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview Story</div>
+          <div class="menu-item" data-toggle-episodes="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">${isExpanded ? '▲ Collapse' : '📋 Show All Episodes'}</div>
+          ${!isLive ? `<div class="menu-item" data-go-live-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">🚀 Go Live</div>` : `<div class="menu-item" data-take-offline="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">📴 Take Offline</div>`}
           <div style="border-top: 1px solid var(--color-border); margin: 4px 0;"></div>
-          <div class="menu-item" data-archive-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">📦 Archive</div>
-          <div class="menu-item" data-delete-group="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #ef4444;" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">🗑 Delete</div>
+          <div class="menu-item" data-archive-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">📦 Archive</div>
+          <div class="menu-item" data-delete-group="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #ef4444;" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">🗑 Delete</div>
         `;
         cardMenuBtn.parentElement?.appendChild(dropdown);
         return;
@@ -803,12 +803,12 @@ function attachOfficialCardListeners(): void {
           position: absolute; right: 0; top: 32px;
         `;
         dropdown.innerHTML = `
-          <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Episode</div>
-          <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview</div>
-          <div class="menu-item" data-move-up="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">↑ Move Up</div>
-          <div class="menu-item" data-move-down="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">↓ Move Down</div>
+          <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Episode</div>
+          <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview</div>
+          <div class="menu-item" data-move-up="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">↑ Move Up</div>
+          <div class="menu-item" data-move-down="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">↓ Move Down</div>
           <div style="border-top: 1px solid var(--color-border); margin: 4px 0;"></div>
-          <div class="menu-item" data-delete-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #ef4444;" onmouseover="this.style.background='rgba(139,92,246,0.1)'" onmouseout="this.style.background='transparent'">🗑 Delete Episode</div>
+          <div class="menu-item" data-delete-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #ef4444;" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">🗑 Delete Episode</div>
         `;
         epMenuBtn.parentElement?.appendChild(dropdown);
         return;
@@ -1076,8 +1076,8 @@ function renderUploadBox(id: string, currentImage: string, label: string, height
     `;
   }
   return `
-    <div data-upload-area="${id}" style="width: 100%; height: ${height}; border: 2px dashed var(--color-border); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: var(--color-bg); transition: border-color 0.2s, background 0.2s;" onmouseover="this.style.borderColor='var(--color-purple)';this.style.background='rgba(139,92,246,0.05)'" onmouseout="this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)'">
-      <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(139,92,246,0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 6px;">
+    <div data-upload-area="${id}" style="width: 100%; height: ${height}; border: 2px dashed var(--color-border); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: var(--color-bg); transition: border-color 0.2s, background 0.2s;" onmouseover="this.style.borderColor='var(--color-purple)';this.style.background='rgba(16,185,129,0.05)'" onmouseout="this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)'">
+      <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(16,185,129,0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 6px;">
         ${ICON.plus}
       </div>
       <span style="font-size: 0.75rem; color: var(--color-text-muted);">${label}</span>
@@ -1099,8 +1099,8 @@ function renderVideoUploadBox(id: string, currentVideo: string, label: string): 
     `;
   }
   return `
-    <div data-upload-area="${id}" style="width: 100%; height: 100px; border: 2px dashed var(--color-border); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: var(--color-bg); transition: border-color 0.2s, background 0.2s;" onmouseover="this.style.borderColor='var(--color-purple)';this.style.background='rgba(139,92,246,0.05)'" onmouseout="this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)'">
-      <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(139,92,246,0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 6px;">
+    <div data-upload-area="${id}" style="width: 100%; height: 100px; border: 2px dashed var(--color-border); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: var(--color-bg); transition: border-color 0.2s, background 0.2s;" onmouseover="this.style.borderColor='var(--color-purple)';this.style.background='rgba(16,185,129,0.05)'" onmouseout="this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)'">
+      <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(16,185,129,0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 6px;">
         ${ICON.plus}
       </div>
       <span style="font-size: 0.75rem; color: var(--color-text-muted);">${label}</span>
@@ -1124,7 +1124,7 @@ function openFormatPopup(): void {
   const formatContent = `
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <button id="fmt-book" style="display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 16px; border: 2px solid var(--color-border); background: var(--color-surface); cursor: pointer; text-align: left; transition: all 0.2s;">
-          <div style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #8b5cf6, #a78bfa); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;">
+          <div style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #10B981, #34D399); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;">
             <svg width="24" height="24" viewBox="0 0 48 48" fill="none"><path d="M6 8c0-2 2-4 6-4h6c4 0 6 2 6 2s2-2 6-2h6c4 0 6 2 6 4v28c0 2-2 4-6 4h-6c-4 0-6 2-6 2s-2-2-6-2h-6c-4 0-6-2-6-4V8z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M24 6v34" stroke="currentColor" stroke-width="2"/></svg>
           </div>
           <div>
@@ -1241,7 +1241,7 @@ function openStoryEditor(existing?: Story): void {
 
     area!.innerHTML = `
       <div style="max-width: 700px; margin: 0 auto; padding-bottom: 100px;">
-        ${draft && !isEdit ? `<div style="background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--color-purple);"><span>📝</span> Draft restored from your last session</div>` : ''}
+        ${draft && !isEdit ? `<div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--color-purple);"><span>📝</span> Draft restored from your last session</div>` : ''}
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1.1rem; color: var(--color-text-primary);">
             ${isEdit ? '✏️ Edit Official Story' : '📖 Create Official Story'}
@@ -1307,7 +1307,7 @@ function openStoryEditor(existing?: Story): void {
         <div style="border-top: 1px solid var(--color-border); padding-top: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <h3 style="margin: 0; font-family: var(--font-heading); font-size: 1rem; color: var(--color-text-primary);">📄 Story Pages (${pages.length})</h3>
-            <button id="editor-add-page" style="padding: 6px 14px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(139,92,246,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+            <button id="editor-add-page" style="padding: 6px 14px; border-radius: 8px; border: 1px solid var(--color-purple); background: rgba(16,185,129,0.1); color: var(--color-purple); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 4px;">
               ${ICON.plus} Add Page
             </button>
           </div>
@@ -1870,7 +1870,7 @@ function renderContentManagementTab(area: HTMLElement): void {
   area.innerHTML = `
     <div style="max-width: 760px; margin: 0 auto; padding: 16px 0 40px;">
       <div style="text-align: center; margin-bottom: 28px;">
-        <div style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); display: flex; align-items: center; justify-content: center; color: white; margin: 0 auto 12px; box-shadow: 0 4px 16px rgba(139,92,246,0.3);">
+        <div style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, var(--color-purple), #8a2be2); display: flex; align-items: center; justify-content: center; color: white; margin: 0 auto 12px; box-shadow: 0 4px 16px rgba(16,185,129,0.3);">
           ${ICON.layout}
         </div>
         <h2 style="margin: 0 0 6px; font-family: var(--font-heading); font-size: 1.3rem; color: var(--color-text-primary);">Content Management</h2>
@@ -1881,15 +1881,15 @@ function renderContentManagementTab(area: HTMLElement): void {
 
       <div style="display: flex; flex-direction: column; gap: 16px;">
         <!-- Card 1: Manage story tiles -->
-        <div id="cm-card-tiles" class="cm-hub-card" style="background: var(--color-surface); border: 2px solid rgba(139,92,246,0.3); border-radius: 18px; padding: 20px; display: flex; align-items: center; gap: 16px; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden;">
-          <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--color-purple), #a855f7, #ec4899);"></div>
-          <div style="width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, var(--color-purple), #7c3aed); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem; flex-shrink: 0; box-shadow: 0 4px 12px rgba(139,92,246,0.3);">
+        <div id="cm-card-tiles" class="cm-hub-card" style="background: var(--color-surface); border: 2px solid rgba(16,185,129,0.3); border-radius: 18px; padding: 20px; display: flex; align-items: center; gap: 16px; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden;">
+          <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--color-purple), #34D399, #06B6D4);"></div>
+          <div style="width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, var(--color-purple), #059669); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16,185,129,0.3);">
             🗂️
           </div>
           <div style="flex: 1;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
               <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary);">Manage story tiles</h3>
-              <span style="background: rgba(139,92,246,0.15); color: var(--color-purple); font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 8px; text-transform: uppercase;">Live Visual View</span>
+              <span style="background: rgba(16,185,129,0.15); color: var(--color-purple); font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 8px; text-transform: uppercase;">Live Visual View</span>
             </div>
             <p style="margin: 0; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4;">
               Open the interactive visual website view starting on Home. Preview and manage story placement across Home, Featured, and Explore feeds with purple tint mode.
@@ -1964,12 +1964,12 @@ function renderModerationTab(area: HTMLElement): void {
   area.innerHTML = `
     <div style="max-width: 760px; margin: 0 auto; padding: 16px 0 40px;">
       <div style="text-align: center; margin-bottom: 28px;">
-        <div style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, #6366f1, #4f46e5); display: flex; align-items: center; justify-content: center; color: white; margin: 0 auto 12px; box-shadow: 0 4px 16px rgba(99,102,241,0.3);">
+        <div style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, #0D9488, #4f46e5); display: flex; align-items: center; justify-content: center; color: white; margin: 0 auto 12px; box-shadow: 0 4px 16px rgba(99,102,241,0.3);">
           ${ICON.flag}
         </div>
         <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 6px;">
           <h2 style="margin: 0; font-family: var(--font-heading); font-size: 1.3rem; color: var(--color-text-primary);">Moderation Center</h2>
-          <span style="background: #6366f1; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.5px;">WIP</span>
+          <span style="background: #0D9488; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.5px;">WIP</span>
         </div>
         <p style="margin: 0; color: var(--color-text-muted); font-size: 0.85rem; max-width: 520px; margin: 0 auto;">
           DRiVE platform moderation, safety enforcement, community report triage, and automated content compliance.
@@ -2078,7 +2078,7 @@ function openStatsForNerdsModal(): void {
                 <span style="font-weight: 700;">28%</span>
               </div>
               <div style="height: 6px; border-radius: 3px; background: var(--color-surface); overflow: hidden;">
-                <div style="width: 28%; height: 100%; background: linear-gradient(90deg, #ec4899, #f43f5e);"></div>
+                <div style="width: 28%; height: 100%; background: linear-gradient(90deg, #06B6D4, #f43f5e);"></div>
               </div>
             </div>
             <div>
@@ -2102,7 +2102,7 @@ function openStatsForNerdsModal(): void {
           </div>
         </div>
 
-        <div style="background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.2); border-radius: 12px; padding: 12px; font-size: 0.75rem; color: var(--color-text-secondary);">
+        <div style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); border-radius: 12px; padding: 12px; font-size: 0.75rem; color: var(--color-text-secondary);">
           ⚡ <strong>Platform Infrastructure:</strong> Edge Cache Hit Ratio: 94.2% · p95 LLM Token Latency: 22ms · TTS Audio Pipeline: Operational (99.98% uptime).
         </div>
       </div>
@@ -2370,7 +2370,7 @@ function openStoryPreviewModal(story: UserStory): void {
 
       <!-- Navigation Footer -->
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: rgba(30,30,50,0.9); border-top: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
-        <button id="inspector-prev" style="padding: 10px 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: ${currentPage > 0 ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.05)'}; color: ${currentPage > 0 ? '#fff' : 'rgba(255,255,255,0.2)'}; cursor: ${currentPage > 0 ? 'pointer' : 'default'}; font-weight: 600; font-size: 0.85rem;">
+        <button id="inspector-prev" style="padding: 10px 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: ${currentPage > 0 ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.05)'}; color: ${currentPage > 0 ? '#fff' : 'rgba(255,255,255,0.2)'}; cursor: ${currentPage > 0 ? 'pointer' : 'default'}; font-weight: 600; font-size: 0.85rem;">
           ← Prev
         </button>
         <div style="display: flex; flex-direction: column; align-items: center;">
@@ -2379,7 +2379,7 @@ function openStoryPreviewModal(story: UserStory): void {
             ${pages.map((_, i) => `<div style="width: ${Math.min(8, 120 / totalPages)}px; height: 4px; border-radius: 2px; background: ${i === currentPage ? 'var(--color-purple)' : 'rgba(255,255,255,0.2)'};"></div>`).join('')}
           </div>
         </div>
-        <button id="inspector-next" style="padding: 10px 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: ${currentPage < totalPages - 1 ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.05)'}; color: ${currentPage < totalPages - 1 ? '#fff' : 'rgba(255,255,255,0.2)'}; cursor: ${currentPage < totalPages - 1 ? 'pointer' : 'default'}; font-weight: 600; font-size: 0.85rem;">
+        <button id="inspector-next" style="padding: 10px 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: ${currentPage < totalPages - 1 ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.05)'}; color: ${currentPage < totalPages - 1 ? '#fff' : 'rgba(255,255,255,0.2)'}; cursor: ${currentPage < totalPages - 1 ? 'pointer' : 'default'}; font-weight: 600; font-size: 0.85rem;">
           Next →
         </button>
       </div>

@@ -219,7 +219,7 @@ export function render(): string {
               <div style="font-family: var(--font-heading); font-weight: 700; font-size: 1rem; color: var(--color-text-primary); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 <span>${escapeHtml(member.username)}</span>
                 ${isYou ? '<span style="font-size: 0.72rem; color: var(--color-purple); font-weight: 800;">(You)</span>' : ''}
-                ${member.role === 'driver' ? '<span style="font-size: 0.65rem; background: linear-gradient(135deg, var(--color-purple) 0%, #7c3aed 100%); color: white; padding: 2px 7px; border-radius: 9999px; font-weight: 800; letter-spacing: 0.5px;">DRIVER</span>' : ''}
+                ${member.role === 'driver' ? '<span style="font-size: 0.65rem; background: linear-gradient(135deg, var(--color-purple) 0%, #059669 100%); color: white; padding: 2px 7px; border-radius: 9999px; font-weight: 800; letter-spacing: 0.5px;">DRIVER</span>' : ''}
               </div>
               <div style="font-size: 0.78rem; color: var(--color-text-muted); margin-top: 2px;">
                 ${member.role === 'driver' ? 'Squad Leader' : 'Adventurer'}
@@ -453,7 +453,7 @@ export function render(): string {
             border: 1px solid var(--color-border);
             cursor: not-allowed;
           ` : `
-            background: linear-gradient(135deg, var(--color-purple) 0%, #7c3aed 100%);
+            background: linear-gradient(135deg, var(--color-purple) 0%, #059669 100%);
             color: #ffffff;
             border: none;
             box-shadow: 0 4px 20px rgba(138, 43, 226, 0.45);

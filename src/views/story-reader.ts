@@ -190,7 +190,6 @@ export function render(): string {
   } else if (story.format === 'book') {
     const page0Media = (story.pageVideos && story.pageVideos[0]) || (story.panels && story.panels[0]) || '';
     const isVideoPage = isVideoMedia(page0Media) || !!(story.pageVideos && story.pageVideos[0]);
-    const scriptText = story.pageScripts && story.pageScripts[0] ? story.pageScripts[0] : '';
     const hasAudio = !!story.pageAudio?.[0];
     const firstPageMedia = isVideoPage
       ? `<video id="book-video" src="${page0Media}" autoplay loop muted playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"></video>`
@@ -206,27 +205,6 @@ export function render(): string {
             </button>
           ` : ''}
         </div>
-        ${scriptText ? `
-          <button class="reader-text-toggle" id="reader-text-toggle" type="button" title="Show story text">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/>
-            </svg>
-          </button>
-          <div class="reader__script reader__script--collapsed" id="book-script" style="padding:1rem 1.25rem;margin:0.5rem auto;max-width:600px;background:rgba(0,0,0,0.6);border-radius:12px;backdrop-filter:blur(6px);display:none;">
-            ${scriptText.split('\n').map((line: string) => {
-              if (!line.trim()) return '<br>';
-              const match = line.match(/^(\w+)\s*\(([^)]+)\):\s*"([^"]*)"$/);
-              if (match) {
-                return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">
-                  <span style="color:#60a5fa;font-weight:600;">${match[1]}</span>
-                  <span style="color:#94a3b8;font-size:0.8rem;"> (${match[2]})</span>
-                  <span style="color:#f1f5f9;font-style:italic;"> "${match[3]}"</span>
-                </p>`;
-              }
-              return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">${line}</p>`;
-            }).join('')}
-          </div>
-        ` : ''}
         <div class="reader__page-nav">
           <div class="reader__page-dots" id="book-dots">
             ${Array.from({ length: story.panels.length + 1 }).map((_, i) => `<span class="reader__dot ${i === 0 ? 'active' : ''} ${i >= story.panels.length ? 'reader__dot--info' : ''}" data-page="${i}" title="${i >= story.panels.length ? 'End' : 'Page ' + (i + 1)}"></span>`).join('')}
@@ -730,20 +708,15 @@ export async function init(): Promise<void> {
   captionsOpen = true; // CC ON by default — declared here so it's available in book page navigation
   if (story.format === 'book') {
     var currentPage = 0;
-    let scriptVisible = false;
     const totalPages = showEndCard ? story.panels.length + 1 : story.panels.length;
     const pageContainer = document.getElementById('book-page');
     const dotsContainer = document.getElementById('book-dots');
-    let scriptContainer = document.getElementById('book-script');
 
     const updatePage = () => {
-      const toggleBtn = document.getElementById('reader-text-toggle');
       const isInfoPage = showEndCard && currentPage === story.panels.length;
 
       if (pageContainer) {
         if (isInfoPage) {
-          if (toggleBtn) toggleBtn.style.display = 'none';
-          if (scriptContainer) scriptContainer.style.display = 'none';
 
           if (isGateEpisode) {
             // Squad Gate info page
@@ -773,7 +746,6 @@ export async function init(): Promise<void> {
           }
         } else {
           // Render regular book panel
-          if (toggleBtn) toggleBtn.style.display = 'flex';
           const currentMedia = (story.pageVideos && story.pageVideos[currentPage]) || (story.panels && story.panels[currentPage]) || '';
           const isVideo = isVideoMedia(currentMedia) || !!(story.pageVideos && story.pageVideos[currentPage]);
           const hasAudio = !!story.pageAudio?.[currentPage];
@@ -907,41 +879,13 @@ export async function init(): Promise<void> {
             }
           }
 
-          // Update script text
-          scriptContainer = document.getElementById('book-script');
-          if (scriptContainer) {
-            const scriptText = story.pageScripts && story.pageScripts[currentPage] ? story.pageScripts[currentPage] : '';
-            if (scriptText) {
-              scriptContainer.innerHTML = scriptText.split('\n').map((line: string) => {
-                if (!line.trim()) return '<br>';
-                const match = line.match(/^(\w+)\s*\(([^)]+)\):\s*"([^"]*)"$/);
-                if (match) {
-                  return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">
-                    <span style="color:#60a5fa;font-weight:600;">${match[1]}</span>
-                    <span style="color:#94a3b8;font-size:0.8rem;"> (${match[2]})</span>
-                    <span style="color:#f1f5f9;font-style:italic;"> "${match[3]}"</span>
-                  </p>`;
-                }
-                return `<p style="margin:0.4rem 0;font-size:0.95rem;line-height:1.5;color:#e2e8f0;">${line}</p>`;
-              }).join('');
-              scriptContainer.style.display = scriptVisible ? 'block' : 'none';
-            } else {
-              scriptContainer.style.display = 'none';
-            }
-          }
         }
 
         // Re-add position:relative for audio button positioning
         pageContainer.style.position = 'relative';
       }
       
-      // Update text toggle button icon
-      if (toggleBtn && !isInfoPage) {
-        toggleBtn.innerHTML = scriptVisible
-          ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
-          : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>`;
-        toggleBtn.title = scriptVisible ? 'Hide story text' : 'Show story text';
-      }
+
       if (dotsContainer) {
         dotsContainer.querySelectorAll('.reader__dot').forEach((dot, i) => {
           dot.classList.toggle('active', i === currentPage);
@@ -989,11 +933,6 @@ export async function init(): Promise<void> {
       }
     });
 
-    // Text toggle
-    document.getElementById('reader-text-toggle')?.addEventListener('click', () => {
-      scriptVisible = !scriptVisible;
-      updatePage();
-    });
 
     // Dot click navigation
     dotsContainer?.addEventListener('click', (e) => {
@@ -1157,7 +1096,7 @@ export async function init(): Promise<void> {
       content = dialogueLines.map((line: any, idx: number) => {
         const isNarrator = line.characterId === 'narrator';
         const name = isNarrator ? 'Narrator' : (line.characterName || 'Speaker');
-        const nameColor = isNarrator ? '#a78bfa' : '#60a5fa';
+        const nameColor = isNarrator ? '#34D399' : '#60a5fa';
         return `
           <div style="margin-bottom:8px;">
             <span style="font-size:0.7rem; font-weight:700; color:${nameColor}; text-transform:uppercase; letter-spacing:0.5px;">${name}</span>
@@ -1282,7 +1221,7 @@ function openFullscreenComments(storyId: string, story: any): void {
     commentEl.style.cssText = 'padding:0.75rem 0;border-bottom:1px solid rgba(255,255,255,0.06);';
     commentEl.innerHTML = `
       <div style="display:flex;gap:0.5rem;align-items:flex-start;">
-        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#6366f1);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:#fff;font-weight:600;">${(localStorage.getItem('drive_username') || 'Y')[0].toUpperCase()}</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#0D9488);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:#fff;font-weight:600;">${(localStorage.getItem('drive_username') || 'Y')[0].toUpperCase()}</div>
         <div style="flex:1;">
           <div style="display:flex;align-items:baseline;gap:0.5rem;">
             <span style="font-weight:600;font-size:0.85rem;color:#e2e8f0;">${localStorage.getItem('drive_username') || 'You'}</span>
@@ -1323,7 +1262,7 @@ function openFullscreenComments(storyId: string, story: any): void {
       const timeAgo = getTimeAgo(c.created_at);
       commentEl.innerHTML = `
         <div style="display:flex;gap:0.5rem;align-items:flex-start;">
-          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#6366f1);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:#fff;font-weight:600;">${(c.author || 'Y')[0].toUpperCase()}</div>
+          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#0D9488);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:#fff;font-weight:600;">${(c.author || 'Y')[0].toUpperCase()}</div>
           <div style="flex:1;">
             <div style="display:flex;align-items:baseline;gap:0.5rem;">
               <span style="font-weight:600;font-size:0.85rem;color:#e2e8f0;">${c.author || 'You'}</span>

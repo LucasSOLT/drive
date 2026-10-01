@@ -294,7 +294,7 @@ function renderView(route: string) {
                 <p style="line-height:1.5; color:#f1f5f9; font-size:0.95rem; margin-bottom:12px;">
                   You scanned a friend code! Please log in or create an account to connect as friends on DRiVE.
                 </p>
-                <div style="padding:8px 12px; background:rgba(139,92,246,0.12); border-radius:8px; display:inline-block; font-family:monospace; font-weight:700; font-size:1.1rem; color:#c084fc; letter-spacing:2px;">
+                <div style="padding:8px 12px; background:rgba(16,185,129,0.12); border-radius:8px; display:inline-block; font-family:monospace; font-weight:700; font-size:1.1rem; color:#6EE7B7; letter-spacing:2px;">
                   ${friendCode}
                 </div>
               </div>
@@ -320,7 +320,7 @@ function renderView(route: string) {
               <p style="line-height:1.5; color:#f1f5f9; font-size:0.95rem; margin-bottom:12px;">
                 Would you like to add <strong>${displayName}</strong> as a friend on DRiVE?
               </p>
-              <div style="padding:6px 14px; background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); border-radius:100px; display:inline-block; font-family:monospace; font-weight:700; font-size:0.9rem; color:#c084fc; letter-spacing:1px;">
+              <div style="padding:6px 14px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); border-radius:100px; display:inline-block; font-family:monospace; font-weight:700; font-size:0.9rem; color:#6EE7B7; letter-spacing:1px;">
                 Code: ${friendCode}
               </div>
             </div>
@@ -380,7 +380,7 @@ function renderView(route: string) {
                 We don't use your account to sell anything or advertise.
               </p>
               <div style="display:flex; flex-direction:column; gap:10px;">
-                <button id="invite-signup-btn" style="padding:14px; background:linear-gradient(135deg, var(--color-purple), #7c3aed); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer;">Create Free Account</button>
+                <button id="invite-signup-btn" style="padding:14px; background:linear-gradient(135deg, var(--color-purple), #059669); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; font-size:0.95rem; cursor:pointer;">Create Free Account</button>
                 <button id="invite-login-btn" style="padding:12px; background:var(--color-eggshell); color:var(--color-text-primary); border:1px solid var(--color-border); border-radius:var(--radius-lg); font-weight:600; font-size:0.9rem; cursor:pointer;">Already have one? Log In</button>
               </div>
               <p style="color:var(--color-text-muted); font-size:0.75rem; margin-top:16px; line-height:1.4;">
@@ -461,7 +461,7 @@ function renderView(route: string) {
       const adminLink = document.createElement('a');
       adminLink.className = `desktop-nav-link ${baseRoute === 'admin' ? 'active' : ''}`;
       adminLink.setAttribute('data-route', 'admin');
-      adminLink.innerHTML = `<span style="color:#A78BFA; font-weight:700;">🛡️ Admin</span>`;
+      adminLink.innerHTML = `<span style="color:#34D399; font-weight:700;">🛡️ Admin</span>`;
       adminLink.addEventListener('click', () => navigate('admin'));
       desktopNav.appendChild(adminLink);
     }

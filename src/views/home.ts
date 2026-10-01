@@ -160,7 +160,7 @@ export function render(): string {
       <!-- ===== FEATURED SECTION ===== -->
       <section class="section slide-up stagger-2" id="featured-section">
         <div class="section__header">
-          <h2 class="section__title">Featured</h2>
+          <h2 class="section__title">Trending Games</h2>
           <a href="#featured" class="section__see-all" data-link="featured">See all</a>
         </div>
         <div id="home-featured-grid">
@@ -171,7 +171,7 @@ export function render(): string {
       <!-- ===== BEST-SELLING SECTION ===== -->
       <section class="section slide-up stagger-3" id="bestselling-section">
         <div class="section__header">
-          <h2 class="section__title">Best-Selling</h2>
+          <h2 class="section__title">Top Games</h2>
           <a href="#explore" class="section__see-all" data-link="explore">See all</a>
         </div>
         <div class="bestselling-carousel-wrapper" style="margin: 0 var(--space-md); overflow: hidden;">

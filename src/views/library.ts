@@ -74,9 +74,9 @@ function renderUserStoryCard(story: UserStory): string {
         ` : ''}
 
         <div class="lib-card__actions">
-          ${isDraft ? `<button class="lib-card__btn lib-card__btn--edit" data-edit-user="${story.id}" style="background:#8B5CF6; color:white;" title="Edit Draft">✏️ Edit</button>` : ''}
+          ${isDraft ? `<button class="lib-card__btn lib-card__btn--edit" data-edit-user="${story.id}" style="background:#10B981; color:white;" title="Edit Draft">✏️ Edit</button>` : ''}
           ${canView ? `<button class="lib-card__btn lib-card__btn--view" data-view="${story.id}" title="View">${ICON.eye} View</button>` : ''}
-          ${isDenied ? `<button class="lib-card__btn" data-resubmit="${story.id}" style="background:#8B5CF6; color:white;" title="Resubmit">🔄 Edit & Resubmit</button>` : ''}
+          ${isDenied ? `<button class="lib-card__btn" data-resubmit="${story.id}" style="background:#10B981; color:white;" title="Resubmit">🔄 Edit & Resubmit</button>` : ''}
           <button class="lib-card__btn lib-card__btn--share" data-share="${story.id}" title="Share">${ICON.share}</button>
           <button class="lib-card__btn lib-card__btn--delete" data-delete="${story.id}" title="Delete">${ICON.trash}</button>
         </div>
@@ -116,12 +116,12 @@ function renderAdminDraftCard(story: Story): string {
       <div class="lib-card__body">
         <h3 class="lib-card__title">${story.title}</h3>
         <div class="lib-card__meta">
-          <span class="lib-card__status" style="color:#A78BFA; font-weight:700;">● Admin Draft</span>
+          <span class="lib-card__status" style="color:#34D399; font-weight:700;">● Admin Draft</span>
           <span class="lib-card__date">${story.genre || 'Draft'}</span>
         </div>
 
         <div class="lib-card__actions">
-          <button class="lib-card__btn lib-card__btn--edit" data-edit-admin="${story.id}" data-format="${story.format}" style="background:#8B5CF6; color:white;" title="Edit Admin Draft">✏️ Edit</button>
+          <button class="lib-card__btn lib-card__btn--edit" data-edit-admin="${story.id}" data-format="${story.format}" style="background:#10B981; color:white;" title="Edit Admin Draft">✏️ Edit</button>
           <button class="lib-card__btn lib-card__btn--delete" data-delete-admin="${story.id}" title="Delete">${ICON.trash}</button>
         </div>
       </div>
@@ -160,12 +160,12 @@ function renderLocalAdminDraftCard(draft: any): string {
       <div class="lib-card__body">
         <h3 class="lib-card__title">${draft.storyTitle || 'Unsaved Storyboard'}</h3>
         <div class="lib-card__meta">
-          <span class="lib-card__status" style="color:#A78BFA; font-weight:700;">● Admin Draft</span>
+          <span class="lib-card__status" style="color:#34D399; font-weight:700;">● Admin Draft</span>
           <span class="lib-card__date">${draft.storyGenre || 'Draft'}</span>
         </div>
 
         <div class="lib-card__actions">
-          <button class="lib-card__btn lib-card__btn--edit" data-resume-local-admin="true" data-format="${draft.selectedFormat || 'scroll'}" style="background:#8B5CF6; color:white;" title="Resume Draft">✏️ Edit</button>
+          <button class="lib-card__btn lib-card__btn--edit" data-resume-local-admin="true" data-format="${draft.selectedFormat || 'scroll'}" style="background:#10B981; color:white;" title="Resume Draft">✏️ Edit</button>
           <button class="lib-card__btn lib-card__btn--delete" data-delete-local-admin="true" title="Delete">${ICON.trash}</button>
         </div>
       </div>
@@ -178,7 +178,7 @@ function renderTrackedReadingCard(story: TrackedStory): string {
   const statusLabels: Record<string, { label: string; color: string; bg: string; border: string }> = {
     'episode-1-access': {
       label: 'Episode 1 Access',
-      color: '#c084fc',
+      color: '#6EE7B7',
       bg: 'rgba(192, 132, 252, 0.12)',
       border: 'rgba(192, 132, 252, 0.3)'
     },
@@ -242,7 +242,7 @@ function renderTrackedReadingCard(story: TrackedStory): string {
         </div>
 
         <div class="lib-card__actions" style="margin-top:10px;">
-          <button class="lib-card__btn lib-card__btn--continue" data-continue-reading="${story.storyId}" style="background:linear-gradient(135deg, #8B5CF6, #6366F1); color:white; font-weight:600; flex:1;" title="Continue Reading">
+          <button class="lib-card__btn lib-card__btn--continue" data-continue-reading="${story.storyId}" style="background:linear-gradient(135deg, #10B981, #0D9488); color:white; font-weight:600; flex:1;" title="Continue Reading">
             📖 Continue
           </button>
           <button class="lib-card__btn lib-card__btn--delete" data-remove-tracked="${story.storyId}" title="Remove from Reading History">${ICON.trash}</button>
@@ -313,11 +313,11 @@ async function loadActiveSquads(): Promise<void> {
       if (squad.status === 'forming') {
         statusBadge = `<span style="font-size:0.65rem; background:rgba(245,158,11,0.12); color:#f59e0b; padding:2px 8px; border-radius:9999px; font-weight:700;">⏳ FORMING</span>`;
       } else if (session?.status === 'sparc') {
-        statusBadge = `<span style="font-size:0.65rem; background:rgba(139,92,246,0.12); color:var(--color-purple); padding:2px 8px; border-radius:9999px; font-weight:700;">⚡ SPARC ${sparcGreenlitCount}/${memberCount}</span>`;
+        statusBadge = `<span style="font-size:0.65rem; background:rgba(16,185,129,0.12); color:var(--color-purple); padding:2px 8px; border-radius:9999px; font-weight:700;">⚡ SPARC ${sparcGreenlitCount}/${memberCount}</span>`;
       } else if (session?.status === 'reading') {
         statusBadge = `<span style="font-size:0.65rem; background:rgba(16,185,129,0.12); color:#10b981; padding:2px 8px; border-radius:9999px; font-weight:700;">📖 READING</span>`;
       } else {
-        statusBadge = `<span style="font-size:0.65rem; background:rgba(139,92,246,0.08); color:var(--color-purple); padding:2px 8px; border-radius:9999px; font-weight:700;">🛡️ ACTIVE</span>`;
+        statusBadge = `<span style="font-size:0.65rem; background:rgba(16,185,129,0.08); color:var(--color-purple); padding:2px 8px; border-radius:9999px; font-weight:700;">🛡️ ACTIVE</span>`;
       }
 
       // Episode info
@@ -339,7 +339,7 @@ async function loadActiveSquads(): Promise<void> {
       let actionBtn = '';
       if (squad.status === 'forming') {
         actionBtn = `<button class="squad-hub-action" data-squad-action="lobby" data-squad-id="${squad.id}" style="
-          padding:8px 16px; background:linear-gradient(135deg, var(--color-purple), #7c3aed);
+          padding:8px 16px; background:linear-gradient(135deg, var(--color-purple), #059669);
           color:white; border:none; border-radius:var(--radius-lg); font-size:0.78rem; font-weight:700;
           cursor:pointer; white-space:nowrap;
         ">Enter Lobby</button>`;
@@ -391,7 +391,7 @@ async function loadActiveSquads(): Promise<void> {
 
               <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
                 <span style="font-size:0.78rem; color:var(--color-text-secondary); font-weight:600;">${episodeText}</span>
-                ${isDriver ? '<span style="font-size:0.6rem; background:linear-gradient(135deg, var(--color-purple), #7c3aed); color:white; padding:1px 6px; border-radius:9999px; font-weight:800;">DRiVER</span>' : ''}
+                ${isDriver ? '<span style="font-size:0.6rem; background:linear-gradient(135deg, var(--color-purple), #059669); color:white; padding:1px 6px; border-radius:9999px; font-weight:800;">DRiVER</span>' : ''}
                 ${timerHtml}
               </div>
 
@@ -509,12 +509,12 @@ export function render(): string {
     <div class="view-library fade-in" id="library-container">
       <div class="library-unlocked" style="padding: 1.5rem;">
         <!-- Plan status pill -->
-        <div class="lib-plan-status slide-up" style="display:flex; align-items:center; gap:8px; padding:10px 14px; background:linear-gradient(135deg, rgba(139,92,246,0.06), rgba(99,102,241,0.06)); border-radius:14px; margin-bottom:1rem; border:1px solid rgba(139,92,246,0.12);">
+        <div class="lib-plan-status slide-up" style="display:flex; align-items:center; gap:8px; padding:10px 14px; background:linear-gradient(135deg, rgba(16,185,129,0.06), rgba(99,102,241,0.06)); border-radius:14px; margin-bottom:1rem; border:1px solid rgba(16,185,129,0.12);">
           <span style="font-size:1.1rem;">💎</span>
           <div style="flex:1;">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;">
               <span style="font-family:var(--font-heading); font-size:0.78rem; font-weight:700; color:var(--color-purple); text-transform:uppercase; letter-spacing:0.5px;">${getUserPlan() === 'creator' ? 'Creator Plan' : 'Starter Plan'}</span>
-              <span style="font-size:0.7rem; padding:1px 6px; background:rgba(139,92,246,0.08); color:var(--color-purple); border-radius:8px; font-weight:600;">${getCreditsBalance().toLocaleString()} credits</span>
+              <span style="font-size:0.7rem; padding:1px 6px; background:rgba(16,185,129,0.08); color:var(--color-purple); border-radius:8px; font-weight:600;">${getCreditsBalance().toLocaleString()} credits</span>
             </div>
             <span style="font-family:var(--font-body); font-size:0.72rem; color:var(--color-text-muted);">${getUserPlan() === 'creator' ? 'Unlimited stories' : getTokensRemaining() + ' token' + (getTokensRemaining() !== 1 ? 's' : '') + ' remaining'}</span>
           </div>
@@ -621,7 +621,7 @@ export function render(): string {
             <div class="section__header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
               <div style="display:flex; align-items:center; gap:8px;">
                 <span style="font-size:1.2rem;">🛠️</span>
-                <h2 class="section__title" style="margin: 0; color: #A78BFA;">Admin Storyboards & Drafts</h2>
+                <h2 class="section__title" style="margin: 0; color: #34D399;">Admin Storyboards & Drafts</h2>
               </div>
               <button class="btn btn--secondary btn--sm" id="admin-create-new-btn" style="border-radius: 20px; padding: 0.5rem 1rem;">+ New Admin Storyboard</button>
             </div>
@@ -773,7 +773,7 @@ export function init(): void {
             </div>
 
             <!-- Transparency message -->
-            <div style="text-align:center; padding:12px 16px; margin-bottom:16px; background:rgba(139,92,246,0.04); border-radius:12px; border:1px solid rgba(139,92,246,0.08);">
+            <div style="text-align:center; padding:12px 16px; margin-bottom:16px; background:rgba(16,185,129,0.04); border-radius:12px; border:1px solid rgba(16,185,129,0.08);">
               <p style="font-family:var(--font-body); font-size:0.72rem; color:var(--color-text-muted); margin:0; line-height:1.5;">
                 💜 We believe everyone has a story — not everyone has a big wallet. We aim to keep prices low and only take a <strong style="color:var(--color-purple);">20% cut</strong> from each purchase to cover hosting and managerial fees. The remaining 80% goes directly to AI generation costs for your creations.
               </p>
