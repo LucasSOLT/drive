@@ -5,6 +5,7 @@ export type Genre = 'Fantasy' | 'Sci-Fi' | 'Romance' | 'Horror' | 'Comedy' | 'Dr
 export type ContentRating = 'All Ages' | 'PG-13' | 'Mature';
 
 export type StoryAudioMode = 'make_audio' | 'simple_upload';
+export type StoryPageAudioSource = 'native' | 'upload' | 'ai' | 'silent';
 
 export interface StoryCharacter {
   id: string;
@@ -50,6 +51,7 @@ export interface Story {
   bgmUrl?: string;
   bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
+  pageAudioSource?: Record<number, StoryPageAudioSource>;  // index → audio source for video pages
   // ─── Squad Gate & SPARC Checkpoint ───
   soloEpisodeCount?: 1 | 2 | 3;         // Episodes playable solo before squad gate (default 1)
   sparcPrompt?: {                        // SPARC checkpoint config for this episode
@@ -91,6 +93,7 @@ export interface UserStory {
   bgmUrl?: string;
   bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
+  pageAudioSource?: Record<number, StoryPageAudioSource>;  // index → audio source for video pages
   themeColor?: string;
 }
 

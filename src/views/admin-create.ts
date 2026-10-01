@@ -1,4 +1,4 @@
-import type { StoryFormat, Genre, Story, UserStory, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
+import type { StoryFormat, Genre, Story, UserStory, StoryCharacter, DialogueLine, StoryAudioMode, StoryPageAudioSource } from '../types.ts';
 import { genres, registerStory } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
@@ -89,6 +89,7 @@ async function saveStoryForMode(story: Story): Promise<void> {
       bgmUrl: story.bgmUrl,
       bgmVolume: story.bgmVolume,
       pageFocalPositions: story.pageFocalPositions,
+      pageAudioSource: story.pageAudioSource,
       author_name: story.author,
       themeColor: story.themeColor,
     };
@@ -177,6 +178,7 @@ interface BookPage {
   dialogAudioUrl: string | null;
   dialogueLines?: DialogueLine[];
   focalPosition?: 'top' | 'center' | 'bottom';
+  audioSource?: 'native' | 'upload' | 'ai' | 'silent';
 }
 const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, audioFileName: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [], focalPosition: 'center' });
 let bookPages: BookPage[] = [
@@ -500,9 +502,11 @@ function buildStory(status: 'draft' | 'live'): Story {
 
   // Build pageFocalPositions from bookPages
   const pageFocalPositions: Record<number, string> = {};
+  const pageAudioSource: Record<number, StoryPageAudioSource> = {};
   if (selectedFormat === 'book') {
     bookPages.forEach((bp, i) => {
       if (bp.focalPosition && bp.focalPosition !== 'center') pageFocalPositions[i] = bp.focalPosition;
+      if (bp.audioSource && bp.audioSource !== 'native') pageAudioSource[i] = bp.audioSource;
     });
   }
 
@@ -534,6 +538,7 @@ function buildStory(status: 'draft' | 'live'): Story {
     bgmUrl: storyBgmUrl || undefined,
     bgmVolume: storyBgmVolume,
     pageFocalPositions: Object.keys(pageFocalPositions).length > 0 ? pageFocalPositions : undefined,
+    pageAudioSource: Object.keys(pageAudioSource).length > 0 ? pageAudioSource : undefined,
     soloEpisodeCount,
     themeColor: storyThemeColor,
     sparcPrompt: (sparcPromptText.trim() || sparcPromptMediaUrls.length > 0) ? {
@@ -2434,6 +2439,18 @@ function renderBookCanvas(): string {
         <button type="button" class="focal-btn ${(page.focalPosition || 'center') === 'bottom' ? 'focal-btn--active' : ''}" data-set-focal="${i}" data-focal-val="bottom" title="Align image to bottom">Bottom</button>
       </div>
       ` : ''}
+      <!-- Per-Page Audio Source (video pages only) -->
+      ${page.image && isVideoMedia(page.image) ? `
+        <div class="sb-card__audio-source" style="margin-top: var(--space-sm);">
+          <div class="book-tile__text-header"><span>🔊 PAGE AUDIO SOURCE</span></div>
+          <div class="sb-audio-source-selector" data-mob-audio-source="${i}">
+            <button class="sb-audio-src-btn ${(page.audioSource || 'native') === 'native' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="native" data-audio-src-page="${i}" type="button">🔊 Native</button>
+            <button class="sb-audio-src-btn ${page.audioSource === 'upload' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="upload" data-audio-src-page="${i}" type="button">🎙️ Upload</button>
+            <button class="sb-audio-src-btn ${page.audioSource === 'ai' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="ai" data-audio-src-page="${i}" type="button">🎭 AI</button>
+            <button class="sb-audio-src-btn ${page.audioSource === 'silent' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="silent" data-audio-src-page="${i}" type="button">🔇 Silent</button>
+          </div>
+        </div>
+      ` : ''}
 
       <!-- Story Text & Dialogue (Screenplay Editor) -->
       ${storyAudioMode === 'simple_upload' ? `
@@ -2831,7 +2848,63 @@ function openStoryboard(): void {
       </div>
 
       <div class="sb-card__section">
-        ${renderScreenplayEditor(i, 'sbd')}
+        ${page.image && isVideoMedia(page.image) ? `
+          <div class="sb-card__audio-source">
+            <div class="book-tile__text-header"><span>🔊 PAGE AUDIO SOURCE</span></div>
+            <div class="sb-audio-source-selector" data-sb-audio-source="${i}">
+              <button class="sb-audio-src-btn ${(page.audioSource || 'native') === 'native' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="native" data-audio-src-page="${i}" type="button" title="Use video's built-in audio">🔊 Native</button>
+              <button class="sb-audio-src-btn ${page.audioSource === 'upload' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="upload" data-audio-src-page="${i}" type="button" title="Upload your own audio">🎙️ Upload</button>
+              <button class="sb-audio-src-btn ${page.audioSource === 'ai' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="ai" data-audio-src-page="${i}" type="button" title="AI character voices">🎭 AI</button>
+              <button class="sb-audio-src-btn ${page.audioSource === 'silent' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="silent" data-audio-src-page="${i}" type="button" title="No audio">🔇 Silent</button>
+            </div>
+          </div>
+        ` : ''}
+        ${storyAudioMode === 'simple_upload' ? `
+          <div class="book-tile__text-header"><span>STORY TEXT</span></div>
+          <textarea class="book-tile__textarea" data-tile-text="${i}"
+            placeholder="Write the story for this page..."
+            rows="4" maxlength="1000">${page.text}</textarea>
+          <div class="book-tile__text-header" style="margin-top: var(--space-sm);"><span>📁 PAGE AUDIO</span></div>
+          <div class="audio-upload-zone" data-audio-upload-zone="${i}">
+            ${page.audioUrl ? `
+              <div class="audio-upload-preview">
+                <div class="audio-upload-preview__info">
+                  <span class="audio-upload-preview__icon">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? '🎬' : '🎵'}</span>
+                  <div class="audio-upload-preview__meta">
+                    <span class="audio-upload-preview__name">${page.audioFileName || 'Audio uploaded'}</span>
+                    <span class="audio-upload-preview__tag">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? 'Audio (from Video)' : 'Audio File'}</span>
+                  </div>
+                </div>
+                <div class="audio-scrubber" data-audio-scrubber-wrap="${i}">
+                  <input type="range" class="audio-scrubber__slider" data-audio-scrubber="${i}" min="0" max="100" value="0" step="0.1" aria-label="Audio progress">
+                  <div class="audio-scrubber__time">
+                    <span class="audio-scrubber__current" data-audio-current="${i}">0:00</span>
+                    <span class="audio-scrubber__divider">/</span>
+                    <span class="audio-scrubber__duration" data-audio-duration="${i}">--:--</span>
+                  </div>
+                </div>
+                <div class="audio-upload-actions">
+                  <button class="audio-upload-actions__btn" data-audio-play="${i}" type="button">▶ Play</button>
+                  <button class="audio-upload-actions__btn audio-upload-actions__btn--restart" data-audio-restart="${i}" type="button" title="Play from start">⏮ Restart</button>
+                  <button class="audio-upload-actions__btn" data-audio-replace="${i}" type="button">Replace</button>
+                  <button class="audio-upload-actions__btn audio-upload-actions__btn--delete" data-audio-remove="${i}" type="button">✕</button>
+                </div>
+              </div>
+            ` : `
+              <button class="audio-upload-btn" data-audio-upload-trigger="${i}" type="button">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span>Click to Upload Audio or Video (MP3, WAV, M4A, MP4, MOV)</span>
+              </button>
+            `}
+            <input type="file" class="audio-upload-file" data-audio-file="${i}" accept="audio/*,video/*" hidden>
+          </div>
+          <div class="book-tile__text-header" style="margin-top: var(--space-sm);"><span>📝 CAPTIONS</span></div>
+          <textarea class="book-tile__textarea" data-simple-captions="${i}"
+            placeholder="Type dialogue and captions here for hearing-impaired viewers (optional)..."
+            rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
+        ` : `
+          ${renderScreenplayEditor(i, 'sbd')}
+        `}
       </div>
 
 
@@ -3193,6 +3266,69 @@ function openStoryboard(): void {
     ta.addEventListener('paste', () => setTimeout(handleInput, 0));
   });
 
+  // --- Audio source selector (video pages) ---
+  overlay.querySelectorAll('[data-audio-src]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const src = (btn as HTMLElement).getAttribute('data-audio-src') as 'native' | 'upload' | 'ai' | 'silent';
+      const pageIdx = parseInt((btn as HTMLElement).getAttribute('data-audio-src-page') || '0');
+      bookPages[pageIdx].audioSource = src;
+      // Update active states
+      const selectorWrap = (btn as HTMLElement).closest('.sb-audio-source-selector');
+      if (selectorWrap) {
+        selectorWrap.querySelectorAll('.sb-audio-src-btn').forEach(b => b.classList.remove('sb-audio-src-btn--active'));
+        (btn as HTMLElement).classList.add('sb-audio-src-btn--active');
+      }
+      saveDraft();
+    });
+  });
+
+  // --- Storyboard audio upload triggers (simple_upload mode) ---
+  overlay.querySelectorAll('[data-audio-upload-trigger]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = (btn as HTMLElement).getAttribute('data-audio-upload-trigger');
+      const input = overlay.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+      if (input) input.click();
+    });
+  });
+
+  overlay.querySelectorAll('[data-audio-file]').forEach(input => {
+    input.addEventListener('change', async () => {
+      const idx = parseInt((input as HTMLElement).getAttribute('data-audio-file') || '0');
+      const file = (input as HTMLInputElement).files?.[0];
+      if (!file) return;
+      // Use the existing upload handler from attachListenersGlobal context
+      // For now, store file data URL directly for draft
+      const reader = new FileReader();
+      reader.onload = () => {
+        bookPages[idx].audioUrl = reader.result as string;
+        bookPages[idx].audioFileName = file.name;
+        saveDraft();
+        overlay.remove();
+        openStoryboard();
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  overlay.querySelectorAll('[data-audio-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-remove') || '0');
+      bookPages[idx].audioUrl = null;
+      bookPages[idx].audioFileName = null;
+      saveDraft();
+      overlay.remove();
+      openStoryboard();
+    });
+  });
+
+  overlay.querySelectorAll('[data-audio-replace]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = (btn as HTMLElement).getAttribute('data-audio-replace');
+      const input = overlay.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+      if (input) input.click();
+    });
+  });
+
   // --- Drag and Drop reordering ---
   let dragSrcIdx: number | null = null;
   const track = document.getElementById('sb-track');
@@ -3373,6 +3509,7 @@ export function init(): void {
              dialogText: '', dialogAudioUrl: null,
              dialogueLines: storyToEdit.pageDialogue?.[i] || [],
              focalPosition: (storyToEdit.pageFocalPositions?.[i] as 'top' | 'center' | 'bottom') || 'center',
+             audioSource: (storyToEdit.pageAudioSource?.[i] as 'native' | 'upload' | 'ai' | 'silent') || undefined,
            }));
         } else {
            scrollPanels = storyToEdit.panels.map((p, i) => ({
@@ -4403,6 +4540,21 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           bookPages[i].focalPosition = val;
           saveDraft();
           updateView();
+        });
+      });
+
+      // Audio source selector (video pages)
+      wizard.querySelectorAll(`[data-audio-src-page="${i}"]`).forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const src = (btn as HTMLElement).getAttribute('data-audio-src') as 'native' | 'upload' | 'ai' | 'silent';
+          bookPages[i].audioSource = src;
+          const wrap = (btn as HTMLElement).closest('.sb-audio-source-selector');
+          if (wrap) {
+            wrap.querySelectorAll('.sb-audio-src-btn').forEach(b => b.classList.remove('sb-audio-src-btn--active'));
+            (btn as HTMLElement).classList.add('sb-audio-src-btn--active');
+          }
+          saveDraft();
         });
       });
 

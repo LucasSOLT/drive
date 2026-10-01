@@ -6671,6 +6671,40 @@ details[open] > .sb-card__dd-summary::before {
   border-color: var(--color-purple);
 }
 
+/* Audio source selector for video pages */
+.sb-card__audio-source {
+  margin-bottom: var(--space-sm);
+}
+.sb-audio-source-selector {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.sb-audio-src-btn {
+  flex: 1;
+  min-width: 70px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  text-align: center;
+}
+.sb-audio-src-btn:hover {
+  border-color: var(--color-purple);
+  color: var(--color-text);
+}
+.sb-audio-src-btn--active {
+  background: var(--color-purple);
+  border-color: var(--color-purple);
+  color: #fff;
+  font-weight: 600;
+}
+
 /* Drag handle */
 .sb-card__drag-handle {
   display: flex;

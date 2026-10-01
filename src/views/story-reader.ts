@@ -169,13 +169,19 @@ export function render(): string {
         ${story.panels.map((panel: string, i: number) => {
           const isVideo = isVideoMedia(panel) || !!(story.pageVideos && story.pageVideos[i]);
           const mediaUrl = (story.pageVideos && story.pageVideos[i]) || panel;
+          const pageAudioSrc = story.pageAudioSource?.[i];
+          const effectiveAudioMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
+          const hasAudio = effectiveAudioMode !== 'silent' && effectiveAudioMode !== 'native' && (
+            !!story.pageAudio?.[i] ||
+            !!(story.pageDialogue?.[i]?.some((l: any) => !!l.audioUrl))
+          );
           return `
           <div class="reader__panel" data-panel-index="${i}">
             ${isVideo
               ? `<video class="reader__panel-video" src="${mediaUrl}" autoplay loop playsinline webkit-playsinline data-panel-idx="${i}" style="width:100%;height:auto;border-radius:8px;display:block;"></video>`
               : `<img src="${panel}" alt="Panel ${i + 1}" loading="lazy">`
             }
-            ${story.pageAudio?.[i] ? `
+            ${hasAudio ? `
               <button class="reader-audio-btn" data-audio-panel="${i}" type="button" title="Play audio">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               </button>
@@ -190,7 +196,12 @@ export function render(): string {
   } else if (story.format === 'book') {
     const page0Media = (story.pageVideos && story.pageVideos[0]) || (story.panels && story.panels[0]) || '';
     const isVideoPage = isVideoMedia(page0Media) || !!(story.pageVideos && story.pageVideos[0]);
-    const hasAudio = !!story.pageAudio?.[0];
+    const pageAudioSrc = story.pageAudioSource?.[0];
+    const effectiveAudioMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
+    const hasAudio = effectiveAudioMode !== 'silent' && effectiveAudioMode !== 'native' && (
+      !!story.pageAudio?.[0] ||
+      !!(story.pageDialogue?.[0]?.some((l: any) => !!l.audioUrl))
+    );
     const firstPageMedia = isVideoPage
       ? `<video id="book-video" src="${page0Media}" autoplay loop playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"></video>`
       : `<img id="book-img" src="${story.panels?.[0] || ''}" alt="Page 1" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">`;
@@ -517,8 +528,8 @@ export async function init(): Promise<void> {
 
   // ─── Native Video Audio: play once then loop silently ───
   const setupNativeVideoAudio = (videoEl: HTMLVideoElement, pageIdx: number) => {
-    const pageHasSeparateAudio = !!story.pageAudio?.[pageIdx] || !!(story.pageDialogue?.[pageIdx]?.length);
-    const shouldUnmute = !pageHasSeparateAudio;
+    const pageAudioSrc = story.pageAudioSource?.[pageIdx];
+    const shouldUnmute = pageAudioSrc === 'native' || (!pageAudioSrc && !story.pageAudio?.[pageIdx] && !(story.pageDialogue?.[pageIdx]?.length));
 
     if (shouldUnmute) {
       // Remove loop so 'ended' event fires after first play-through
@@ -782,7 +793,12 @@ export async function init(): Promise<void> {
           // Render regular book panel
           const currentMedia = (story.pageVideos && story.pageVideos[currentPage]) || (story.panels && story.panels[currentPage]) || '';
           const isVideo = isVideoMedia(currentMedia) || !!(story.pageVideos && story.pageVideos[currentPage]);
-          const hasAudio = !!story.pageAudio?.[currentPage];
+          const pageAudioSrc = story.pageAudioSource?.[currentPage];
+          const effectiveAudioMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
+          const hasAudio = effectiveAudioMode !== 'silent' && effectiveAudioMode !== 'native' && (
+            !!story.pageAudio?.[currentPage] ||
+            !!(story.pageDialogue?.[currentPage]?.some((l: any) => !!l.audioUrl))
+          );
           const focalPos = story.pageFocalPositions?.[currentPage];
           const objPosStyle = focalPos && focalPos !== 'center' ? `object-position:center ${focalPos};` : '';
           if (isVideo) {
@@ -877,17 +893,26 @@ export async function init(): Promise<void> {
                 audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
                 audioBtn.title = 'Play audio';
               } else {
-                const dialogueLines = story.pageDialogue?.[currentPage];
-                if (dialogueLines && dialogueLines.length > 0) {
-                  const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
-                  const hasDialogueAudio = audioUrls.some((u: any) => !!u);
-                  if (hasDialogueAudio) {
-                    playAudioSequence(audioUrls, (idx) => { (window as any).__activeCaptionLineIdx = idx; }, onAudioFinished);
-                  } else {
+                const pageAudioSrc = story.pageAudioSource?.[currentPage];
+                const effectiveMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
+                
+                if (effectiveMode === 'upload' || effectiveMode === 'native') {
+                  if (story.pageAudio?.[currentPage]) {
                     playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
                   }
-                } else {
-                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
+                } else if (effectiveMode === 'ai') {
+                  const dialogueLines = story.pageDialogue?.[currentPage];
+                  if (dialogueLines && dialogueLines.length > 0) {
+                    const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
+                    const hasDialogueAudio = audioUrls.some((u: any) => !!u);
+                    if (hasDialogueAudio) {
+                      playAudioSequence(audioUrls, (idx) => { (window as any).__activeCaptionLineIdx = idx; }, onAudioFinished);
+                    } else if (story.pageAudio?.[currentPage]) {
+                      playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
+                    }
+                  } else if (story.pageAudio?.[currentPage]) {
+                    playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
+                  }
                 }
                 audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
                 audioBtn.title = 'Pause audio';
@@ -896,17 +921,26 @@ export async function init(): Promise<void> {
 
             // Autoplay if setting is on
             if (getSettings().autoPlay) {
-              const dialogueLines = story.pageDialogue?.[currentPage];
-              if (dialogueLines && dialogueLines.length > 0) {
-                const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
-                const hasDialogueAudio = audioUrls.some((u: any) => !!u);
-                if (hasDialogueAudio) {
-                  playAudioSequence(audioUrls, (idx) => { (window as any).__activeCaptionLineIdx = idx; }, onAudioFinished);
-                } else {
+              const pageAudioSrc = story.pageAudioSource?.[currentPage];
+              const effectiveMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
+              
+              if (effectiveMode === 'upload' || effectiveMode === 'native') {
+                if (story.pageAudio?.[currentPage]) {
                   playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
                 }
-              } else {
-                playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
+              } else if (effectiveMode === 'ai') {
+                const dialogueLines = story.pageDialogue?.[currentPage];
+                if (dialogueLines && dialogueLines.length > 0) {
+                  const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
+                  const hasDialogueAudio = audioUrls.some((u: any) => !!u);
+                  if (hasDialogueAudio) {
+                    playAudioSequence(audioUrls, (idx) => { (window as any).__activeCaptionLineIdx = idx; }, onAudioFinished);
+                  } else if (story.pageAudio?.[currentPage]) {
+                    playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
+                  }
+                } else if (story.pageAudio?.[currentPage]) {
+                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
+                }
               }
               audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
               audioBtn.title = 'Pause audio';
