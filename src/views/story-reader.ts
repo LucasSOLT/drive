@@ -350,7 +350,7 @@ export async function init(): Promise<void> {
   }
 
   if (siblingEpisodes.length > 1) {
-    container.style.paddingBottom = '70px';
+    // Episode nav bar is position:fixed, no padding needed
     
     const navHtml = `
       <div id="episode-nav-bar" style="

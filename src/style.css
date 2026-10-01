@@ -3447,10 +3447,10 @@ button.profile-avatar {
   padding: 0 var(--space-md);
   gap: var(--space-sm);
   z-index: 503;
-  background: rgba(249, 246, 240, 0.88);
+  background: rgba(20, 20, 36, 0.88);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
 }
 .reader__header.hidden {
@@ -3554,8 +3554,11 @@ button.profile-avatar {
 
 /* --- Content area --- */
 .reader__content {
-  min-height: 100vh;
+  height: calc(100dvh);
+  height: calc(100vh);
   padding-top: 60px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* Scroll (vertical continuous) */
@@ -3588,20 +3591,20 @@ button.profile-avatar {
 
 /* Book (slide pages) */
 .reader__book-content {
-  height: calc(100vh - 60px);
   height: calc(100dvh - 60px);
   max-height: calc(100dvh - 60px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   position: relative;
-  padding: 8px 16px;
+  padding: 0 16px 8px;
   box-sizing: border-box;
   overflow: hidden;
+  gap: 4px;
 }
 .reader__page {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
   display: flex;
   align-items: center;
@@ -3613,7 +3616,7 @@ button.profile-avatar {
 .reader__page img,
 .reader__page video {
   max-width: 100%;
-  max-height: calc(100dvh - 140px);
+  max-height: 50dvh;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -3628,6 +3631,19 @@ button.profile-avatar {
   gap: var(--space-sm);
   padding: 4px 0 6px;
   flex-shrink: 0;
+}
+
+/* Captions overlay — fills space between image and dots */
+#reader-captions-overlay {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  text-align: center;
+  scrollbar-width: none;
+}
+#reader-captions-overlay::-webkit-scrollbar {
+  display: none;
 }
 
 /* Halfway Side Navigation Arrows (Left & Right) */
@@ -3671,15 +3687,18 @@ button.profile-avatar {
 
 @media (max-width: 600px) {
   .reader__side-arrow {
-    width: 38px;
-    height: 38px;
-    background: rgba(18, 20, 32, 0.6);
+    width: 34px;
+    height: 34px;
+    background: rgba(18, 20, 32, 0.7);
+    top: auto;
+    bottom: 50px;
+    transform: none;
   }
   .reader__side-arrow--prev {
-    left: 8px;
+    left: 16px;
   }
   .reader__side-arrow--next {
-    right: 8px;
+    right: 16px;
   }
 }
 
