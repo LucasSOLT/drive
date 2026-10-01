@@ -6342,6 +6342,161 @@ button.profile-avatar {
 
 
 /* =============================================
+   IN-EDITOR LIVE STORY PREVIEW MODAL
+   ============================================= */
+.editor-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  box-sizing: border-box;
+  animation: previewFadeIn 0.2s ease-out;
+}
+
+@keyframes previewFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.editor-preview-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 20, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.editor-preview-modal__dialog {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  height: 90dvh;
+  max-height: 800px;
+  background: var(--color-bg, #141424);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+  z-index: 1;
+}
+
+.editor-preview-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 20, 36, 0.95);
+  flex-shrink: 0;
+}
+
+.editor-preview-modal__title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.editor-preview-modal__badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.editor-preview-modal__title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #ffffff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
+
+.editor-preview-modal__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-preview-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 2px 6px;
+}
+
+.editor-preview-nav__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary, #EDE9F6);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+
+.editor-preview-nav__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.editor-preview-nav__page-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary, #EDE9F6);
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.editor-preview-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: var(--color-text-muted, #938BA7);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.editor-preview-modal__close:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.editor-preview-modal__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg, #141424);
+}
+
+/* =============================================
    STORYBOARD — Full-width Desktop Overlay
    ============================================= */
 .storyboard-overlay {

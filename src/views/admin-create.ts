@@ -10,6 +10,7 @@ import { uploadMedia } from '../lib/storage.ts';
 import { uploadAudioData } from '../lib/storage.ts';
 import { VOICE_OPTIONS } from '../lib/settings.ts';
 import { addUserStory } from '../state.ts';
+import { renderStoryPagePreview } from '../lib/story-preview.ts';
 
 type CreatePhase = 'canvas' | 'details';
 
@@ -2843,6 +2844,106 @@ function showDraftSavedToast(message: string = 'Draft saved successfully'): void
   }, 2600);
 }
 
+function openInEditorPreview(initialPageIdx: number = 0): void {
+  getFormData();
+  const story = buildStory('draft');
+  const total = Math.max(1, story.panels?.length || bookPages.length || 1);
+  let previewPageIdx = Math.max(0, Math.min(initialPageIdx, total - 1));
+  let activePreviewInstance: { destroy: () => void } | null = null;
+
+  document.getElementById('editor-preview-modal')?.remove();
+
+  const modalEl = document.createElement('div');
+  modalEl.className = 'editor-preview-modal';
+  modalEl.id = 'editor-preview-modal';
+  modalEl.innerHTML = `
+    <div class="editor-preview-modal__backdrop"></div>
+    <div class="editor-preview-modal__dialog">
+      <div class="editor-preview-modal__header">
+        <div class="editor-preview-modal__title-wrap">
+          <span class="editor-preview-modal__badge">LIVE PREVIEW</span>
+          <span class="editor-preview-modal__title">${escapeHtml(story.title || 'Untitled Story')}</span>
+        </div>
+        <div class="editor-preview-modal__header-actions">
+          <div class="editor-preview-nav">
+            <button type="button" class="editor-preview-nav__btn" id="preview-prev-btn" title="Previous page">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <span class="editor-preview-nav__page-label" id="preview-page-indicator">Page ${previewPageIdx + 1} of ${total}</span>
+            <button type="button" class="editor-preview-nav__btn" id="preview-next-btn" title="Next page">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 6 15 12 9 18"/></svg>
+            </button>
+          </div>
+          <button type="button" class="editor-preview-modal__close" id="preview-modal-close" title="Close preview">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="editor-preview-modal__body" id="editor-preview-body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+  document.body.style.overflow = 'hidden';
+
+  const renderCurrentPage = () => {
+    if (activePreviewInstance) {
+      activePreviewInstance.destroy();
+      activePreviewInstance = null;
+    }
+    const bodyEl = modalEl.querySelector('#editor-preview-body') as HTMLElement;
+    if (!bodyEl) return;
+
+    activePreviewInstance = renderStoryPagePreview({
+      container: bodyEl,
+      story,
+      pageIdx: previewPageIdx,
+    });
+
+    const indicator = modalEl.querySelector('#preview-page-indicator');
+    if (indicator) indicator.textContent = `Page ${previewPageIdx + 1} of ${total}`;
+
+    const prevBtn = modalEl.querySelector('#preview-prev-btn') as HTMLButtonElement | null;
+    const nextBtn = modalEl.querySelector('#preview-next-btn') as HTMLButtonElement | null;
+    if (prevBtn) {
+      prevBtn.disabled = previewPageIdx === 0;
+      prevBtn.style.opacity = previewPageIdx === 0 ? '0.3' : '1';
+    }
+    if (nextBtn) {
+      nextBtn.disabled = previewPageIdx >= total - 1;
+      nextBtn.style.opacity = previewPageIdx >= total - 1 ? '0.3' : '1';
+    }
+  };
+
+  const closeModal = () => {
+    if (activePreviewInstance) {
+      activePreviewInstance.destroy();
+      activePreviewInstance = null;
+    }
+    modalEl.remove();
+    document.body.style.overflow = '';
+  };
+
+  modalEl.querySelector('#preview-modal-close')?.addEventListener('click', closeModal);
+  modalEl.querySelector('.editor-preview-modal__backdrop')?.addEventListener('click', closeModal);
+
+  modalEl.querySelector('#preview-prev-btn')?.addEventListener('click', () => {
+    if (previewPageIdx > 0) {
+      previewPageIdx--;
+      renderCurrentPage();
+    }
+  });
+
+  modalEl.querySelector('#preview-next-btn')?.addEventListener('click', () => {
+    if (previewPageIdx < total - 1) {
+      previewPageIdx++;
+      renderCurrentPage();
+    }
+  });
+
+  renderCurrentPage();
+}
+
 function openStoryboard(): void {
   if (!isDesktopScreen()) {
     showDesktopRequiredModal();
@@ -2997,6 +3098,9 @@ function openStoryboard(): void {
         <button class="sb-topbar__btn-action" id="sb-save-draft" type="button" title="Save story draft">
           💾 Save Draft
         </button>
+        <button class="sb-topbar__btn-action" id="sb-preview-story" type="button" title="Preview story as a reader">
+          👁️ Preview
+        </button>
 
         <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
         ${!isDesktopScreen() ? `
@@ -3121,6 +3225,10 @@ function openStoryboard(): void {
     overlay.remove();
     getFormData();
     openStorySettings();
+  });
+
+  document.getElementById('sb-preview-story')?.addEventListener('click', () => {
+    openInEditorPreview(0);
   });
 
   document.getElementById('sb-save-draft')?.addEventListener('click', async () => {
@@ -4494,26 +4602,9 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         }
       };
       document.getElementById('btn-dd-storyboard')?.addEventListener('click', handleOpenStoryboard);
-      document.getElementById('btn-dd-preview')?.addEventListener('click', async () => {
+      document.getElementById('btn-dd-preview')?.addEventListener('click', () => {
         if (dropdown) dropdown.style.display = 'none';
-        getFormData();
-        saveDraft();
-        try {
-          await preUploadBase64Images();
-        } catch (e) { console.warn('Pre-upload images failed, continuing:', e); }
-        const story = buildStory('draft');
-        const storyId = editStoryId || story.id;
-        // Register story in memory so the reader can find it even if cloud save fails
-        registerStory(story);
-        // Try to save to cloud (best-effort — don't block preview)
-        try {
-          await saveStoryForMode(story);
-        } catch (err) {
-          console.warn('Cloud save failed during preview (story still viewable from memory):', err);
-        }
-        if (storyId) {
-          navigate('story/' + storyId);
-        }
+        openInEditorPreview(currentPage);
       });
       // Arrow navigation
       document.getElementById('btn-book-prev')?.addEventListener('click', () => {
