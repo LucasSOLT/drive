@@ -8,6 +8,7 @@ import {
   isBookmarked, toggleBookmark
 } from '../state.ts';
 import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAudio, seekAudio, formatTime, getCurrentAlignment, setWordHighlightCallback } from '../lib/tts.ts';
+import { KaraokeController, type WordTimestamp } from '../lib/karaoke.ts';
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { getSoloEpisodeCount, getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
@@ -307,6 +308,8 @@ export function render(): string {
 
 export async function init(): Promise<void> {
   let captionsOpen = true;
+  let activeKaraokeCtrl: KaraokeController | null = null;
+  let updateScrubberDisplay: (current: number, duration: number) => void = () => {};
   const container = document.getElementById('reader-container');
   if (!container) return;
 
@@ -755,6 +758,10 @@ export async function init(): Promise<void> {
             });
           }
         } else {
+          if (activeKaraokeCtrl) {
+            activeKaraokeCtrl.destroy();
+            activeKaraokeCtrl = null;
+          }
           // Render regular book panel
           const currentMedia = (story.pageVideos && story.pageVideos[currentPage]) || (story.panels && story.panels[currentPage]) || '';
           const isVideo = isVideoMedia(currentMedia) || !!(story.pageVideos && story.pageVideos[currentPage]);
@@ -794,7 +801,7 @@ export async function init(): Promise<void> {
             `;
             pageContainer.appendChild(scrubberPill);
 
-            const updateScrubberDisplay = (current: number, duration: number) => {
+            updateScrubberDisplay = (current: number, duration: number) => {
               const slider = document.getElementById('reader-audio-slider') as HTMLInputElement | null;
               const curEl = document.getElementById('reader-time-current');
               const durEl = document.getElementById('reader-time-duration');
@@ -853,62 +860,12 @@ export async function init(): Promise<void> {
 
             audioBtn.addEventListener('click', (e) => {
               e.stopPropagation();
-              if (isSpeaking()) {
-                stopSpeaking();
-                audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-                audioBtn.title = 'Play audio';
-              } else {
-                const pageAudioSrc = story.pageAudioSource?.[currentPage];
-                const effectiveMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
-                
-                if (effectiveMode === 'upload' || effectiveMode === 'native') {
-                  if (story.pageAudio?.[currentPage]) {
-                    playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
-                  }
-                } else if (effectiveMode === 'ai') {
-                  const dialogueLines = story.pageDialogue?.[currentPage];
-                  if (dialogueLines && dialogueLines.length > 0) {
-                    const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
-                    const hasDialogueAudio = audioUrls.some((u: any) => !!u);
-                    if (hasDialogueAudio) {
-                      playAudioSequence(audioUrls, (idx) => { (window as any).__activeCaptionLineIdx = idx; }, onAudioFinished);
-                    } else if (story.pageAudio?.[currentPage]) {
-                      playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
-                    }
-                  } else if (story.pageAudio?.[currentPage]) {
-                    playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
-                  }
-                }
-                audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
-                audioBtn.title = 'Pause audio';
-              }
+              playAudioForPage(currentPage);
             });
 
             // Autoplay if setting is on
             if (getSettings().autoPlay) {
-              const pageAudioSrc = story.pageAudioSource?.[currentPage];
-              const effectiveMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
-              
-              if (effectiveMode === 'upload' || effectiveMode === 'native') {
-                if (story.pageAudio?.[currentPage]) {
-                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
-                }
-              } else if (effectiveMode === 'ai') {
-                const dialogueLines = story.pageDialogue?.[currentPage];
-                if (dialogueLines && dialogueLines.length > 0) {
-                  const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
-                  const hasDialogueAudio = audioUrls.some((u: any) => !!u);
-                  if (hasDialogueAudio) {
-                    playAudioSequence(audioUrls, (idx) => { (window as any).__activeCaptionLineIdx = idx; }, onAudioFinished);
-                  } else if (story.pageAudio?.[currentPage]) {
-                    playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
-                  }
-                } else if (story.pageAudio?.[currentPage]) {
-                  playAudioUrl(story.pageAudio![currentPage], onAudioFinished, updateScrubberDisplay);
-                }
-              }
-              audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
-              audioBtn.title = 'Pause audio';
+              playAudioForPage(currentPage);
             }
           }
 
@@ -935,17 +892,27 @@ export async function init(): Promise<void> {
       }
     };
 
+    const stopAudioAndAdvance = (action: () => void) => {
+      if (activeKaraokeCtrl) {
+        activeKaraokeCtrl.destroy();
+        activeKaraokeCtrl = null;
+      }
+      stopSpeaking();
+      action();
+      updatePage();
+      if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
+    };
+
     document.getElementById('book-prev')?.addEventListener('click', () => {
-      if (currentPage > 0) { stopSpeaking(); currentPage--; updatePage(); if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage); }
+      if (currentPage > 0) {
+        stopAudioAndAdvance(() => { currentPage--; });
+      }
     });
     document.getElementById('book-next')?.addEventListener('click', () => {
       if (currentPage < totalPages - 1) {
-        stopSpeaking();
-        currentPage++;
-        updatePage();
-        if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
+        stopAudioAndAdvance(() => { currentPage++; });
       } else {
-        // Reached end — trigger appropriate action
+        if (activeKaraokeCtrl) { activeKaraokeCtrl.destroy(); activeKaraokeCtrl = null; }
         stopSpeaking();
         if (isGateEpisode) {
           openSquadGateModal({
@@ -966,15 +933,14 @@ export async function init(): Promise<void> {
       }
     });
 
-
     // Dot click navigation
     dotsContainer?.addEventListener('click', (e) => {
       const dot = (e.target as HTMLElement).closest('.reader__dot') as HTMLElement;
       if (dot) {
-        stopSpeaking();
-        currentPage = parseInt(dot.dataset.page || '0', 10);
-        updatePage();
-        if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
+        const targetPage = parseInt(dot.dataset.page || '0', 10);
+        if (targetPage !== currentPage) {
+          stopAudioAndAdvance(() => { currentPage = targetPage; });
+        }
       }
     });
 
@@ -1110,10 +1076,132 @@ export async function init(): Promise<void> {
     }
   });
 
-  function wrapWordsInSpans(text: string, lineIdx: number): string {
-    return text.split(/\s+/).map((word, i) => 
-      `<span class="cc-word" data-line-idx="${lineIdx}" data-word-idx="${i}">${word}</span>`
-    ).join(' ');
+  function escapeHtml(str: string): string {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function updateAllPlayButtons(playing: boolean) {
+    const audioBtn = document.getElementById('reader-audio-toggle');
+    if (audioBtn) {
+      audioBtn.innerHTML = playing 
+        ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+        : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+      audioBtn.title = playing ? 'Pause audio' : 'Play audio';
+    }
+    const textPlayIcon = document.getElementById('reader-text-play-icon');
+    const textPlayLabel = document.getElementById('reader-text-play-label');
+    if (textPlayIcon) {
+      textPlayIcon.innerHTML = playing
+        ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+        : `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+    }
+    if (textPlayLabel) {
+      textPlayLabel.textContent = playing ? 'Pause' : 'Play';
+    }
+  }
+
+  function playAudioForPage(pageIdx: number, startWordIdx?: number) {
+    const s = story || getStoryById(storyId);
+    if (!s) return;
+    const pageAudioUrl = s.pageAudio?.[pageIdx];
+    const dialogueLines = s.pageDialogue?.[pageIdx] || [];
+    const scriptText = s.pageScripts?.[pageIdx] || '';
+
+    // If karaoke controller is already active on this page:
+    if (activeKaraokeCtrl) {
+      if (typeof startWordIdx === 'number') {
+        activeKaraokeCtrl.seekToWord(startWordIdx);
+        updateAllPlayButtons(true);
+        return;
+      }
+      if (activeKaraokeCtrl.paused) {
+        activeKaraokeCtrl.resume();
+        updateAllPlayButtons(true);
+      } else {
+        activeKaraokeCtrl.pause();
+        updateAllPlayButtons(false);
+      }
+      return;
+    }
+
+    // Determine audio URL
+    let audioUrlToPlay: string | undefined = pageAudioUrl || undefined;
+    if (!audioUrlToPlay && dialogueLines.length > 0) {
+      const lineWithAudio = dialogueLines.find((l: any) => !!l.audioUrl);
+      if (lineWithAudio && lineWithAudio.audioUrl) audioUrlToPlay = lineWithAudio.audioUrl;
+    }
+
+    if (audioUrlToPlay) {
+      stopSpeaking();
+
+      // Build word map
+      let wordMap: WordTimestamp[] = [];
+      const hasAlignments = dialogueLines.some((l: any) => !!l.alignment);
+      if (hasAlignments) {
+        wordMap = KaraokeController.buildMultiLineWordMap(dialogueLines);
+      } else {
+        const allText = dialogueLines.length > 0
+          ? dialogueLines.map((l: any) => l.text).join(' ')
+          : scriptText;
+        const words = allText.split(/\s+/).filter(Boolean);
+        const estSecPerWord = 0.35;
+        wordMap = words.map((_, i) => ({
+          wordIdx: i,
+          lineIdx: 0,
+          startTime: i * estSecPerWord,
+          endTime: (i + 1) * estSecPerWord,
+        }));
+      }
+
+      activeKaraokeCtrl = new KaraokeController(audioUrlToPlay, wordMap, {
+        onWordChange: (wordIdx) => {
+          const overlay = document.getElementById('reader-captions-overlay');
+          if (!overlay) return;
+          const activeSpans = overlay.querySelectorAll('.cc-word--active');
+          activeSpans.forEach(span => span.classList.remove('cc-word--active'));
+          if (wordIdx >= 0) {
+            const target = overlay.querySelector(`.cc-word[data-word-idx="${wordIdx}"]`) as HTMLElement;
+            if (target) {
+              target.classList.add('cc-word--active');
+              const color = target.getAttribute('data-highlight-color') || s.narratorHighlightColor || '#7C6FFA';
+              target.style.setProperty('--word-active-color', color);
+              target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+            }
+          }
+        },
+        onFinish: () => {
+          updateAllPlayButtons(false);
+          if (getSettings().autoAdvance && currentPage < s.panels.length - 1) {
+            setTimeout(() => {
+              document.getElementById('book-next')?.click();
+            }, 650);
+          }
+        },
+        onTimeUpdate: (cur, dur) => {
+          updateScrubberDisplay(cur, dur);
+        }
+      });
+
+      if (typeof startWordIdx === 'number') {
+        activeKaraokeCtrl.seekToWord(startWordIdx);
+      } else {
+        activeKaraokeCtrl.play();
+      }
+      updateAllPlayButtons(true);
+    } else {
+      // Fallback: sequence audio if separate line URLs exist
+      const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
+      if (audioUrls.some((u: any) => !!u)) {
+        stopSpeaking();
+        playAudioSequence(audioUrls, (idx) => {
+          (window as any).__activeCaptionLineIdx = idx;
+        }, () => {
+          updateAllPlayButtons(false);
+        });
+        updateAllPlayButtons(true);
+      }
+    }
   }
 
   function renderCaptionsOverlay(story: any, pageIdx: number) {
@@ -1123,32 +1211,77 @@ export async function init(): Promise<void> {
 
     const dialogueLines = story.pageDialogue?.[pageIdx] || [];
     const scriptText = story.pageScripts?.[pageIdx] || '';
+    const narratorColor = story.narratorHighlightColor || '#7C6FFA';
 
     let content = '';
+    let globalWordIdx = 0;
+
+    const wrapWords = (text: string, lineIdx: number, highlightColor: string) => {
+      const words = text.split(/\s+/).filter(Boolean);
+      return words.map(word => {
+        const idx = globalWordIdx++;
+        return `<span class="cc-word" data-line-idx="${lineIdx}" data-word-idx="${idx}" data-highlight-color="${highlightColor}">${escapeHtml(word)}</span>`;
+      }).join(' ');
+    };
+
     if (dialogueLines.length > 0) {
       content = dialogueLines.map((line: any, idx: number) => {
-        const isNarrator = line.characterId === 'narrator';
-        const name = isNarrator ? 'Narrator' : (line.characterName || 'Speaker');
-        const nameColor = isNarrator ? '#34D399' : '#60a5fa';
-        return `
-          <div style="margin-bottom:8px;">
-            <span style="font-size:0.7rem; font-weight:700; color:${nameColor}; text-transform:uppercase; letter-spacing:0.5px;">${name}</span>
-            <div class="cc-caption-text" style="font-size:0.88rem; color:#e2e8f0; line-height:1.55; margin-top:2px;">${wrapWordsInSpans(line.text, idx)}</div>
-          </div>
-        `;
+        const isNarrator = line.characterId === 'narrator' || !line.characterId || /^narrator$/i.test(line.characterName || '') || (line.characterName && line.characterName.toLowerCase().includes('narrator'));
+        const matchedChar = isNarrator ? null : (story.characters || []).find((c: any) => c.id === line.characterId || c.name?.toLowerCase() === line.characterName?.toLowerCase());
+        const charColor = isNarrator ? narratorColor : (matchedChar?.color || '#3b82f6');
+        const wordsHtml = wrapWords(line.text, idx, charColor);
+
+        if (isNarrator) {
+          return `
+            <div class="reader-dialogue-row reader-dialogue-row--narrator" data-line-idx="${idx}">
+              <div class="reader-dialogue-text">${wordsHtml}</div>
+            </div>
+          `;
+        } else {
+          return `
+            <div class="reader-dialogue-row" data-line-idx="${idx}">
+              <div class="reader-dialogue-speaker" style="color:${charColor};" title="${escapeHtml(line.characterName)}">${escapeHtml(line.characterName)}:</div>
+              <div class="reader-dialogue-text">${wordsHtml}</div>
+            </div>
+          `;
+        }
       }).join('');
     } else if (scriptText) {
-      content = `<div class="cc-caption-text" style="font-size:0.88rem; color:#e2e8f0; line-height:1.55;">${wrapWordsInSpans(scriptText, 0)}</div>`;
+      const wordsHtml = wrapWords(scriptText, 0, narratorColor);
+      content = `
+        <div class="reader-dialogue-row reader-dialogue-row--narrator" data-line-idx="0">
+          <div class="reader-dialogue-text">${wordsHtml}</div>
+        </div>
+      `;
     }
 
     if (!content) return;
 
     const overlay = document.createElement('div');
     overlay.id = 'reader-captions-overlay';
-    overlay.style.cssText = 'padding: 12px 20px 16px; max-width: 600px; margin: 0 auto;';
-    overlay.innerHTML = content;
+    overlay.innerHTML = `
+      <div class="reader-text-controls">
+        <div class="reader-text-controls__tag">
+          <span class="reader-text-dot"></span>
+          <span class="reader-text-tag-label">Story Text</span>
+        </div>
+        <div class="reader-text-controls__actions">
+          <button type="button" class="reader-text-ctrl-btn" id="reader-text-restart" title="Restart page audio">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            <span>Restart</span>
+          </button>
+          <button type="button" class="reader-text-ctrl-btn reader-text-ctrl-btn--primary" id="reader-text-play" title="Play / Pause">
+            <span id="reader-text-play-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+            <span id="reader-text-play-label">Play</span>
+          </button>
+        </div>
+      </div>
+      <div class="reader-dialogue-body" id="reader-dialogue-body">
+        ${content}
+      </div>
+    `;
 
-    // Insert below the page image inside .reader__book-content
+    // Insert below page media inside .reader__book-content
     const bookContent = document.querySelector('.reader__book-content');
     const pageNav = document.querySelector('.reader__page-nav');
     if (bookContent && pageNav) {
@@ -1156,26 +1289,39 @@ export async function init(): Promise<void> {
     } else if (bookContent) {
       bookContent.appendChild(overlay);
     } else {
-      // Fallback: append to reader content
       const readerContent = document.getElementById('reader-content');
       if (readerContent) readerContent.appendChild(overlay);
     }
 
-    setWordHighlightCallback((charIndex: number) => {
-      const alignment = getCurrentAlignment();
-      if (!alignment) return;
-      let wordIdx = 0;
-      for (let i = 0; i < charIndex; i++) {
-        if (alignment.characters[i] === ' ') wordIdx++;
-      }
-      
-      const activeSpans = overlay.querySelectorAll('.cc-word--active');
-      activeSpans.forEach(span => span.classList.remove('cc-word--active'));
-      const targetSpan = overlay.querySelector(`.cc-word[data-line-idx="${(window as any).__activeCaptionLineIdx || 0}"][data-word-idx="${wordIdx}"]`);
-      if (targetSpan) {
-        targetSpan.classList.add('cc-word--active');
+    // Controls wiring
+    overlay.querySelector('#reader-text-play')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      playAudioForPage(pageIdx);
+    });
+
+    overlay.querySelector('#reader-text-restart')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (activeKaraokeCtrl) {
+        activeKaraokeCtrl.restart();
+        updateAllPlayButtons(true);
+      } else {
+        playAudioForPage(pageIdx, 0);
       }
     });
+
+    // Click on any word to seek and play
+    overlay.querySelectorAll('.cc-word').forEach(wordEl => {
+      wordEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wIdx = parseInt((wordEl as HTMLElement).getAttribute('data-word-idx') || '0');
+        playAudioForPage(pageIdx, wIdx);
+      });
+    });
+
+    // Update play button state if audio is already active
+    if (activeKaraokeCtrl && !activeKaraokeCtrl.paused) {
+      updateAllPlayButtons(true);
+    }
   }
 }
 

@@ -20,6 +20,8 @@ export interface DialogueLine {
   characterName: string;
   text: string;
   audioUrl?: string | null;
+  alignment?: any;
+  duration?: number;
 }
 
 export interface Story {
@@ -48,6 +50,7 @@ export interface Story {
   pageDialogue?: Record<number, DialogueLine[]>;
   audioMode?: StoryAudioMode;
   narratorVoiceId?: string;
+  narratorHighlightColor?: string;
   bgmUrl?: string;
   bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
@@ -90,6 +93,7 @@ export interface UserStory {
   page_dialogue?: Record<number, DialogueLine[]>;
   audioMode?: StoryAudioMode;
   narratorVoiceId?: string;
+  narratorHighlightColor?: string;
   bgmUrl?: string;
   bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'

@@ -133,7 +133,7 @@ export class KaraokeController {
    * own audio and alignment data. Offsets audio times by cumulative duration.
    */
   static buildMultiLineWordMap(
-    lines: { text: string; alignment: any; duration: number }[],
+    lines: { text: string; alignment?: any; duration?: number }[],
   ): WordTimestamp[] {
     const allWords: WordTimestamp[] = [];
     let timeOffset = 0;
@@ -141,7 +141,7 @@ export class KaraokeController {
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const line = lines[lineIdx];
-      if (!line.alignment) { timeOffset += line.duration; continue; }
+      if (!line.alignment) { timeOffset += (line.duration || 0); continue; }
 
       const lineWords = KaraokeController.buildWordMap(line.text, line.alignment, lineIdx);
       for (const w of lineWords) {
@@ -152,7 +152,7 @@ export class KaraokeController {
           endTime: w.endTime + timeOffset,
         });
       }
-      timeOffset += line.duration;
+      timeOffset += (line.duration || 0);
     }
 
     return allWords;

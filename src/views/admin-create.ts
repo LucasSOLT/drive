@@ -2,7 +2,7 @@ import type { StoryFormat, Genre, Story, UserStory, StoryCharacter, DialogueLine
 import { genres, registerStory } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { stopSpeaking, isSpeaking, preRecordAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, preRecordAudio, preRecordPageAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
 
 import { saveOfficialStory, fetchOfficialStories, updateSharedStorySettings } from '../lib/db.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
@@ -199,6 +199,7 @@ let episodeNumber: number = 1;                  // Which episode number in the g
 let episodeParentTitle: string | null = null;    // Parent story title for context display
 let storyAudioMode: StoryAudioMode = 'make_audio';
 let storyNarratorVoiceId: string = '21m00Tcm4TlvDq8ikWAM'; // Rachel (default narrator)
+let storyNarratorHighlightColor: string = '#7C6FFA'; // Default narrator highlight accent
 let storyBgmUrl: string = '';
 let storyBgmVolume: number = 0.25;
 let updateView: () => void;
@@ -535,6 +536,7 @@ function buildStory(status: 'draft' | 'live'): Story {
     pageDialogue: Object.keys(pageDialogue).length > 0 ? pageDialogue : undefined,
     audioMode: storyAudioMode,
     narratorVoiceId: storyNarratorVoiceId,
+    narratorHighlightColor: storyNarratorHighlightColor,
     bgmUrl: storyBgmUrl || undefined,
     bgmVolume: storyBgmVolume,
     pageFocalPositions: Object.keys(pageFocalPositions).length > 0 ? pageFocalPositions : undefined,
@@ -781,6 +783,13 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
                   ${renderGroupedVoiceOptions(storyNarratorVoiceId)}
                 </select>
                 <button type="button" id="ss-narrator-audition" class="ss-char-audition-btn" style="white-space:nowrap;">🔊 Audition</button>
+              </div>
+              <div style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
+                <span style="font-size:0.75rem; color:var(--color-text-secondary); font-weight:600;">Text Highlight Color:</span>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <input type="color" id="ss-narrator-color-input" value="${storyNarratorHighlightColor || '#7C6FFA'}" style="width:28px; height:28px; padding:0; border:none; border-radius:6px; cursor:pointer; background:none;">
+                  <span style="font-size:0.72rem; color:var(--color-text-muted);">Default: #7C6FFA</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1080,6 +1089,10 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
   // ── Narrator Voice ──
   document.getElementById('ss-narrator-voice')?.addEventListener('change', (e) => {
     storyNarratorVoiceId = (e.target as HTMLSelectElement).value;
+    saveDraft();
+  });
+  document.getElementById('ss-narrator-color-input')?.addEventListener('input', (e) => {
+    storyNarratorHighlightColor = (e.target as HTMLInputElement).value;
     saveDraft();
   });
   document.getElementById('ss-narrator-audition')?.addEventListener('click', async () => {
@@ -2333,34 +2346,77 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
     });
   });
 
-  // Batch pre-record all lines on page
+  // Batch pre-record all lines on page with timestamp alignment
   container.querySelectorAll(`[data-${prefix}-batch-rec]`).forEach(btn => {
     btn.addEventListener('click', async () => {
       const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-batch-rec`) || '0');
-      const lines = bookPages[pageIdx].dialogueLines || [];
-      if (lines.length === 0) return;
+      const page = bookPages[pageIdx];
+      let lines = page.dialogueLines || [];
+
+      // Auto-extract lines if dialogue lines array is empty but page text exists
+      if (lines.length === 0 && page.text && page.text.trim()) {
+        page.dialogueLines = parseScreenplayToDialogueLines(page.text);
+        lines = page.dialogueLines;
+      }
+      if (lines.length === 0) {
+        alert('Please write some story text or dialogue on this page before recording.');
+        return;
+      }
+
+      // Check for existing voice-over/audio and ask for confirmation
+      const hasExistingAudio = !!page.audioUrl || lines.some(l => !!l.audioUrl);
+      if (hasExistingAudio) {
+        const confirmed = window.confirm(
+          'This page already has recorded audio attached. Do you want to overwrite it with a new AI voice-over?'
+        );
+        if (!confirmed) return;
+      }
+
       const b = btn as HTMLButtonElement;
       b.disabled = true;
       b.classList.add('sb-dialog-batch-btn--recording');
-      for (let li = 0; li < lines.length; li++) {
-        const line = lines[li];
-        if (!line.text.trim()) continue;
-        b.textContent = `🎙️ Recording line ${li + 1} of ${lines.length} (${line.characterName})...`;
-        const isNarrator = line.characterId === 'narrator';
-        const ch = isNarrator ? null : storyCharacters.find(c => c.id === line.characterId);
-        const voiceId = isNarrator ? storyNarratorVoiceId : ch?.voiceId;
+
+      try {
+        const result = await preRecordPageAudio(
+          lines,
+          storyNarratorVoiceId,
+          storyCharacters,
+          (current, total) => {
+            b.textContent = `🎙️ Pre-recording ${current}/${total}...`;
+          }
+        );
+
+        // Store timestamps and alignments on each line
+        result.segments.forEach(seg => {
+          if (lines[seg.lineIdx]) {
+            lines[seg.lineIdx].alignment = seg.alignment;
+            lines[seg.lineIdx].duration = seg.duration;
+          }
+        });
+
+        // Upload combined audio file to Supabase storage
+        let finalAudioUrl = result.audioUrl;
         try {
-          const audioData = await preRecordAudio(line.text, 0.5, voiceId);
           const storyId = editStoryId || activeDraftId || 'draft';
-          line.audioUrl = await uploadAudioData(audioData, storyId, line.id);
-        } catch (err: any) {
-          console.warn(`[Batch] Failed line ${li}:`, err);
+          finalAudioUrl = await uploadAudioData(result.audioUrl, storyId, `page_${pageIdx}_audio`);
+        } catch (uploadErr) {
+          console.warn('[PreRecord] Storage upload fallback to data URL:', uploadErr);
         }
+
+        page.audioUrl = finalAudioUrl;
+        page.dialogAudioUrl = finalAudioUrl;
+        saveDraft();
+
+        b.textContent = `✅ Pre-Recorded!`;
+        setTimeout(() => refreshView(), 1200);
+      } catch (err: any) {
+        console.error('[PreRecord] Failed:', err);
+        alert('Pre-record failed: ' + (err.message || err));
+        b.textContent = `❌ Failed - Try Again`;
+        b.disabled = false;
+      } finally {
+        b.classList.remove('sb-dialog-batch-btn--recording');
       }
-      b.textContent = `✅ All ${lines.length} lines recorded!`;
-      b.classList.remove('sb-dialog-batch-btn--recording');
-      saveDraft();
-      setTimeout(() => refreshView(), 1500);
     });
   });
 
