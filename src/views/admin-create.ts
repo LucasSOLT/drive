@@ -2,7 +2,7 @@ import type { StoryFormat, Genre, Story, UserStory, StoryCharacter, DialogueLine
 import { genres, registerStory } from '../data/stories.ts';
 import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { stopSpeaking, isSpeaking, preRecordAudio, preRecordPageAudio, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, preRecordAudio, preRecordPageAudio, batchPreRecordStory, type BatchPreRecordPage, type BatchPreRecordSummary, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
 
 import { saveOfficialStory, fetchOfficialStories, updateSharedStorySettings } from '../lib/db.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
@@ -1710,6 +1710,10 @@ function renderCanvasToolbar(formatLabel: string): string {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Preview Story
             </button>
+            <button class="canvas-toolbar__dd-item" id="btn-dd-batch-prerecord">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+              Pre-Record All Audio
+            </button>
           ` : `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -2944,6 +2948,302 @@ function openInEditorPreview(initialPageIdx: number = 0): void {
   renderCurrentPage();
 }
 
+function openBatchPreRecordModal(): void {
+  getFormData();
+
+  // Prepare pages for batch pre-recording
+  const batchPages: BatchPreRecordPage[] = [];
+  bookPages.forEach((page, idx) => {
+    let lines = page.dialogueLines || [];
+    if (lines.length === 0 && page.text && page.text.trim()) {
+      page.dialogueLines = parseScreenplayToDialogueLines(page.text);
+      lines = page.dialogueLines;
+    }
+    const recordableLines = (lines || []).filter(l => l.text && l.text.trim());
+    const hasAudio = !!page.audioUrl || !!page.dialogAudioUrl || (page.dialogueLines || []).some(l => !!l.audioUrl);
+
+    if (recordableLines.length > 0) {
+      batchPages.push({
+        dialogueLines: recordableLines,
+        hasExistingAudio: hasAudio,
+        pageIndex: idx,
+      });
+    }
+  });
+
+  if (batchPages.length === 0) {
+    showModal({
+      title: 'No Dialogue Found',
+      content: '<p>Please write some story text or dialogue on your pages before batch pre-recording.</p>',
+      confirmText: 'OK',
+      onConfirm: () => {}
+    });
+    return;
+  }
+
+  const existingCount = batchPages.filter(p => p.hasExistingAudio).length;
+
+  document.getElementById('batch-prerecord-modal')?.remove();
+
+  const modalEl = document.createElement('div');
+  modalEl.className = 'batch-prerecord-modal';
+  modalEl.id = 'batch-prerecord-modal';
+
+  let abortController: AbortController | null = null;
+
+  const closeModal = () => {
+    if (abortController) {
+      abortController.abort();
+    }
+    modalEl.remove();
+    document.body.style.overflow = '';
+  };
+
+  const refreshCurrentEditorView = () => {
+    if (activeEditorMode === 'storyboard') {
+      openStoryboard();
+    } else if (typeof updateView === 'function') {
+      updateView();
+    }
+  };
+
+  const renderInitialState = () => {
+    modalEl.innerHTML = `
+      <div class="batch-prerecord-modal__backdrop"></div>
+      <div class="batch-prerecord-modal__dialog">
+        <div class="batch-prerecord-modal__header">
+          <div class="batch-prerecord-modal__title-wrap">
+            <span class="batch-prerecord-modal__badge">AI VOICES</span>
+            <span class="batch-prerecord-modal__title">Pre-Record Entire Story</span>
+          </div>
+          <button type="button" class="batch-prerecord-modal__close" id="batch-prerecord-close" title="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div class="batch-prerecord-modal__body">
+          <div class="batch-prerecord-info-card">
+            <div class="batch-prerecord-stat">
+              <span class="batch-prerecord-stat__num">${batchPages.length}</span>
+              <span class="batch-prerecord-stat__label">Pages to Voice</span>
+            </div>
+            <div class="batch-prerecord-stat-divider"></div>
+            <div class="batch-prerecord-stat">
+              <span class="batch-prerecord-stat__num">${existingCount}</span>
+              <span class="batch-prerecord-stat__label">Already Voiced</span>
+            </div>
+          </div>
+
+          <p class="batch-prerecord-desc">
+            Synthesizes all character and narrator dialogue with ElevenLabs AI and attaches word-level timestamps for synchronized karaoke highlighting.
+          </p>
+
+          ${existingCount > 0 ? `
+            <label class="batch-prerecord-opt">
+              <input type="checkbox" id="batch-prerecord-skip-existing" checked>
+              <span>Skip ${existingCount} page${existingCount === 1 ? '' : 's'} that already have recorded audio</span>
+            </label>
+          ` : ''}
+
+          <div class="batch-prerecord-actions">
+            <button type="button" class="btn btn--secondary" id="batch-prerecord-cancel-btn">Cancel</button>
+            <button type="button" class="btn btn--primary" id="batch-prerecord-start-btn">
+              🎙️ Start Recording
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    modalEl.querySelector('#batch-prerecord-close')?.addEventListener('click', closeModal);
+    modalEl.querySelector('#batch-prerecord-cancel-btn')?.addEventListener('click', closeModal);
+    modalEl.querySelector('.batch-prerecord-modal__backdrop')?.addEventListener('click', closeModal);
+
+    modalEl.querySelector('#batch-prerecord-start-btn')?.addEventListener('click', () => {
+      const skipCheckbox = modalEl.querySelector('#batch-prerecord-skip-existing') as HTMLInputElement | null;
+      const skipExisting = skipCheckbox ? skipCheckbox.checked : false;
+      startRecording(skipExisting);
+    });
+  };
+
+  const startRecording = async (skipExisting: boolean) => {
+    abortController = new AbortController();
+
+    const pagesToRun = skipExisting ? batchPages.filter(p => !p.hasExistingAudio) : batchPages;
+    const totalToProcess = pagesToRun.length;
+
+    modalEl.innerHTML = `
+      <div class="batch-prerecord-modal__backdrop"></div>
+      <div class="batch-prerecord-modal__dialog">
+        <div class="batch-prerecord-modal__header">
+          <div class="batch-prerecord-modal__title-wrap">
+            <span class="batch-prerecord-modal__badge batch-prerecord-modal__badge--pulsing">RECORDING</span>
+            <span class="batch-prerecord-modal__title">Pre-Recording Story...</span>
+          </div>
+        </div>
+
+        <div class="batch-prerecord-modal__body">
+          <div class="batch-prerecord-progress-wrap">
+            <div class="batch-prerecord-status" id="batch-prerecord-main-status">Initializing AI voices...</div>
+            <div class="batch-prerecord-substatus" id="batch-prerecord-sub-status">Preparing script lines</div>
+
+            <div class="batch-prerecord-bar">
+              <div class="batch-prerecord-bar__fill" id="batch-prerecord-bar-fill" style="width: 0%;"></div>
+            </div>
+
+            <div class="batch-prerecord-meta">
+              <span id="batch-prerecord-page-counter">Page 0 of ${totalToProcess}</span>
+              <span id="batch-prerecord-pct">0%</span>
+            </div>
+          </div>
+
+          <div class="batch-prerecord-actions" style="margin-top: 20px;">
+            <button type="button" class="btn btn--danger" id="batch-prerecord-stop-btn" style="width: 100%;">
+              ⏹️ Stop Recording
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    modalEl.querySelector('#batch-prerecord-stop-btn')?.addEventListener('click', () => {
+      if (abortController) {
+        abortController.abort();
+        const mainStatus = modalEl.querySelector('#batch-prerecord-main-status');
+        if (mainStatus) mainStatus.textContent = 'Stopping recording...';
+      }
+    });
+
+    const storyId = editStoryId || activeDraftId || 'draft';
+
+    const summary = await batchPreRecordStory(
+      batchPages,
+      storyNarratorVoiceId,
+      storyCharacters,
+      {
+        signal: abortController.signal,
+        skipExisting,
+        interPageDelayMs: 400,
+        onProgress: (progress) => {
+          const mainStatus = modalEl.querySelector('#batch-prerecord-main-status');
+          const subStatus = modalEl.querySelector('#batch-prerecord-sub-status');
+          const barFill = modalEl.querySelector('#batch-prerecord-bar-fill') as HTMLElement | null;
+          const pageCounter = modalEl.querySelector('#batch-prerecord-page-counter');
+          const pctEl = modalEl.querySelector('#batch-prerecord-pct');
+
+          const pct = Math.round((progress.currentPage / progress.totalPages) * 100);
+          if (barFill) barFill.style.width = `${pct}%`;
+          if (pctEl) pctEl.textContent = `${pct}%`;
+          if (pageCounter) pageCounter.textContent = `Page ${progress.currentPage} of ${progress.totalPages}`;
+
+          if (progress.phase === 'recording') {
+            if (mainStatus) mainStatus.textContent = `Recording Page ${progress.pageIndex + 1}...`;
+            if (subStatus) subStatus.textContent = `Voicing line ${progress.currentLine} of ${progress.totalLines}`;
+          } else if (progress.phase === 'uploading') {
+            if (mainStatus) mainStatus.textContent = `Saving Page ${progress.pageIndex + 1}...`;
+            if (subStatus) subStatus.textContent = `Uploading audio to storage`;
+          } else if (progress.phase === 'skipped') {
+            if (mainStatus) mainStatus.textContent = `Skipped Page ${progress.pageIndex + 1}`;
+            if (subStatus) subStatus.textContent = `Already has recorded audio`;
+          } else if (progress.phase === 'failed') {
+            if (mainStatus) mainStatus.textContent = `Page ${progress.pageIndex + 1} Failed`;
+            if (subStatus) subStatus.textContent = `Skipping to next page`;
+          }
+        },
+        onPageComplete: async (result) => {
+          const page = bookPages[result.pageIndex];
+          if (!page) return;
+
+          // Attach timestamps to dialogue lines
+          if (page.dialogueLines) {
+            result.segments.forEach(seg => {
+              if (page.dialogueLines?.[seg.lineIdx]) {
+                page.dialogueLines[seg.lineIdx].alignment = seg.alignment;
+                page.dialogueLines[seg.lineIdx].duration = seg.duration;
+              }
+            });
+          }
+
+          // Upload to Supabase storage immediately
+          let finalAudioUrl = result.audioUrl;
+          try {
+            finalAudioUrl = await uploadAudioData(result.audioUrl, storyId, `page_${result.pageIndex}_audio`);
+          } catch (uploadErr) {
+            console.warn('[BatchPreRecord] Storage upload fallback to data URL:', uploadErr);
+          }
+
+          page.audioUrl = finalAudioUrl;
+          page.dialogAudioUrl = finalAudioUrl;
+          saveDraft();
+        }
+      }
+    );
+
+    renderSummaryState(summary);
+  };
+
+  const renderSummaryState = (summary: BatchPreRecordSummary) => {
+    modalEl.innerHTML = `
+      <div class="batch-prerecord-modal__backdrop"></div>
+      <div class="batch-prerecord-modal__dialog">
+        <div class="batch-prerecord-modal__header">
+          <div class="batch-prerecord-modal__title-wrap">
+            <span class="batch-prerecord-modal__badge ${summary.failed.length > 0 ? 'batch-prerecord-modal__badge--warning' : ''}">
+              ${summary.cancelled ? 'STOPPED' : (summary.failed.length > 0 ? 'COMPLETED WITH WARNINGS' : 'COMPLETE')}
+            </span>
+            <span class="batch-prerecord-modal__title">
+              ${summary.cancelled ? 'Recording Stopped' : 'Batch Recording Finished'}
+            </span>
+          </div>
+          <button type="button" class="batch-prerecord-modal__close" id="batch-prerecord-close" title="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div class="batch-prerecord-modal__body">
+          <div class="batch-prerecord-summary-list">
+            <div class="batch-prerecord-summary-item">
+              <span class="batch-prerecord-summary-icon">✅</span>
+              <span><strong>${summary.recorded}</strong> page${summary.recorded === 1 ? '' : 's'} successfully pre-recorded</span>
+            </div>
+            ${summary.skipped > 0 ? `
+              <div class="batch-prerecord-summary-item">
+                <span class="batch-prerecord-summary-icon">⏭️</span>
+                <span><strong>${summary.skipped}</strong> page${summary.skipped === 1 ? '' : 's'} skipped (already voiced)</span>
+              </div>
+            ` : ''}
+            ${summary.failed.length > 0 ? `
+              <div class="batch-prerecord-summary-item batch-prerecord-summary-item--failed">
+                <span class="batch-prerecord-summary-icon">❌</span>
+                <span><strong>${summary.failed.length}</strong> page${summary.failed.length === 1 ? '' : 's'} failed</span>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="batch-prerecord-actions" style="margin-top: 20px;">
+            <button type="button" class="btn btn--primary" id="batch-prerecord-done-btn" style="width: 100%;">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const closeAndRefresh = () => {
+      closeModal();
+      refreshCurrentEditorView();
+    };
+
+    modalEl.querySelector('#batch-prerecord-close')?.addEventListener('click', closeAndRefresh);
+    modalEl.querySelector('#batch-prerecord-done-btn')?.addEventListener('click', closeAndRefresh);
+    modalEl.querySelector('.batch-prerecord-modal__backdrop')?.addEventListener('click', closeAndRefresh);
+  };
+
+  document.body.appendChild(modalEl);
+  document.body.style.overflow = 'hidden';
+  renderInitialState();
+}
+
 function openStoryboard(): void {
   if (!isDesktopScreen()) {
     showDesktopRequiredModal();
@@ -3101,6 +3401,9 @@ function openStoryboard(): void {
         <button class="sb-topbar__btn-action" id="sb-preview-story" type="button" title="Preview story as a reader">
           👁️ Preview
         </button>
+        <button class="sb-topbar__btn-action" id="sb-batch-prerecord" type="button" title="Pre-record audio for all pages">
+          🎙️ Pre-Record All
+        </button>
 
         <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
         ${!isDesktopScreen() ? `
@@ -3229,6 +3532,10 @@ function openStoryboard(): void {
 
   document.getElementById('sb-preview-story')?.addEventListener('click', () => {
     openInEditorPreview(0);
+  });
+
+  document.getElementById('sb-batch-prerecord')?.addEventListener('click', () => {
+    openBatchPreRecordModal();
   });
 
   document.getElementById('sb-save-draft')?.addEventListener('click', async () => {
@@ -4605,6 +4912,10 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       document.getElementById('btn-dd-preview')?.addEventListener('click', () => {
         if (dropdown) dropdown.style.display = 'none';
         openInEditorPreview(currentPage);
+      });
+      document.getElementById('btn-dd-batch-prerecord')?.addEventListener('click', () => {
+        if (dropdown) dropdown.style.display = 'none';
+        openBatchPreRecordModal();
       });
       // Arrow navigation
       document.getElementById('btn-book-prev')?.addEventListener('click', () => {
