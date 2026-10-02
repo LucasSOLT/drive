@@ -705,3 +705,188 @@ export async function preRecordPageAudio(
     })),
   };
 }
+
+/**
+ * Batch pre-record an ENTIRE story — all pages sequentially.
+ *
+ * Key design decisions:
+ * - Pages are processed ONE AT A TIME to avoid overwhelming ElevenLabs rate limits.
+ * - Each page result is yielded immediately via the onPageComplete callback so the
+ *   caller can upload to storage and update the draft incrementally (crash-safe).
+ * - An AbortController signal allows the user to cancel mid-batch.
+ * - Pages with no dialogue/text are silently skipped (no error).
+ * - Failed pages are collected in a summary rather than aborting the entire batch.
+ * - A 500ms delay is injected between pages for rate-limit breathing room.
+ */
+export interface BatchPreRecordPage {
+  dialogueLines: { text: string; characterId: string; characterName: string; voiceId?: string }[];
+  hasExistingAudio: boolean;
+  pageIndex: number;
+}
+
+export interface BatchPreRecordResult {
+  pageIndex: number;
+  audioUrl: string;
+  segments: { text: string; alignment: any; duration: number; lineIdx: number }[];
+}
+
+export interface BatchPreRecordProgress {
+  currentPage: number;
+  totalPages: number;
+  currentLine: number;
+  totalLines: number;
+  phase: 'recording' | 'uploading' | 'done' | 'skipped' | 'failed';
+  pageIndex: number;
+}
+
+export interface BatchPreRecordSummary {
+  recorded: number;
+  skipped: number;
+  failed: { pageIndex: number; error: string }[];
+  cancelled: boolean;
+}
+
+export async function batchPreRecordStory(
+  pages: BatchPreRecordPage[],
+  narratorVoiceId: string,
+  characters: { id: string; name: string; voiceId: string }[],
+  options: {
+    signal?: AbortSignal;
+    skipExisting?: boolean;
+    onProgress?: (progress: BatchPreRecordProgress) => void;
+    onPageComplete?: (result: BatchPreRecordResult) => Promise<void> | void;
+    interPageDelayMs?: number;
+  } = {}
+): Promise<BatchPreRecordSummary> {
+  const {
+    signal,
+    skipExisting = true,
+    onProgress,
+    onPageComplete,
+    interPageDelayMs = 500,
+  } = options;
+
+  const recordablePages = pages.filter(p => p.dialogueLines.length > 0);
+  const totalPages = recordablePages.length;
+  const summary: BatchPreRecordSummary = {
+    recorded: 0,
+    skipped: 0,
+    failed: [],
+    cancelled: false,
+  };
+
+  for (let i = 0; i < recordablePages.length; i++) {
+    // Check cancellation
+    if (signal?.aborted) {
+      summary.cancelled = true;
+      break;
+    }
+
+    const page = recordablePages[i];
+
+    // Skip pages that already have audio if requested
+    if (skipExisting && page.hasExistingAudio) {
+      summary.skipped++;
+      onProgress?.({
+        currentPage: i + 1,
+        totalPages,
+        currentLine: 0,
+        totalLines: 0,
+        phase: 'skipped',
+        pageIndex: page.pageIndex,
+      });
+      continue;
+    }
+
+    onProgress?.({
+      currentPage: i + 1,
+      totalPages,
+      currentLine: 0,
+      totalLines: page.dialogueLines.length,
+      phase: 'recording',
+      pageIndex: page.pageIndex,
+    });
+
+    try {
+      const result = await preRecordPageAudio(
+        page.dialogueLines,
+        narratorVoiceId,
+        characters,
+        (currentLine, totalLines) => {
+          // Check cancellation between lines
+          if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+          onProgress?.({
+            currentPage: i + 1,
+            totalPages,
+            currentLine,
+            totalLines,
+            phase: 'recording',
+            pageIndex: page.pageIndex,
+          });
+        }
+      );
+
+      // Check cancellation before upload
+      if (signal?.aborted) {
+        summary.cancelled = true;
+        break;
+      }
+
+      onProgress?.({
+        currentPage: i + 1,
+        totalPages,
+        currentLine: page.dialogueLines.length,
+        totalLines: page.dialogueLines.length,
+        phase: 'uploading',
+        pageIndex: page.pageIndex,
+      });
+
+      const pageResult: BatchPreRecordResult = {
+        pageIndex: page.pageIndex,
+        audioUrl: result.audioUrl,
+        segments: result.segments,
+      };
+
+      // Let the caller handle storage upload + draft save
+      await onPageComplete?.(pageResult);
+
+      summary.recorded++;
+
+      onProgress?.({
+        currentPage: i + 1,
+        totalPages,
+        currentLine: page.dialogueLines.length,
+        totalLines: page.dialogueLines.length,
+        phase: 'done',
+        pageIndex: page.pageIndex,
+      });
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        summary.cancelled = true;
+        break;
+      }
+
+      summary.failed.push({
+        pageIndex: page.pageIndex,
+        error: err?.message || String(err),
+      });
+
+      onProgress?.({
+        currentPage: i + 1,
+        totalPages,
+        currentLine: 0,
+        totalLines: page.dialogueLines.length,
+        phase: 'failed',
+        pageIndex: page.pageIndex,
+      });
+    }
+
+    // Rate-limit breathing room between pages
+    if (i < recordablePages.length - 1 && !signal?.aborted) {
+      await new Promise(resolve => setTimeout(resolve, interPageDelayMs));
+    }
+  }
+
+  return summary;
+}
