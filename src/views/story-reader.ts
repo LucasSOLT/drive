@@ -945,6 +945,7 @@ export async function init(): Promise<void> {
     });
 
     // ─── Swipe Gesture Navigation (Mobile) ───
+    let dismissSwipeTutorial = () => {};
     const bookContent = document.querySelector('.reader__book-content') as HTMLElement | null;
     if (bookContent) {
       let touchStartX = 0;
@@ -958,6 +959,8 @@ export async function init(): Promise<void> {
       const SWIPE_VELOCITY = 0.3;  // px/ms to commit via flick
 
       bookContent.addEventListener('touchstart', (e: TouchEvent) => {
+        dismissSwipeTutorial();
+
         // Don't interfere with button taps or range inputs
         const target = e.target as HTMLElement;
         if (target.closest('button, input, a, .reader-audio-btn, .reader-audio-scrubber-pill')) return;
@@ -1079,6 +1082,57 @@ export async function init(): Promise<void> {
     if (captionsOpen) {
       const s = getStoryById(storyId);
       if (s) renderCaptionsOverlay(s, currentPage);
+    }
+
+    // ─── First-Time Swipe Tutorial Overlay ───
+    if (bookContent && totalPages > 1) {
+      const TUTORIAL_KEY = 'drive_swipe_tutorial_seen';
+      let hasSeen = false;
+      try {
+        hasSeen = localStorage.getItem(TUTORIAL_KEY) === 'true';
+      } catch {
+        hasSeen = true;
+      }
+
+      if (!hasSeen) {
+        const overlay = document.createElement('div');
+        overlay.className = 'reader-swipe-tutorial-overlay';
+        overlay.id = 'reader-swipe-tutorial';
+        overlay.innerHTML = `
+          <div class="swipe-tutorial-card">
+            <div class="swipe-tutorial-track">
+              <span class="swipe-track-arrow">‹</span>
+              <div class="swipe-hand-wrap">
+                <svg class="swipe-hand-svg" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9 11.24V7.5a2.5 2.5 0 0 1 5 0v3.74c1.21-.81 2-2.18 2-3.74a4.5 4.5 0 0 0-9 0c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26A1.98 1.98 0 0 0 13.4 13.5H13V7.5a1.5 1.5 0 0 0-3 0v9.75l-3.23-.67a1.52 1.52 0 0 0-1.57.57l-.87 1.15 4.9 4.9c.75.75 1.77 1.17 2.83 1.17h4.86c1.9 0 3.52-1.34 3.88-3.2l.67-3.48c.19-.98-.24-1.99-1.03-2.58z"/>
+                </svg>
+              </div>
+              <span class="swipe-track-arrow">›</span>
+            </div>
+            <div class="swipe-tutorial-text">Swipe to turn pages</div>
+            <div class="swipe-tutorial-sub">Tap anywhere to start reading</div>
+          </div>
+        `;
+
+        bookContent.classList.add('reader__book-content--tutorial-peek');
+
+        let dismissed = false;
+        dismissSwipeTutorial = () => {
+          if (dismissed) return;
+          dismissed = true;
+          try {
+            localStorage.setItem(TUTORIAL_KEY, 'true');
+          } catch {}
+          bookContent.classList.remove('reader__book-content--tutorial-peek');
+          overlay.classList.add('fade-out');
+          setTimeout(() => overlay.remove(), 350);
+        };
+
+        overlay.addEventListener('click', dismissSwipeTutorial);
+        overlay.addEventListener('touchstart', dismissSwipeTutorial, { passive: true });
+
+        container.appendChild(overlay);
+      }
     }
   }
 

@@ -3787,6 +3787,147 @@ button.profile-avatar {
   transform: scale(1.05);
 }
 
+/* --- Reader First-Time Swipe Tutorial Overlay --- */
+.reader-swipe-tutorial-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 12, 22, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: tutorialOverlayFadeIn 0.35s ease-out;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.reader-swipe-tutorial-overlay.fade-out {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+@keyframes tutorialOverlayFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.swipe-tutorial-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 30px;
+  background: rgba(20, 24, 40, 0.92);
+  border: 1.5px solid rgba(16, 185, 129, 0.4);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 28px rgba(16, 185, 129, 0.25);
+  border-radius: 20px;
+  text-align: center;
+  pointer-events: auto;
+  max-width: 320px;
+  width: 100%;
+}
+
+.swipe-tutorial-track {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 150px;
+  margin-bottom: 14px;
+  position: relative;
+}
+
+.swipe-track-arrow {
+  font-size: 2.2rem;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.35);
+  line-height: 1;
+  user-select: none;
+}
+
+.swipe-hand-wrap {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: swipeHandMotion 2.4s ease-in-out infinite;
+}
+
+.swipe-hand-svg {
+  width: 42px;
+  height: 42px;
+  fill: #10B981;
+  filter: drop-shadow(0 2px 10px rgba(16, 185, 129, 0.6));
+}
+
+.swipe-tutorial-text {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 6px;
+  animation: swipeTextBlink 2.4s ease-in-out infinite;
+}
+
+.swipe-tutorial-sub {
+  font-size: 0.76rem;
+  color: var(--color-text-muted, #94a3b8);
+  letter-spacing: 0.02em;
+}
+
+/* Slightly blinking text animation */
+@keyframes swipeTextBlink {
+  0%, 100% {
+    opacity: 1;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+  }
+  50% {
+    opacity: 0.5;
+    text-shadow: none;
+  }
+}
+
+/* Hand swiping left and right */
+@keyframes swipeHandMotion {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(-38px) rotate(-14deg);
+  }
+  50% {
+    transform: translateX(0) rotate(0deg);
+  }
+  75% {
+    transform: translateX(38px) rotate(14deg);
+  }
+}
+
+/* Background page swaying in exact sync with the hand motion */
+.reader__book-content--tutorial-peek {
+  animation: tutorialPeekSwipe 2.4s ease-in-out infinite !important;
+}
+
+@keyframes tutorialPeekSwipe {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-24px);
+  }
+  50% {
+    transform: translateX(0);
+  }
+  75% {
+    transform: translateX(24px);
+  }
+}
+
 /* Halfway Side Navigation Arrows (Left & Right) */
 .reader__side-arrow {
   position: fixed;
