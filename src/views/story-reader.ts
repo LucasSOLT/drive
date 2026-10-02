@@ -944,6 +944,136 @@ export async function init(): Promise<void> {
       }
     });
 
+    // ─── Swipe Gesture Navigation (Mobile) ───
+    const bookContent = document.querySelector('.reader__book-content') as HTMLElement | null;
+    if (bookContent) {
+      let touchStartX = 0;
+      let touchStartY = 0;
+      let touchStartTime = 0;
+      let touchDeltaX = 0;
+      let gestureLocked: 'horizontal' | 'vertical' | null = null;
+      let isSwiping = false;
+      const LOCK_THRESHOLD = 10;   // px before we decide direction
+      const SWIPE_DISTANCE = 60;   // px to commit a page turn
+      const SWIPE_VELOCITY = 0.3;  // px/ms to commit via flick
+
+      bookContent.addEventListener('touchstart', (e: TouchEvent) => {
+        // Don't interfere with button taps or range inputs
+        const target = e.target as HTMLElement;
+        if (target.closest('button, input, a, .reader-audio-btn, .reader-audio-scrubber-pill')) return;
+
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        touchStartTime = Date.now();
+        touchDeltaX = 0;
+        gestureLocked = null;
+        isSwiping = false;
+
+        // Remove transition during drag for instant feedback
+        bookContent.style.transition = 'none';
+      }, { passive: true });
+
+      bookContent.addEventListener('touchmove', (e: TouchEvent) => {
+        if (gestureLocked === 'vertical') return; // Let native scroll happen
+
+        const touch = e.touches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+
+        // Decide gesture direction once we've moved enough
+        if (!gestureLocked) {
+          const absDx = Math.abs(dx);
+          const absDy = Math.abs(dy);
+          if (absDx < LOCK_THRESHOLD && absDy < LOCK_THRESHOLD) return; // Still in dead zone
+
+          if (absDx > absDy * 1.2) {
+            // Horizontal intent — check if we're inside a scrollable text area
+            const targetEl = e.target as HTMLElement;
+            if (targetEl.closest('.reader-dialogue-body')) {
+              // Inside scrollable dialogue — only lock horizontal if at extremes
+              const dialogueBody = targetEl.closest('.reader-dialogue-body') as HTMLElement;
+              const canScrollUp = dialogueBody.scrollTop > 0;
+              const canScrollDown = dialogueBody.scrollTop < dialogueBody.scrollHeight - dialogueBody.clientHeight - 2;
+              if (canScrollUp || canScrollDown) {
+                gestureLocked = 'vertical';
+                return;
+              }
+            }
+            gestureLocked = 'horizontal';
+            isSwiping = true;
+          } else {
+            gestureLocked = 'vertical';
+            return;
+          }
+        }
+
+        // Horizontal swiping — prevent default scroll and apply visual peek
+        e.preventDefault();
+        touchDeltaX = dx;
+
+        // Rubber-band resistance at boundaries
+        const atLeftEdge = currentPage === 0 && dx > 0;
+        const atRightEdge = currentPage >= totalPages - 1 && dx < 0;
+        const dampening = (atLeftEdge || atRightEdge) ? 0.2 : 1;
+
+        bookContent.style.transform = `translateX(${dx * dampening}px)`;
+      }, { passive: false });
+
+      bookContent.addEventListener('touchend', () => {
+        if (!isSwiping || gestureLocked !== 'horizontal') {
+          // Reset any partial state
+          bookContent.style.transition = '';
+          bookContent.style.transform = '';
+          return;
+        }
+
+        const elapsed = Date.now() - touchStartTime;
+        const velocity = Math.abs(touchDeltaX) / Math.max(1, elapsed);
+        const commitSwipe = Math.abs(touchDeltaX) > SWIPE_DISTANCE || velocity > SWIPE_VELOCITY;
+
+        // Snap-back or commit animation
+        bookContent.style.transition = 'transform 0.25s cubic-bezier(0.22, 0.68, 0, 1.0)';
+
+        if (commitSwipe && touchDeltaX < 0 && currentPage < totalPages - 1) {
+          // Swipe left → next page
+          bookContent.style.transform = `translateX(-100%)`;
+          setTimeout(() => {
+            bookContent.style.transition = 'none';
+            bookContent.style.transform = '';
+            document.getElementById('book-next')?.click();
+          }, 250);
+        } else if (commitSwipe && touchDeltaX > 0 && currentPage > 0) {
+          // Swipe right → prev page
+          bookContent.style.transform = `translateX(100%)`;
+          setTimeout(() => {
+            bookContent.style.transition = 'none';
+            bookContent.style.transform = '';
+            document.getElementById('book-prev')?.click();
+          }, 250);
+        } else {
+          // Rubber-band back
+          bookContent.style.transform = 'translateX(0)';
+          setTimeout(() => {
+            bookContent.style.transition = '';
+            bookContent.style.transform = '';
+          }, 250);
+        }
+
+        isSwiping = false;
+        gestureLocked = null;
+        touchDeltaX = 0;
+      }, { passive: true });
+
+      bookContent.addEventListener('touchcancel', () => {
+        bookContent.style.transition = '';
+        bookContent.style.transform = '';
+        isSwiping = false;
+        gestureLocked = null;
+        touchDeltaX = 0;
+      }, { passive: true });
+    }
+
     updatePage();
     // Auto-render captions on initial load (CC is ON by default)
     if (captionsOpen) {
