@@ -14,6 +14,7 @@ import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { getSoloEpisodeCount, getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
 import { getSquadSession } from '../lib/db.ts';
 import { type SquadSession } from '../types.ts';
+import { BgmDuckingController } from '../lib/bgm-ducking.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -496,14 +497,16 @@ export async function init(): Promise<void> {
   const progressBar = document.getElementById('reader-progress');
   const header = document.getElementById('reader-header');
 
-  // ─── Background Music (BGM) ───
+  // ─── Background Music (BGM) with Smart Ducking ───
   const bgmUrl = story.bgmUrl || (story as any).bgm_url;
   const bgmVolume = typeof story.bgmVolume === 'number' ? story.bgmVolume : (typeof (story as any).bgm_volume === 'number' ? (story as any).bgm_volume : 0.25);
   let bgmAudio: HTMLAudioElement | null = null;
+  let bgmDucker: BgmDuckingController | null = null;
   if (bgmUrl) {
     bgmAudio = new Audio(bgmUrl);
     bgmAudio.loop = true;
-    bgmAudio.volume = bgmVolume;
+    // BgmDuckingController takes over volume control via Web Audio API GainNode
+    bgmDucker = new BgmDuckingController(bgmAudio, bgmVolume, 0.3, 0.4);
     const playBgmWithGestureFallback = () => {
       if (bgmAudio && bgmAudio.paused) {
         bgmAudio.play().catch(() => {
@@ -523,11 +526,19 @@ export async function init(): Promise<void> {
   }
 
   const stopBgm = () => {
+    if (bgmDucker) {
+      bgmDucker.destroy();
+      bgmDucker = null;
+    }
     if (bgmAudio) {
       bgmAudio.pause();
       bgmAudio = null;
     }
   };
+
+  // Duck/unduck helpers for voice playback integration
+  const duckBgm = () => { bgmDucker?.duck(); };
+  const unduckBgm = () => { bgmDucker?.unduck(); };
   // Ensure video playback (always muted — audio comes from upload/AI only)
   const initialBookVideo = document.getElementById('book-video') as HTMLVideoElement | null;
   if (initialBookVideo) {
@@ -849,6 +860,7 @@ export async function init(): Promise<void> {
               const curEl = document.getElementById('reader-time-current');
               if (slider) slider.value = '0';
               if (curEl) curEl.textContent = '0:00';
+              unduckBgm();
 
               // Hands-free auto-advance
               if (getSettings().autoAdvance && currentPage < story.panels.length - 1) {
@@ -898,6 +910,7 @@ export async function init(): Promise<void> {
         activeKaraokeCtrl = null;
       }
       stopSpeaking();
+      unduckBgm();
       action();
       updatePage();
       if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
@@ -1148,6 +1161,7 @@ export async function init(): Promise<void> {
         const idx = parseInt(btn.getAttribute('data-audio-panel') || '0');
         if (isSpeaking() && currentPlayingPanel === idx) {
           stopSpeaking();
+          unduckBgm();
           currentPlayingPanel = -1;
           (btn as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
         } else {
@@ -1158,6 +1172,7 @@ export async function init(): Promise<void> {
           });
           const audioUrl = story.pageAudio![idx];
           if (audioUrl) {
+            duckBgm();
             playAudioUrl(audioUrl);
             currentPlayingPanel = idx;
             (btn as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
@@ -1178,6 +1193,7 @@ export async function init(): Promise<void> {
               document.querySelectorAll('[data-audio-panel]').forEach(b => {
                 (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
               });
+              duckBgm();
               playAudioUrl(story.pageAudio![idx]);
               currentPlayingPanel = idx;
               const audioBtn = document.querySelector(`[data-audio-panel="${idx}"]`) as HTMLElement;
@@ -1301,9 +1317,11 @@ export async function init(): Promise<void> {
       }
       if (activeKaraokeCtrl.paused) {
         activeKaraokeCtrl.resume();
+        duckBgm();
         updateAllPlayButtons(true);
       } else {
         activeKaraokeCtrl.pause();
+        unduckBgm();
         updateAllPlayButtons(false);
       }
       return;
@@ -1318,6 +1336,7 @@ export async function init(): Promise<void> {
 
     if (audioUrlToPlay) {
       stopSpeaking();
+      duckBgm();
 
       // Build word map
       let wordMap: WordTimestamp[] = [];
@@ -1356,6 +1375,7 @@ export async function init(): Promise<void> {
         },
         onFinish: () => {
           updateAllPlayButtons(false);
+          unduckBgm();
           if (getSettings().autoAdvance && currentPage < s.panels.length - 1) {
             setTimeout(() => {
               document.getElementById('book-next')?.click();
@@ -1378,10 +1398,12 @@ export async function init(): Promise<void> {
       const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
       if (audioUrls.some((u: any) => !!u)) {
         stopSpeaking();
+        duckBgm();
         playAudioSequence(audioUrls, (idx) => {
           (window as any).__activeCaptionLineIdx = idx;
         }, () => {
           updateAllPlayButtons(false);
+          unduckBgm();
         });
         updateAllPlayButtons(true);
       }
