@@ -839,8 +839,9 @@ export async function permanentlyDeleteUserStory(storyId: string): Promise<void>
   if (!row.user_deleted_at && !row.admin_deleted_at) {
     throw new Error('Only stories in the Deleted tab can be permanently deleted.');
   }
-  const { error } = await supabase.from('user_stories').delete().eq('id', storyId);
+  const { data: gone, error } = await supabase.from('user_stories').delete().eq('id', storyId).select('id');
   if (error) throw error;
+  if (!gone || gone.length === 0) throw new Error('Delete was blocked by the database (no permission).');
 }
 
 export async function resubmitStoryUser(storyId: string): Promise<void> {
@@ -1235,6 +1236,20 @@ export async function deleteOfficialStory(storyId: string): Promise<void> {
   } catch {}
 }
 
+/** Deleted tab: map user ids → usernames (for "Deleted by ___"). */
+export async function fetchUsernamesByIds(ids: string[]): Promise<Record<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return {};
+  const { data, error } = await supabase.from('profiles').select('id, username').in('id', unique);
+  if (error) {
+    console.warn('[DB] fetchUsernamesByIds error:', error.message);
+    return {};
+  }
+  const map: Record<string, string> = {};
+  (data || []).forEach((p: any) => { if (p.id) map[p.id] = p.username || 'Unknown'; });
+  return map;
+}
+
 /** Deleted tab: official stories that admins deleted (most recent first). */
 export async function fetchDeletedOfficialStories(): Promise<Story[]> {
   const { data, error } = await supabase
@@ -1272,8 +1287,9 @@ export async function permanentlyDeleteOfficialStory(storyId: string): Promise<v
   if (!row.deleted_at) {
     throw new Error('Only stories in the Deleted tab can be permanently deleted.');
   }
-  const { error } = await supabase.from('official_stories').delete().eq('id', storyId);
+  const { data: gone, error } = await supabase.from('official_stories').delete().eq('id', storyId).select('id');
   if (error) throw error;
+  if (!gone || gone.length === 0) throw new Error('Delete was blocked by the database (no permission).');
 }
 
 /** Library "local admin draft" card → instead of discarding it, upload a copy into the

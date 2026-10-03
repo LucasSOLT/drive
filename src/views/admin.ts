@@ -23,6 +23,13 @@ import {
   checkIsGameMaster,
   hasAdminPrivileges,
   fetchStoryByIdFromDb,
+  fetchDeletedOfficialStories,
+  fetchDeletedUserStories,
+  restoreOfficialStory,
+  restoreUserStory,
+  permanentlyDeleteOfficialStory,
+  permanentlyDeleteUserStory,
+  fetchUsernamesByIds,
   type AdminMetrics,
 } from '../lib/db.ts';
 import { runPreflightChecks } from '../lib/publishing.ts';
@@ -61,7 +68,7 @@ const ICON = {
 };
 
 // ─── Tab types ───
-type AdminTab = 'originals' | 'pending' | 'community' | 'content-management' | 'moderation' | 'gm-tools';
+type AdminTab = 'originals' | 'pending' | 'community' | 'content-management' | 'moderation' | 'deleted' | 'gm-tools';
 
 export function render(): string {
   const isGM = checkIsGameMaster();
@@ -134,6 +141,9 @@ export function render(): string {
           <button class="admin-main-tab" data-tab="moderation" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
             ${ICON.flag} Moderation <span style="background: #0D9488; color: #fff; padding: 1px 6px; border-radius: 8px; font-size: 0.62rem; font-weight: 800; margin-left: 2px;">WIP</span>
           </button>
+          <button class="admin-main-tab" data-tab="deleted" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+            ${ICON.trash} Deleted
+          </button>
           ${isGM ? `
           <button class="admin-main-tab" data-tab="gm-tools" style="padding: 10px 16px; font-size: 0.8rem; font-weight: 500; border: none; background: transparent; color: var(--color-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
             ${ICON.crown} Game Master
@@ -202,6 +212,8 @@ export function init(): void {
     activeTab = 'pending';
   } else if (hash.includes('tab=gm-tools')) {
     activeTab = 'gm-tools';
+  } else if (hash.includes('tab=deleted')) {
+    activeTab = 'deleted';
   } else if (hash.includes('tab=originals')) {
     activeTab = 'originals';
   }
@@ -343,6 +355,9 @@ async function loadTabContent(): Promise<void> {
         break;
       case 'moderation':
         renderModerationTab(area);
+        break;
+      case 'deleted':
+        await loadDeletedTab(area);
         break;
       case 'gm-tools':
         renderGMToolsTab(area);
@@ -1803,6 +1818,243 @@ async function loadSubmissionsTab(area: HTMLElement, status: 'under-review' | 'p
   }
 
   attachSubmissionCardListeners();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// DELETED TAB — recovery area. The ONLY place with a permanent-delete button.
+//   Admin Deletions: official stories + user stories an admin deleted
+//   User Deletions:  user stories the creator removed from their library
+// Items are erased automatically 30 days after deletion, except user stories
+// that were ever submitted for review (kept permanently).
+// ═══════════════════════════════════════════════════════════════════════
+
+type DeletedItem = {
+  kind: 'official' | 'user';
+  id: string;
+  title: string;
+  author: string;
+  cover: string;
+  deletedAt: string;
+  deletedBy?: string;
+  badge: { label: string; color: string };
+  keptForever: boolean;
+};
+
+let deletedSection: 'admin' | 'user' = 'admin';
+let deletedAdminItems: DeletedItem[] = [];
+let deletedUserItems: DeletedItem[] = [];
+let deletedByNames: Record<string, string> = {};
+
+const RETENTION_DAYS = 30;
+
+function daysUntilErased(deletedAt: string): number {
+  const erasedAt = new Date(deletedAt).getTime() + RETENTION_DAYS * 86400000;
+  return Math.max(0, Math.ceil((erasedAt - Date.now()) / 86400000));
+}
+
+function formatDeletedDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+async function loadDeletedTab(area: HTMLElement): Promise<void> {
+  const [officials, users] = await Promise.all([
+    fetchDeletedOfficialStories(),
+    fetchDeletedUserStories(),
+  ]);
+
+  const officialItems: DeletedItem[] = officials.map(s => ({
+    kind: 'official',
+    id: s.id,
+    title: s.episodeNumber && s.episodeNumber > 1 ? `${s.title} · Ep ${s.episodeNumber}` : s.title,
+    author: s.author || 'DRiVE Studios',
+    cover: s.coverImage || '',
+    deletedAt: s.deletedAt || new Date().toISOString(),
+    deletedBy: s.deletedBy,
+    badge: { label: 'Official · Deleted by admin', color: '#8b5cf6' },
+    keptForever: false,
+  }));
+
+  const toUserItem = (s: UserStory): DeletedItem => {
+    const byAdmin = !!s.adminDeletedAt;
+    const badge = byAdmin
+      ? { label: 'Deleted by admin', color: '#ef4444' }
+      : s.wasSubmitted
+        ? { label: 'Was Submitted · Removed by creator', color: '#F59E0B' }
+        : { label: 'Draft · Removed by creator', color: '#64748b' };
+    return {
+      kind: 'user',
+      id: s.id,
+      title: s.title || 'Untitled',
+      author: s.author_name || 'Unknown Author',
+      cover: s.coverImage || s.live_pages?.[0]?.image || s.pages?.[0]?.image || '',
+      deletedAt: s.adminDeletedAt || s.userDeletedAt || new Date().toISOString(),
+      deletedBy: s.deletedBy,
+      badge,
+      keptForever: !!s.wasSubmitted,
+    };
+  };
+
+  const adminUserItems = users.filter(s => !!s.adminDeletedAt).map(toUserItem);
+  deletedUserItems = users.filter(s => !s.adminDeletedAt).map(toUserItem);
+  deletedAdminItems = [...officialItems, ...adminUserItems]
+    .sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+
+  deletedByNames = await fetchUsernamesByIds(
+    [...deletedAdminItems, ...deletedUserItems].map(i => i.deletedBy || '')
+  );
+
+  renderDeletedContent(area);
+}
+
+function renderDeletedCard(item: DeletedItem): string {
+  const days = daysUntilErased(item.deletedAt);
+  const countdown = item.keptForever
+    ? `<span style="color: #10b981; font-weight: 700;">🔒 Kept permanently</span>`
+    : `<span style="color: ${days <= 3 ? '#ef4444' : 'var(--color-text-muted)'}; font-weight: 700;">⏳ ${days <= 0 ? 'Erased within a day' : `Erased in ${days} day${days === 1 ? '' : 's'}`}</span>`;
+  const byName = item.deletedBy ? (deletedByNames[item.deletedBy] || 'Unknown') : '';
+  const coverHtml = item.cover
+    ? (isVideoMedia(item.cover)
+        ? `<video src="${item.cover}" muted playsinline preload="metadata" style="width: 100%; height: 100%; object-fit: cover;"></video>`
+        : `<img src="${item.cover}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;" />`)
+    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:0.65rem;">No Img</div>`;
+
+  return `
+    <div class="admin-deleted-card" data-deleted-card="${item.kind}:${item.id}" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; overflow: hidden;">
+      <div style="display: flex; gap: 12px; padding: 12px;">
+        <div style="width: 64px; height: 84px; border-radius: 10px; overflow: hidden; flex-shrink: 0; background: var(--color-bg); border: 1px solid var(--color-border); opacity: 0.75;">
+          ${coverHtml}
+        </div>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+          <h3 style="margin: 0; font-family: var(--font-heading); font-size: 0.9rem; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(item.title)}</h3>
+          <div style="font-size: 0.72rem; color: var(--color-text-muted);">by <strong>${escapeHtml(item.author)}</strong></div>
+          <div style="font-size: 0.72rem; color: var(--color-text-muted);">Deleted ${formatDeletedDate(item.deletedAt)}${byName ? ` by <strong>${escapeHtml(byName)}</strong>` : ''}</div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px;">
+            <span style="background: ${item.badge.color}22; color: ${item.badge.color}; border: 1px solid ${item.badge.color}55; padding: 2px 8px; border-radius: 6px; font-size: 0.62rem; font-weight: 800;">${item.badge.label}</span>
+            <span style="font-size: 0.68rem;">${countdown}</span>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 8px 12px 12px; border-top: 1px solid var(--color-border); display: flex; gap: 8px;">
+        <button data-restore-deleted="${item.kind}:${item.id}" style="flex: 1; padding: 9px; border-radius: 10px; border: none; background: #10b981; color: #fff; cursor: pointer; font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          ${ICON.rotate} Restore
+        </button>
+        ${item.keptForever ? '' : `
+        <button data-erase-deleted="${item.kind}:${item.id}" style="flex: 1; padding: 9px; border-radius: 10px; border: 1px solid rgba(239,68,68,0.5); background: transparent; color: #ef4444; cursor: pointer; font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          ${ICON.trash} Delete Forever
+        </button>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderDeletedContent(area: HTMLElement): void {
+  const items = deletedSection === 'admin' ? deletedAdminItems : deletedUserItems;
+  const toggleBtn = (id: 'admin' | 'user', label: string, count: number) => {
+    const active = deletedSection === id;
+    return `<button data-deleted-section="${id}" style="flex: 1; padding: 8px 10px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.78rem; font-weight: ${active ? 800 : 500}; background: ${active ? 'var(--color-surface)' : 'transparent'}; color: ${active ? 'var(--color-text-primary)' : 'var(--color-text-muted)'}; box-shadow: ${active ? 'var(--shadow-sm)' : 'none'};">${label} <span style="opacity: 0.7;">(${count})</span></button>`;
+  };
+
+  area.innerHTML = `
+    <div style="max-width: 720px; margin: 0 auto;">
+      <div style="display: flex; gap: 4px; padding: 4px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; margin-bottom: 10px;">
+        ${toggleBtn('admin', 'Admin Deletions', deletedAdminItems.length)}
+        ${toggleBtn('user', 'User Deletions', deletedUserItems.length)}
+      </div>
+      <p style="margin: 0 0 14px; font-size: 0.72rem; color: var(--color-text-muted); line-height: 1.5;">
+        Deleted stories are erased automatically ${RETENTION_DAYS} days after deletion. Stories that were submitted for review are kept permanently. Restored DRiVE Originals come back as <strong>Drafts</strong>.
+      </p>
+      ${items.length === 0 ? `
+        <div style="text-align: center; padding: 48px 16px; color: var(--color-text-muted);">
+          <div style="font-size: 2rem; margin-bottom: 8px;">🗑️</div>
+          <div style="font-size: 0.85rem;">Nothing here.</div>
+        </div>
+      ` : `
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          ${items.map(renderDeletedCard).join('')}
+        </div>
+      `}
+    </div>
+  `;
+
+  attachDeletedListeners(area);
+}
+
+function removeDeletedItem(kind: string, id: string): void {
+  deletedAdminItems = deletedAdminItems.filter(i => !(i.kind === kind && i.id === id));
+  deletedUserItems = deletedUserItems.filter(i => !(i.kind === kind && i.id === id));
+}
+
+function findDeletedItem(kind: string, id: string): DeletedItem | undefined {
+  return [...deletedAdminItems, ...deletedUserItems].find(i => i.kind === kind && i.id === id);
+}
+
+function attachDeletedListeners(area: HTMLElement): void {
+  area.querySelectorAll<HTMLElement>('[data-deleted-section]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const section = btn.dataset.deletedSection as 'admin' | 'user';
+      if (section === deletedSection) return;
+      deletedSection = section;
+      renderDeletedContent(area);
+    });
+  });
+
+  area.querySelectorAll<HTMLElement>('[data-restore-deleted]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [kind, id] = (btn.dataset.restoreDeleted || '').split(':');
+      const item = findDeletedItem(kind, id);
+      if (!item) return;
+      const where = item.kind === 'official'
+        ? 'It goes back to <strong>DRiVE Originals</strong> as a <strong>Draft</strong> (it must Go Live again).'
+        : 'It goes back to the creator\'s <strong>My Creations</strong> and the admin lists.';
+      showModal({
+        title: `♻️ Restore "${escapeHtml(item.title)}"?`,
+        content: `<p style="line-height:1.6;">${where}</p>`,
+        confirmText: 'Restore',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+          try {
+            if (item.kind === 'official') await restoreOfficialStory(item.id);
+            else await restoreUserStory(item.id);
+            removeDeletedItem(item.kind, item.id);
+            renderDeletedContent(area);
+            loadAllMetrics();
+          } catch (err: any) {
+            console.error('Restore failed:', err);
+            alert('Restore failed: ' + (err?.message || 'Unknown error'));
+          }
+        },
+      });
+    });
+  });
+
+  area.querySelectorAll<HTMLElement>('[data-erase-deleted]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [kind, id] = (btn.dataset.eraseDeleted || '').split(':');
+      const item = findDeletedItem(kind, id);
+      if (!item || item.keptForever) return;
+      showModal({
+        title: `⚠️ Delete "${escapeHtml(item.title)}" forever?`,
+        content: `<p style="line-height:1.6;">This <strong style="color:#ef4444;">permanently erases</strong> the story, its pages, and its media links. <strong>This cannot be undone.</strong></p>`,
+        confirmText: 'Delete Forever',
+        cancelText: 'Cancel',
+        onConfirm: async () => {
+          try {
+            if (item.kind === 'official') await permanentlyDeleteOfficialStory(item.id);
+            else await permanentlyDeleteUserStory(item.id);
+            removeDeletedItem(item.kind, item.id);
+            renderDeletedContent(area);
+          } catch (err: any) {
+            console.error('Permanent delete failed:', err);
+            alert('Delete failed: ' + (err?.message || 'Unknown error'));
+          }
+        },
+      });
+    });
+  });
 }
 
 function renderSubmissionCard(story: UserStory, _index: number): string {
