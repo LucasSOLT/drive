@@ -32,3 +32,31 @@ export function originForTransition(oldRoute: string, newRoute: string): string 
 export function resolveLeaveTarget(origin: string | null): string {
   return origin && !READER_ROUTES.has(baseOf(origin)) ? origin : 'home';
 }
+
+/** sessionStorage key: storyGroupId (or story id) the user explicitly opened in Preview mode. */
+export const PREVIEW_FLAG_KEY = 'drive_reader_preview';
+
+/** True when a transition moves OUT of the reader family to a regular screen (preview flag should reset). */
+export function leavesReaderFamily(oldRoute: string, newRoute: string): boolean {
+  return READER_ROUTES.has(baseOf(oldRoute)) && !READER_ROUTES.has(baseOf(newRoute));
+}
+
+export interface PreviewInputs {
+  isOfficial: boolean;
+  officialStatus?: string;
+  groupKey: string;          // storyGroupId || id
+  flag: string | null;       // explicit preview flag from sessionStorage
+  admin: boolean;
+  hasUserStory: boolean;     // story exists in the user's own stories
+  isOwner: boolean;
+}
+
+/** Pure decision: should the reader treat this story as a solo preview? */
+export function decidePreview(i: PreviewInputs): boolean {
+  // Explicit preview action (admin dashboard "Preview", even on a live episode)
+  if (i.flag && i.flag === i.groupKey && (i.admin || i.isOwner)) return true;
+  // Official episode that is not live yet: only admins reach it, always a preview
+  if (i.isOfficial) return i.officialStatus !== 'live' && i.admin;
+  // A story created by the user (draft / under review / their own published story)
+  return i.isOwner || (i.hasUserStory && i.admin);
+}

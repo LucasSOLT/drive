@@ -6,9 +6,17 @@
  * screen the user was on BEFORE they entered the reader family and the back caret returns there.
  *
  * Example: Series Info -> episode 1 -> next -> episode 2 -> back caret  ==> Series Info.
+ *
+ * Also resets the explicit "preview" flag whenever the user leaves the reader family.
  */
 import { navigate } from '../router.ts';
-import { originForTransition, resolveLeaveTarget, routeFromUrl } from './reader-routes.ts';
+import {
+  leavesReaderFamily,
+  originForTransition,
+  PREVIEW_FLAG_KEY,
+  resolveLeaveTarget,
+  routeFromUrl,
+} from './reader-routes.ts';
 
 const ORIGIN_KEY = 'drive_reader_origin';
 
@@ -20,9 +28,15 @@ export function initReaderOrigin(): void {
   initialized = true;
 
   window.addEventListener('hashchange', (e: HashChangeEvent) => {
-    const origin = originForTransition(routeFromUrl(e.oldURL), routeFromUrl(e.newURL));
+    const oldRoute = routeFromUrl(e.oldURL);
+    const newRoute = routeFromUrl(e.newURL);
+
+    const origin = originForTransition(oldRoute, newRoute);
     if (origin !== null) {
       try { sessionStorage.setItem(ORIGIN_KEY, origin); } catch { /* storage unavailable */ }
+    }
+    if (leavesReaderFamily(oldRoute, newRoute)) {
+      try { sessionStorage.removeItem(PREVIEW_FLAG_KEY); } catch { /* storage unavailable */ }
     }
   });
 

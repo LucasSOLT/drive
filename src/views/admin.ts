@@ -35,6 +35,7 @@ import {
 import { runPreflightChecks } from '../lib/publishing.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { navigate } from '../router.ts';
+import { markPreviewEntry } from '../lib/reader-mode.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { setContentManagementMode } from '../state.ts';
 
@@ -907,6 +908,7 @@ function attachOfficialCardListeners(): void {
           const cached = currentOfficialStories.find(s => s.id === sid);
           if (cached) {
             registerStory(cached);
+            markPreviewEntry(cached);
             navigate('story/' + sid);
           } else {
             // Stories not loaded yet — fetch individually, then navigate
@@ -916,6 +918,7 @@ function attachOfficialCardListeners(): void {
               const found = stories.find((s: any) => s.id === sid);
               if (found) {
                 registerStory(found);
+                markPreviewEntry(found);
                 navigate('story/' + sid);
               } else {
                 alert('Story not found. It may have been deleted.');

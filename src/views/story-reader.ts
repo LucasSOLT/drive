@@ -2,6 +2,7 @@ import { openSquadGateModal } from '../components/squad-gate-modal.ts';
 import { trackStoryReading, updateTrackedStoryStatus } from '../lib/reading-tracker.ts';
 import { getRouteParam, navigate } from '../router.ts';
 import { leaveReader } from '../lib/reader-origin.ts';
+import { isPreviewStory } from '../lib/reader-mode.ts';
 import { getStoryById, registerStory } from '../data/stories.ts';
 import { fetchStoryByIdFromDb, fetchOfficialStories } from '../lib/db.ts';
 import {
@@ -102,6 +103,52 @@ function renderGateInfoPage(format: 'book' | 'scroll', soloEpCount: number): str
 
       <button class="reader__info-btn" id="${btnId}">
         <span>Let's Begin</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+      </button>
+    </div>
+  `;
+}
+
+function escapeCardText(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Preview-only SPARC card: shows the prompt as readers would see it, but is skippable and saves nothing. */
+function renderSparcPreviewCard(
+  format: 'book' | 'scroll',
+  prompt: { text?: string; mediaUrls?: string[] },
+  hasNextEpisode: boolean,
+): string {
+  const btnId = format === 'book' ? 'btn-book-sparc-preview-skip' : 'btn-waterfall-sparc-preview-skip';
+  const media = (prompt.mediaUrls || [])
+    .filter(u => /^https?:\/\//i.test(u))
+    .map(u => `<img src="${escapeCardText(u)}" alt="" style="max-width:100%; border-radius:8px; margin-top:12px;">`)
+    .join('');
+  return `
+    <div class="reader__info-page reader__info-page--${format}">
+      <div class="reader__info-glow"></div>
+
+      <div class="reader__info-badge">
+        <span class="squad-gate-badge-dot" style="background:var(--color-purple);"></span>
+        <span>SPARC CHECKPOINT · PREVIEW</span>
+      </div>
+
+      <h2 class="reader__info-title">Squad Challenge Prompt</h2>
+
+      <div class="reader__info-card" style="text-align:left; padding:20px;">
+        <p style="font-size:0.95rem; color:var(--color-text-primary); line-height:1.6; margin:0; white-space:pre-wrap;">${escapeCardText(prompt.text?.trim() || 'Reflect on what you just read.')}</p>
+        ${media}
+      </div>
+
+      <p class="reader__info-closing">
+        This is how squads see the checkpoint. Previewing is solo, so there is no timer and nothing is saved.
+      </p>
+
+      <button class="reader__info-btn" id="${btnId}">
+        <span>${hasNextEpisode ? 'Skip to Next Episode' : 'Skip &amp; Finish Preview'}</span>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="5" y1="12" x2="19" y2="12"></line>
           <polyline points="12 5 19 12 12 19"></polyline>
@@ -579,9 +626,24 @@ export async function init(): Promise<void> {
   const episodeNumber = story.episodeNumber || 1;
   const storyGroupId = story.storyGroupId || story.id;
   let soloEpCount: number = story.soloEpisodeCount || 1;
-  let isPostGateEpisode = episodeNumber > soloEpCount;
-  let isGateEpisode = episodeNumber === soloEpCount;
-  const showEndCard = isGateEpisode || isPostGateEpisode;
+  // Preview (owner/admin looking at non-live or explicitly previewed content) is solo:
+  // no squad gate, no squad timer. SPARC is shown as a skippable card instead.
+  const previewMode = isPreviewStory(story);
+  let isPostGateEpisode = !previewMode && episodeNumber > soloEpCount;
+  let isGateEpisode = !previewMode && episodeNumber === soloEpCount;
+  const previewSparcPrompt = previewMode ? story.sparcPrompt : undefined;
+  const previewSparc = previewMode && !!previewSparcPrompt && (!!previewSparcPrompt.text?.trim() || !!previewSparcPrompt.mediaUrls?.length);
+  const showEndCard = isGateEpisode || isPostGateEpisode || previewSparc;
+
+  // Skip the SPARC preview: go to the next episode of this story, or leave the reader after the last one
+  const previewSkip = () => {
+    stopBgm();
+    stopSpeaking();
+    const idx = siblingEpisodes.findIndex(e => e.episodeNumber === episodeNumber);
+    const next = idx >= 0 && idx < siblingEpisodes.length - 1 ? siblingEpisodes[idx + 1] : null;
+    if (next) navigate('story/' + next.id);
+    else leaveReader();
+  };
   // Re-renders the scroll-format end card (assigned further down) when the gate flags flip
   let refreshScrollEndCard: (() => void) | null = null;
 
@@ -935,6 +997,11 @@ export async function init(): Promise<void> {
               stopSpeaking();
               navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
             });
+          } else if (previewSparc && previewSparcPrompt) {
+            // Preview: show the prompt as a skippable card (no squad, no timer, nothing saved)
+            const idx = siblingEpisodes.findIndex(e => e.episodeNumber === episodeNumber);
+            pageContainer.innerHTML = renderSparcPreviewCard('book', previewSparcPrompt, idx >= 0 && idx < siblingEpisodes.length - 1);
+            document.getElementById('btn-book-sparc-preview-skip')?.addEventListener('click', previewSkip);
           }
         } else {
           if (activeKaraokeCtrl) {
@@ -1451,6 +1518,10 @@ export async function init(): Promise<void> {
           stopSpeaking();
           navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
         });
+      } else if (previewSparc && previewSparcPrompt) {
+        const idx = siblingEpisodes.findIndex(e => e.episodeNumber === episodeNumber);
+        scrollEndCard.innerHTML = renderSparcPreviewCard('scroll', previewSparcPrompt, idx >= 0 && idx < siblingEpisodes.length - 1);
+        document.getElementById('btn-waterfall-sparc-preview-skip')?.addEventListener('click', previewSkip);
       }
     };
     renderScrollEndCard();
