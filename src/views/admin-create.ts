@@ -4497,7 +4497,7 @@ export function init(): void {
           </button>
           <div style="height:1px; background:var(--color-border);"></div>
           <button id="quit-nosave" style="display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; border:none; background:none; color:#f87171; cursor:pointer; font-size:0.88rem; text-align:left; font-family:var(--font-body);">
-            <span style="font-size:1.1rem;">🚪</span> Don't Save & Quit
+            <span style="font-size:1.1rem;">🚪</span> Exit without saving
           </button>
           <div style="height:1px; background:var(--color-border);"></div>
           <button id="quit-cancel" style="display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; border:none; background:none; color:var(--color-text-muted); cursor:pointer; font-size:0.88rem; text-align:left; font-family:var(--font-body);">

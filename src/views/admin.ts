@@ -539,16 +539,17 @@ function renderOriginalsContent(area: HTMLElement): void {
         confirmText: 'Move to Deleted',
         cancelText: 'Cancel',
         onConfirm: async () => {
+          const card = (e.currentTarget as HTMLElement).closest('div[style*="opacity: 0.7"]');
+          card?.remove();
+          currentOfficialStories = currentOfficialStories.filter(s => (s.storyGroupId || s.id) !== groupId);
           try {
             for (const ep of episodes) {
               await deleteOfficialStory(ep.id);
             }
-            currentOfficialStories = currentOfficialStories.filter(s => (s.storyGroupId || s.id) !== groupId);
-            loadAllMetrics();
-            loadTabContent();
           } catch (err: any) {
             alert('Delete failed: ' + (err?.message || 'Unknown error'));
           }
+          loadAllMetrics();
         },
       });
     });
@@ -974,18 +975,20 @@ function attachOfficialCardListeners(): void {
             confirmText: 'Move to Deleted',
             cancelText: 'Cancel',
             onConfirm: async () => {
+              // Instantly remove story group from screen without reload/jerk
+              const groupEl = document.querySelector(`.story-group[data-group-id="${groupId}"]`);
+              groupEl?.remove();
+              currentOfficialStories = currentOfficialStories.filter(s => (s.storyGroupId || s.id) !== groupId);
+
               try {
                 for (const ep of groupEpisodes) {
                   await deleteOfficialStory(ep.id);
                 }
-                // Immediately remove from in-memory array so they don't reappear
-                currentOfficialStories = currentOfficialStories.filter(s => (s.storyGroupId || s.id) !== groupId);
               } catch (err: any) {
                 console.error('Delete failed:', err);
                 alert('Delete failed: ' + (err?.message || 'Unknown error.'));
               }
               loadAllMetrics();
-              loadTabContent();
             },
           });
         } else if (menuItem.dataset.deleteOfficial) {
@@ -1005,16 +1008,19 @@ function attachOfficialCardListeners(): void {
             confirmText: 'Move to Deleted',
             cancelText: 'Cancel',
             onConfirm: async () => {
+              // Instantly remove episode row from screen without reload/jerk
+              const epBtn = document.querySelector(`[data-ep-menu-for="${storyId}"]`);
+              const epRow = epBtn?.closest('div[style*="align-items: center"]');
+              epRow?.remove();
+              currentOfficialStories = currentOfficialStories.filter(s => s.id !== storyId);
+
               try {
                 await deleteOfficialStory(storyId);
-                // Immediately remove from in-memory array
-                currentOfficialStories = currentOfficialStories.filter(s => s.id !== storyId);
               } catch (err: any) {
                 console.error('Delete failed:', err);
                 alert('Delete failed: ' + (err?.message || 'Unknown error'));
               }
               loadAllMetrics();
-              loadTabContent();
             },
           });
         } else if (menuItem.dataset.takeOffline) {
@@ -1967,16 +1973,18 @@ function renderDeletedContent(area: HTMLElement): void {
       <p style="margin: 0 0 14px; font-size: 0.72rem; color: var(--color-text-muted); line-height: 1.5;">
         Deleted stories are erased automatically ${RETENTION_DAYS} days after deletion. Stories that were submitted for review are kept permanently. Restored DRiVE Originals come back as <strong>Drafts</strong>.
       </p>
-      ${items.length === 0 ? `
-        <div style="text-align: center; padding: 48px 16px; color: var(--color-text-muted);">
-          <div style="font-size: 2rem; margin-bottom: 8px;">🗑️</div>
-          <div style="font-size: 0.85rem;">Nothing here.</div>
-        </div>
-      ` : `
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-          ${items.map(renderDeletedCard).join('')}
-        </div>
-      `}
+      <div id="deleted-cards-list">
+        ${items.length === 0 ? `
+          <div style="text-align: center; padding: 48px 16px; color: var(--color-text-muted);">
+            <div style="font-size: 2rem; margin-bottom: 8px;">🗑️</div>
+            <div style="font-size: 0.85rem;">Nothing here.</div>
+          </div>
+        ` : `
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            ${items.map(renderDeletedCard).join('')}
+          </div>
+        `}
+      </div>
     </div>
   `;
 
@@ -1986,6 +1994,35 @@ function renderDeletedContent(area: HTMLElement): void {
 function removeDeletedItem(kind: string, id: string): void {
   deletedAdminItems = deletedAdminItems.filter(i => !(i.kind === kind && i.id === id));
   deletedUserItems = deletedUserItems.filter(i => !(i.kind === kind && i.id === id));
+}
+
+function removeItemFromDeletedUI(area: HTMLElement, kind: string, id: string): void {
+  // 1. Remove from in-memory arrays
+  removeDeletedItem(kind, id);
+
+  // 2. Remove card element directly from DOM
+  const cardEl = area.querySelector<HTMLElement>(`[data-deleted-card="${kind}:${id}"]`);
+  cardEl?.remove();
+
+  // 3. Update count badges in section toggle buttons without rebuilding DOM
+  const adminBadge = area.querySelector('[data-deleted-section="admin"] span');
+  if (adminBadge) adminBadge.textContent = `(${deletedAdminItems.length})`;
+  const userBadge = area.querySelector('[data-deleted-section="user"] span');
+  if (userBadge) userBadge.textContent = `(${deletedUserItems.length})`;
+
+  // 4. If active section is now empty, display "Nothing here" in place without scroll jump
+  const activeItems = deletedSection === 'admin' ? deletedAdminItems : deletedUserItems;
+  if (activeItems.length === 0) {
+    const listContainer = area.querySelector('#deleted-cards-list');
+    if (listContainer) {
+      listContainer.innerHTML = `
+        <div style="text-align: center; padding: 48px 16px; color: var(--color-text-muted);">
+          <div style="font-size: 2rem; margin-bottom: 8px;">🗑️</div>
+          <div style="font-size: 0.85rem;">Nothing here.</div>
+        </div>
+      `;
+    }
+  }
 }
 
 function findDeletedItem(kind: string, id: string): DeletedItem | undefined {
@@ -2016,14 +2053,24 @@ function attachDeletedListeners(area: HTMLElement): void {
         confirmText: 'Restore',
         cancelText: 'Cancel',
         onConfirm: async () => {
+          const cardEl = area.querySelector<HTMLElement>(`[data-deleted-card="${item.kind}:${item.id}"]`);
+          const parent = cardEl?.parentElement;
+          const nextSibling = cardEl?.nextSibling;
+
+          // Instantly remove card from screen & update numbers with zero jerk
+          removeItemFromDeletedUI(area, item.kind, item.id);
+
+          // Invalidate cached official stories so switching to Originals re-fetches cleanly
+          currentOfficialStories = [];
+
           try {
             if (item.kind === 'official') await restoreOfficialStory(item.id);
             else await restoreUserStory(item.id);
-            removeDeletedItem(item.kind, item.id);
-            renderDeletedContent(area);
             loadAllMetrics();
           } catch (err: any) {
             console.error('Restore failed:', err);
+            // Re-insert card if network failed
+            if (cardEl && parent) parent.insertBefore(cardEl, nextSibling ?? null);
             alert('Restore failed: ' + (err?.message || 'Unknown error'));
           }
         },
@@ -2042,13 +2089,19 @@ function attachDeletedListeners(area: HTMLElement): void {
         confirmText: 'Delete Forever',
         cancelText: 'Cancel',
         onConfirm: async () => {
+          const cardEl = area.querySelector<HTMLElement>(`[data-deleted-card="${item.kind}:${item.id}"]`);
+          const parent = cardEl?.parentElement;
+          const nextSibling = cardEl?.nextSibling;
+
+          // Instantly remove card from screen & update numbers with zero jerk
+          removeItemFromDeletedUI(area, item.kind, item.id);
+
           try {
             if (item.kind === 'official') await permanentlyDeleteOfficialStory(item.id);
             else await permanentlyDeleteUserStory(item.id);
-            removeDeletedItem(item.kind, item.id);
-            renderDeletedContent(area);
           } catch (err: any) {
             console.error('Permanent delete failed:', err);
+            if (cardEl && parent) parent.insertBefore(cardEl, nextSibling ?? null);
             alert('Delete failed: ' + (err?.message || 'Unknown error'));
           }
         },
@@ -2181,15 +2234,18 @@ function attachSubmissionCardListeners(): void {
         confirmText: 'Move to Deleted',
         cancelText: 'Cancel',
         onConfirm: async () => {
+          // Instantly remove card from screen without reload/jerk
+          const card = (e.currentTarget as HTMLElement).closest('.admin-submission-card');
+          card?.remove();
+          currentUserStories = currentUserStories.filter(s => s.id !== id);
+
           try {
             await deleteStoryAdmin(id);
-            currentUserStories = currentUserStories.filter(s => s.id !== id);
           } catch (err: any) {
             console.error('Delete failed:', err);
             alert('Delete failed: ' + (err?.message || 'Unknown error'));
           }
           loadAllMetrics();
-          loadTabContent();
         },
       });
     });
