@@ -29,7 +29,7 @@
 
 ## Backlog
 - [ ] Stripe Customer Portal (manage/cancel subscriptions)
-- [ ] Community Moderation & Curator Dashboard Polish
+- [x] Community Moderation & Curator Dashboard Polish (Review queue & checklist-enforced Go Live)
 - [ ] Idempotency checks on Stripe webhook
 - [ ] Terms of Service & Privacy Policy pages
 - [ ] Apple Pay domain verification
