@@ -132,6 +132,109 @@ function renderSparcTransitionCard(format: 'book' | 'scroll'): string {
   `;
 }
 
+// ─── Page media mounting: instant spinner → smooth fade-in ───
+// Each call bumps a token so a slow load from an OLD page can never appear on the NEW page.
+let mediaMountToken = 0;
+
+function mountPageMedia(container: HTMLElement, opts: {
+  url: string;
+  isVideo: boolean;
+  id: string;
+  alt: string;
+  style: string;
+}): void {
+  const token = ++mediaMountToken;
+  const stale = () => token !== mediaMountToken || !container.isConnected;
+
+  container.innerHTML = '';
+  container.classList.add('reader__page--loading');
+
+  // Spinner shows INSTANTLY (before any network work)
+  const spinner = document.createElement('div');
+  spinner.className = 'reader__media-spinner';
+  spinner.innerHTML = '<div class="reader__spinner-ring"></div>';
+  container.appendChild(spinner);
+
+  // Reuse the preloaded element when we have one
+  const cached = getPreloadedElement(opts.url);
+  let el: HTMLImageElement | HTMLVideoElement;
+  if (opts.isVideo) {
+    const v = cached instanceof HTMLVideoElement
+      ? (cached.isConnected ? (cached.cloneNode(true) as HTMLVideoElement) : cached)
+      : document.createElement('video');
+    v.autoplay = true;
+    v.loop = true;
+    v.muted = true;
+    v.playsInline = true;
+    v.setAttribute('webkit-playsinline', '');
+    if (!v.getAttribute('src')) v.src = opts.url;
+    el = v;
+  } else {
+    const img = cached instanceof HTMLImageElement
+      ? (cached.cloneNode(true) as HTMLImageElement)
+      : new Image();
+    img.alt = opts.alt;
+    if (!img.getAttribute('src')) img.src = opts.url;
+    el = img;
+  }
+  el.id = opts.id;
+  el.className = 'reader-media'; // starts invisible (opacity 0, no glow)
+  el.style.cssText = opts.style;
+  container.appendChild(el);
+
+  let revealed = false;
+  const reveal = () => {
+    if (revealed || stale()) return;
+    revealed = true;
+    spinner.remove();
+    container.classList.remove('reader__page--loading');
+    // two frames so the browser paints opacity:0 first and the fade actually runs
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (stale()) return;
+      el.classList.add('reader-media--loaded');
+      if (el instanceof HTMLVideoElement) ensureVideoPlayback(el);
+    }));
+  };
+
+  const showError = () => {
+    if (revealed || stale()) return;
+    revealed = true;
+    spinner.remove();
+    el.remove();
+    container.classList.remove('reader__page--loading');
+    const err = document.createElement('button');
+    err.type = 'button';
+    err.className = 'reader__media-error';
+    err.textContent = "Couldn't load this page. Tap to retry";
+    err.addEventListener('click', (e) => { e.stopPropagation(); mountPageMedia(container, opts); });
+    container.appendChild(err);
+  };
+
+  if (el instanceof HTMLImageElement) {
+    const ready = () => {
+      const done = () => reveal();
+      if (typeof el.decode === 'function') (el as HTMLImageElement).decode().then(done, done);
+      else done();
+    };
+    if (el.complete && el.naturalWidth > 0) ready();
+    else {
+      el.addEventListener('load', ready, { once: true });
+      el.addEventListener('error', showError, { once: true });
+    }
+  } else {
+    const v = el as HTMLVideoElement;
+    if (v.readyState >= 2) reveal();
+    else {
+      v.addEventListener('loadeddata', reveal, { once: true });
+      v.addEventListener('canplay', reveal, { once: true });
+      v.addEventListener('error', showError, { once: true });
+      // Low-data / low-power mode can stall before first frame: after 5s, show it if metadata is in
+      setTimeout(() => { if (!revealed && v.readyState >= 1) reveal(); }, 5000);
+      if (v.networkState === HTMLMediaElement.NETWORK_EMPTY) v.load();
+    }
+  }
+}
+
 export function render(): string {
   const storyId = getRouteParam();
   if (!storyId) {
@@ -167,6 +270,10 @@ export function render(): string {
 
   let contentHtml = '';
 
+  // Head start: begin fetching the opening pages the moment the reader renders
+  // (before init() runs), instead of waiting until after the first paint.
+  preloadAdjacentPages(story.panels || [], story.pageVideos, 0);
+
   if (story.format === 'scroll') {
     contentHtml = `
       <div class="reader__scroll-content">
@@ -180,10 +287,10 @@ export function render(): string {
             !!(story.pageDialogue?.[i]?.some((l: any) => !!l.audioUrl))
           );
           return `
-          <div class="reader__panel" data-panel-index="${i}">
+          <div class="reader__panel reader__panel--loading" data-panel-index="${i}">
             ${isVideo
-              ? `<video class="reader__panel-video" src="${mediaUrl}" autoplay loop playsinline webkit-playsinline data-panel-idx="${i}" style="width:100%;height:auto;border-radius:8px;display:block;"></video>`
-              : `<img src="${panel}" alt="Panel ${i + 1}" loading="lazy">`
+              ? `<video class="reader__panel-video reader-media" src="${mediaUrl}" autoplay loop playsinline webkit-playsinline data-panel-idx="${i}" style="width:100%;height:auto;border-radius:8px;display:block;"></video>`
+              : `<img class="reader-media" src="${panel}" alt="Panel ${i + 1}" ${i < 3 ? 'fetchpriority="high"' : 'loading="lazy"'}>`
             }
             ${hasAudio ? `
               <button class="reader-audio-btn" data-audio-panel="${i}" type="button" title="Play audio">
@@ -199,20 +306,21 @@ export function render(): string {
     `;
   } else if (story.format === 'book') {
     const page0Media = (story.pageVideos && story.pageVideos[0]) || (story.panels && story.panels[0]) || '';
-    const isVideoPage = isVideoMedia(page0Media) || !!(story.pageVideos && story.pageVideos[0]);
     const pageAudioSrc = story.pageAudioSource?.[0];
     const effectiveAudioMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
     const hasAudio = effectiveAudioMode !== 'silent' && effectiveAudioMode !== 'native' && (
       !!story.pageAudio?.[0] ||
       !!(story.pageDialogue?.[0]?.some((l: any) => !!l.audioUrl))
     );
-    const firstPageMedia = isVideoPage
-      ? `<video id="book-video" src="${page0Media}" autoplay loop playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"></video>`
-      : `<img id="book-img" src="${story.panels?.[0] || ''}" alt="Page 1" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">`;
+    // No bare <img>/<video> here: updatePage() mounts page 1 through mountPageMedia()
+    // right after render, so the first thing readers see is the spinner, then a fade-in.
+    const firstPageMedia = page0Media
+      ? `<div class="reader__media-spinner"><div class="reader__spinner-ring"></div></div>`
+      : '';
 
     contentHtml = `
       <div class="reader__book-content">
-        <div class="reader__page" id="book-page" style="position:relative;">
+        <div class="reader__page${page0Media ? ' reader__page--loading' : ''}" id="book-page" style="position:relative;">
           ${firstPageMedia}
           ${hasAudio ? `
             <button class="reader-audio-btn" id="reader-audio-toggle" type="button" title="Play audio">
@@ -559,6 +667,29 @@ export async function init(): Promise<void> {
     ensureVideoPlayback(vid);
   });
 
+  // Waterfall: each panel shows a spinner until its media is ready, then fades in
+  document.querySelectorAll<HTMLElement>('.reader__panel--loading').forEach(panel => {
+    const media = panel.querySelector('.reader-media') as HTMLImageElement | HTMLVideoElement | null;
+    const show = () => {
+      panel.classList.remove('reader__panel--loading');
+      if (media) requestAnimationFrame(() => media.classList.add('reader-media--loaded'));
+    };
+    if (!media) { show(); return; }
+    if (media instanceof HTMLImageElement) {
+      if (media.complete && media.naturalWidth > 0) show();
+      else {
+        media.addEventListener('load', show, { once: true });
+        media.addEventListener('error', show, { once: true });
+      }
+    } else if (media.readyState >= 2) {
+      show();
+    } else {
+      media.addEventListener('loadeddata', show, { once: true });
+      media.addEventListener('error', show, { once: true });
+      setTimeout(() => { if (media.readyState >= 1) show(); }, 5000);
+    }
+  });
+
   // ─── Back button ───
   document.getElementById('reader-back')?.addEventListener('click', () => {
     stopBgm();
@@ -735,6 +866,9 @@ export async function init(): Promise<void> {
       const isInfoPage = showEndCard && currentPage === story.panels.length;
 
       if (pageContainer) {
+        // Invalidate any media still loading for the previous page
+        mediaMountToken++;
+        pageContainer.classList.remove('reader__page--loading');
         if (isInfoPage) {
 
           if (isGateEpisode) {
@@ -780,59 +914,18 @@ export async function init(): Promise<void> {
           const focalPos = story.pageFocalPositions?.[currentPage];
           const objPosStyle = focalPos && focalPos !== 'center' ? `object-position:center ${focalPos};` : '';
 
-          // Check preload cache first, show spinner if not ready
-          const cachedEl = currentMedia ? getPreloadedElement(currentMedia) : null;
-          if (isVideo) {
-            if (cachedEl && cachedEl instanceof HTMLVideoElement) {
-              const clone = cachedEl.cloneNode(true) as HTMLVideoElement;
-              clone.id = 'book-video';
-              clone.autoplay = true;
-              clone.loop = true;
-              clone.style.cssText = `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`;
-              pageContainer.innerHTML = '';
-              pageContainer.appendChild(clone);
-              ensureVideoPlayback(clone);
-            } else {
-              pageContainer.innerHTML = `<div class="reader__media-spinner"><div class="reader__spinner-ring"></div></div>`;
-              const vid = document.createElement('video');
-              vid.id = 'book-video';
-              vid.src = currentMedia;
-              vid.autoplay = true;
-              vid.loop = true;
-              vid.playsInline = true;
-              vid.style.cssText = `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`;
-              vid.addEventListener('loadeddata', () => {
-                if (pageContainer.querySelector('.reader__media-spinner')) {
-                  pageContainer.innerHTML = '';
-                  pageContainer.appendChild(vid);
-                  ensureVideoPlayback(vid);
-                }
-              }, { once: true });
-            }
+          // Spinner shows instantly, media fades in once decoded / first frame ready
+          if (currentMedia) {
+            mountPageMedia(pageContainer, {
+              url: currentMedia,
+              isVideo,
+              id: isVideo ? 'book-video' : 'book-img',
+              alt: `Page ${currentPage + 1}`,
+              style: `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`,
+            });
           } else {
-            if (cachedEl && cachedEl instanceof HTMLImageElement) {
-              const clone = cachedEl.cloneNode(true) as HTMLImageElement;
-              clone.id = 'book-img';
-              clone.alt = `Page ${currentPage + 1}`;
-              clone.style.cssText = `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`;
-              pageContainer.innerHTML = '';
-              pageContainer.appendChild(clone);
-            } else if (currentMedia) {
-              pageContainer.innerHTML = `<div class="reader__media-spinner"><div class="reader__spinner-ring"></div></div>`;
-              const img = new Image();
-              img.id = 'book-img';
-              img.src = currentMedia;
-              img.alt = `Page ${currentPage + 1}`;
-              img.style.cssText = `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`;
-              img.addEventListener('load', () => {
-                if (pageContainer.querySelector('.reader__media-spinner')) {
-                  pageContainer.innerHTML = '';
-                  pageContainer.appendChild(img);
-                }
-              }, { once: true });
-            } else {
-              pageContainer.innerHTML = `<img id="book-img" src="" alt="Page ${currentPage + 1}" style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;">`;
-            }
+            // Text-only page: nothing to load, no empty image box
+            pageContainer.innerHTML = '';
           }
 
           // Preload adjacent pages in background

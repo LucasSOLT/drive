@@ -3,14 +3,17 @@
  * Eliminates the 1–3s black screen when readers turn pages.
  */
 
+import { isVideoMedia } from './media.ts';
+
 const MAX_CACHE = 30;
 const cache = new Map<string, HTMLImageElement | HTMLVideoElement>();
 const order: string[] = []; // LRU order tracking
+/** In-flight loads, so the same URL is never fetched twice at the same time */
+const inflight = new Map<string, Promise<HTMLImageElement | HTMLVideoElement>>();
 
 function isVideoUrl(url: string): boolean {
   if (!url) return false;
-  const lower = url.toLowerCase();
-  return lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.mov') || lower.includes('video/');
+  return isVideoMedia(url) || url.toLowerCase().includes('video/');
 }
 
 function evictIfNeeded(): void {
@@ -44,46 +47,48 @@ export function preloadMedia(url: string): Promise<HTMLImageElement | HTMLVideoE
     return Promise.resolve(existing);
   }
 
-  evictIfNeeded();
+  // Already loading
+  const pending = inflight.get(url);
+  if (pending) return pending;
 
-  if (isVideoUrl(url)) {
-    return new Promise((resolve) => {
-      const video = document.createElement('video');
-      video.preload = 'auto';
-      video.muted = true;
-      video.playsInline = true;
-      video.src = url;
-      const onReady = () => {
-        cache.set(url, video);
-        touchLRU(url);
-        resolve(video);
-      };
-      video.addEventListener('loadeddata', onReady, { once: true });
-      video.addEventListener('error', () => {
-        // Still cache video element so we don't retry endlessly
-        cache.set(url, video);
-        touchLRU(url);
-        resolve(video);
-      }, { once: true });
-      video.load();
-    });
-  } else {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.src = url;
-      const onReady = () => {
-        cache.set(url, img);
-        touchLRU(url);
-        resolve(img);
-      };
-      img.addEventListener('load', onReady, { once: true });
-      img.addEventListener('error', () => {
-        cache.set(url, img);
-        touchLRU(url);
-        resolve(img);
-      }, { once: true });
-    });
-  }
+  const p: Promise<HTMLImageElement | HTMLVideoElement> = isVideoUrl(url)
+    ? new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.preload = 'auto';
+        video.muted = true;
+        video.playsInline = true;
+        video.src = url;
+        video.addEventListener('loadeddata', () => {
+          evictIfNeeded();
+          cache.set(url, video);
+          touchLRU(url);
+          resolve(video);
+        }, { once: true });
+        // Failures are NOT cached, so the reader retries them when the page is opened
+        video.addEventListener('error', () => resolve(video), { once: true });
+        video.load();
+      })
+    : new Promise((resolve) => {
+        const img = new Image();
+        img.decoding = 'async';
+        img.addEventListener('load', () => {
+          // Decode now so the first paint is instant when the page is shown
+          const finish = () => {
+            evictIfNeeded();
+            cache.set(url, img);
+            touchLRU(url);
+            resolve(img);
+          };
+          if (typeof img.decode === 'function') img.decode().then(finish, finish);
+          else finish();
+        }, { once: true });
+        img.addEventListener('error', () => resolve(img), { once: true });
+        img.src = url;
+      });
+
+  inflight.set(url, p);
+  p.finally(() => inflight.delete(url));
+  return p;
 }
 
 /** Check if a URL is already preloaded */
@@ -98,17 +103,28 @@ export function getPreloadedElement(url: string): HTMLImageElement | HTMLVideoEl
   return el || null;
 }
 
-/** Preload adjacent pages (current ± 1) for a story */
+/**
+ * Preload the pages around the current one.
+ * Order matters (browsers fetch in request order): current → next → previous → next+2.
+ * Images are preloaded 2 ahead; videos only 1 ahead / 1 behind (they're heavy).
+ */
 export function preloadAdjacentPages(
   panels: string[],
   pageVideos: Record<number, string> | undefined,
   currentPage: number
 ): void {
-  const pages = [currentPage - 1, currentPage + 1];
-  for (const idx of pages) {
+  const plan: Array<{ idx: number; imagesOnly: boolean }> = [
+    { idx: currentPage, imagesOnly: false },
+    { idx: currentPage + 1, imagesOnly: false },
+    { idx: currentPage - 1, imagesOnly: false },
+    { idx: currentPage + 2, imagesOnly: true },
+  ];
+  for (const { idx, imagesOnly } of plan) {
     if (idx < 0 || idx >= panels.length) continue;
     const media = (pageVideos && pageVideos[idx]) || panels[idx];
-    if (media) preloadMedia(media).catch(() => {});
+    if (!media) continue;
+    if (imagesOnly && isVideoUrl(media)) continue;
+    preloadMedia(media).catch(() => {});
   }
 }
 

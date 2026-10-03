@@ -3630,6 +3630,65 @@ button.profile-avatar {
   box-shadow: var(--shadow-lg);
 }
 
+/* ─── Page media: no glow or box until loaded, then fade in WITH the glow ─── */
+.reader__page .reader-media,
+.reader__panel .reader-media {
+  opacity: 0;
+  box-shadow: none;
+  transition: opacity 0.35s ease, box-shadow 0.35s ease;
+}
+.reader__page .reader-media--loaded {
+  opacity: 1;
+  box-shadow: var(--shadow-lg);
+}
+.reader__panel .reader-media--loaded {
+  opacity: 1;
+}
+
+/* Spinner sits over the empty media area while a page loads */
+.reader__page--loading {
+  min-height: 38dvh;
+}
+.reader__page .reader__media-spinner {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  z-index: 1;
+}
+.reader__media-error {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+/* Waterfall panels: reserve space + spinner until the panel's media is ready */
+.reader__panel--loading {
+  min-height: 260px;
+}
+.reader__panel--loading::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #10B981;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader__page .reader-media,
+  .reader__panel .reader-media { transition: none; }
+}
+
 .reader__page-nav {
   display: flex;
   align-items: center;
