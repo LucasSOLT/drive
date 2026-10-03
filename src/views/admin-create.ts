@@ -2555,7 +2555,7 @@ function renderBookCanvas(): string {
   const i = currentPage;
   const page = bookPages[i];
   const cardHtml = `
-    <div class="book-tile book-tile--single" data-book-longpress="${i}">
+    <div class="book-tile book-tile--single">
       <div class="book-tile__header" style="position:relative; display:flex; align-items:center; justify-content:space-between; padding:10px 14px;">
         <span class="book-tile__label">PAGE ${i + 1}</span>
         <div class="book-tile__header-actions">
@@ -5230,13 +5230,117 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         if (dropdown) dropdown.style.display = 'none';
         openPreflightPublishModal();
       });
-      // Arrow navigation
+      // Arrow navigation (desktop only — hidden on mobile)
       document.getElementById('btn-book-prev')?.addEventListener('click', () => {
         if (currentPage > 0) { currentPage--; updateView(); }
       });
       document.getElementById('btn-book-next')?.addEventListener('click', () => {
         if (currentPage < bookPages.length - 1) { currentPage++; updateView(); }
       });
+
+      // ─── Mobile Swipe Gesture Navigation ───
+      const bookSingleView = document.querySelector('.book-single-view') as HTMLElement | null;
+      if (bookSingleView) {
+        let swStartX = 0;
+        let swStartY = 0;
+        let swStartTime = 0;
+        let swDeltaX = 0;
+        let swLocked: 'h' | 'v' | null = null;
+        let swActive = false;
+        const SW_LOCK = 10;     // px dead zone
+        const SW_DIST = 60;     // px to commit
+        const SW_VEL = 0.3;     // px/ms to commit via flick
+
+        bookSingleView.addEventListener('touchstart', (e: TouchEvent) => {
+          const target = e.target as HTMLElement;
+          if (target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return;
+          const t = e.touches[0];
+          swStartX = t.clientX;
+          swStartY = t.clientY;
+          swStartTime = Date.now();
+          swDeltaX = 0;
+          swLocked = null;
+          swActive = false;
+          bookSingleView.style.transition = 'none';
+        }, { passive: true });
+
+        bookSingleView.addEventListener('touchmove', (e: TouchEvent) => {
+          if (swLocked === 'v') return;
+          const t = e.touches[0];
+          const dx = t.clientX - swStartX;
+          const dy = t.clientY - swStartY;
+
+          if (!swLocked) {
+            if (Math.abs(dx) < SW_LOCK && Math.abs(dy) < SW_LOCK) return;
+            if (Math.abs(dx) > Math.abs(dy) * 1.2) {
+              swLocked = 'h';
+              swActive = true;
+            } else {
+              swLocked = 'v';
+              return;
+            }
+          }
+
+          if (swLocked === 'h') {
+            e.preventDefault();
+            // Dampen at edges
+            const atStart = currentPage === 0 && dx > 0;
+            const atEnd = currentPage >= bookPages.length - 1 && dx < 0;
+            swDeltaX = (atStart || atEnd) ? dx * 0.2 : dx;
+            bookSingleView.style.transform = `translateX(${swDeltaX}px)`;
+          }
+        }, { passive: false });
+
+        bookSingleView.addEventListener('touchend', () => {
+          if (!swActive) {
+            bookSingleView.style.transition = '';
+            bookSingleView.style.transform = '';
+            return;
+          }
+
+          const elapsed = Date.now() - swStartTime;
+          const velocity = Math.abs(swDeltaX) / Math.max(1, elapsed);
+          const commit = Math.abs(swDeltaX) > SW_DIST || velocity > SW_VEL;
+
+          bookSingleView.style.transition = 'transform 0.22s cubic-bezier(0.22, 0.68, 0, 1.0)';
+
+          if (commit && swDeltaX < 0 && currentPage < bookPages.length - 1) {
+            bookSingleView.style.transform = 'translateX(-100%)';
+            setTimeout(() => {
+              bookSingleView.style.transition = 'none';
+              bookSingleView.style.transform = '';
+              currentPage++;
+              updateView();
+            }, 220);
+          } else if (commit && swDeltaX > 0 && currentPage > 0) {
+            bookSingleView.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+              bookSingleView.style.transition = 'none';
+              bookSingleView.style.transform = '';
+              currentPage--;
+              updateView();
+            }, 220);
+          } else {
+            bookSingleView.style.transform = 'translateX(0)';
+            setTimeout(() => {
+              bookSingleView.style.transition = '';
+              bookSingleView.style.transform = '';
+            }, 220);
+          }
+
+          swActive = false;
+          swLocked = null;
+          swDeltaX = 0;
+        }, { passive: true });
+
+        bookSingleView.addEventListener('touchcancel', () => {
+          bookSingleView.style.transition = '';
+          bookSingleView.style.transform = '';
+          swActive = false;
+          swLocked = null;
+          swDeltaX = 0;
+        }, { passive: true });
+      }
 
       // SPARC checkpoint button → opens modal
       document.getElementById('btn-sparc-checkpoint')?.addEventListener('click', (e) => {
@@ -5665,35 +5769,6 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
           },
         });
       });
-
-      // Long-press to delete
-      const tile = wizard.querySelector(`[data-book-longpress="${i}"]`);
-      if (tile) {
-        let pressTimer: ReturnType<typeof setTimeout> | null = null;
-        const startPress = (e: Event) => {
-          if ((e.target as HTMLElement).closest('input, textarea, button, select, [contenteditable="true"]')) return;
-          pressTimer = setTimeout(() => {
-            pressTimer = null;
-            if (bookPages.length <= 1) {
-              showModal({ title: 'Cannot Delete', content: '<p style="line-height:1.6;">At least one page must remain.</p>', confirmText: 'OK' });
-              return;
-            }
-            showModal({
-              title: 'Delete Page',
-              content: `<p style="line-height:1.6;">Remove <strong>Page ${i + 1}</strong>? This cannot be undone.</p>`,
-              confirmText: 'Delete', cancelText: 'Cancel',
-              onConfirm: () => { bookPages.splice(i, 1); if (currentPage >= bookPages.length) currentPage = bookPages.length - 1; updateView(); },
-            });
-          }, 600);
-        };
-        const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
-        tile.addEventListener('mousedown', startPress);
-        tile.addEventListener('mouseup', cancelPress);
-        tile.addEventListener('mouseleave', cancelPress);
-        tile.addEventListener('touchstart', startPress, { passive: true });
-        tile.addEventListener('touchend', cancelPress);
-        tile.addEventListener('touchcancel', cancelPress);
-      }
     }
   };
 

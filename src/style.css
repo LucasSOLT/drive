@@ -5981,24 +5981,11 @@ button.profile-avatar {
     gap: 0;
   }
   .book-nav-arrow {
-    position: absolute;
-    top: 130px;
-    z-index: 15;
-    margin-top: 0;
-    width: 36px;
-    height: 36px;
-    background: rgba(18, 18, 30, 0.85);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-    color: #ffffff;
+    display: none !important;
   }
-  .book-nav-arrow--left {
-    left: 4px;
-  }
-  .book-nav-arrow--right {
-    right: 4px;
+  .book-single-view {
+    overflow-x: hidden;
+    touch-action: pan-y;
   }
   .book-tile--single {
     width: 100%;
