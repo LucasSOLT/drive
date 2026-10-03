@@ -2296,31 +2296,31 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
     });
   });
 
-  // Quick insert character chip into screenplay textarea
-  container.querySelectorAll('[data-insert-tag]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const attr = (btn as HTMLElement).getAttribute('data-insert-tag') || 'mob-0';
-      const lastDash = attr.lastIndexOf('-');
-      const pfx = attr.substring(0, lastDash);
-      const pageIdx = parseInt(attr.substring(lastDash + 1));
-      const tag = (btn as HTMLElement).getAttribute('data-tag') || '';
+  // Quick insert character chip into screenplay textarea (delegated for dynamic chips)
+  container.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('[data-insert-tag]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const attr = (btn as HTMLElement).getAttribute('data-insert-tag') || 'mob-0';
+    const lastDash = attr.lastIndexOf('-');
+    const pfx = attr.substring(0, lastDash);
+    const pageIdx = parseInt(attr.substring(lastDash + 1));
+    const tag = (btn as HTMLElement).getAttribute('data-tag') || '';
 
-      const textarea = (pfx === 'sbd'
-        ? container.querySelector(`[data-sb-text="${pageIdx}"]`)
-        : container.querySelector(`[data-tile-text="${pageIdx}"]`)) as HTMLTextAreaElement | null;
+    const textarea = (pfx === 'sbd'
+      ? container.querySelector(`[data-sb-text="${pageIdx}"]`)
+      : container.querySelector(`[data-tile-text="${pageIdx}"]`)) as HTMLTextAreaElement | null;
 
-      if (textarea && tag) {
-        insertTextAtCursor(textarea, tag);
-        if (bookPages[pageIdx]) {
-          bookPages[pageIdx].text = textarea.value;
-          bookPages[pageIdx].dialogueLines = parseScreenplayToDialogueLines(textarea.value, bookPages[pageIdx].dialogueLines);
-          syncDialogText(pageIdx);
-          saveDraft();
-        }
+    if (textarea && tag) {
+      insertTextAtCursor(textarea, tag);
+      if (bookPages[pageIdx]) {
+        bookPages[pageIdx].text = textarea.value;
+        bookPages[pageIdx].dialogueLines = parseScreenplayToDialogueLines(textarea.value, bookPages[pageIdx].dialogueLines);
+        syncDialogText(pageIdx);
+        saveDraft();
       }
-    });
+    }
   });
 
   // Add dialogue line
@@ -4256,8 +4256,7 @@ export function init(): void {
       if (existingDraft && existingDraft.editStoryId === editId) {
         // Local draft exists for this story — use it (preserves unsaved changes)
         loadDraft(existingDraft);
-        return;
-      }
+      } else {
       
       const stories = await fetchOfficialStories();
       let storyToEdit = stories.find(s => s.id === editId);
@@ -4314,6 +4313,7 @@ export function init(): void {
              image: p, notes: storyToEdit.pageScripts?.[i] || '', layout: 'single', tiles: [p], textOverlays: [[]], audioUrl: null
            }));
         }
+      }
       }
     } else if (groupIdMatch) {
       // Check for existing draft first — preserve work on page refresh
