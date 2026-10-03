@@ -17,6 +17,21 @@ import { type SquadSession } from '../types.ts';
 import { BgmDuckingController } from '../lib/bgm-ducking.ts';
 import { preloadAdjacentPages, getPreloadedElement, isPreloaded } from '../lib/media-preloader.ts';
 import { saveReadingProgress } from './series-info.ts';
+import {
+  ensureAutoplayAudio,
+  getAutoplayAudio,
+  prepareFade as prepareAudioFade,
+  fadeIn as fadeInAudio,
+  resetLevel as resetAudioLevel,
+  playAutoplayUrl,
+  stopAutoplayUrl,
+  releaseAutoplayAudio,
+} from '../lib/audio-fade.ts';
+
+/** Per-episode auto-play toggle. OFF by default; reset every time an episode opens. */
+let episodeAutoplay = false;
+const AUTOPLAY_DELAY_MS = 1000; // wait after a page appears before audio starts
+const AUTOPLAY_FADE_MS = 900;   // quiet -> full volume
 
 // ─── SVG Icons ───
 const ICON = {
@@ -274,6 +289,10 @@ export function render(): string {
   // (before init() runs), instead of waiting until after the first paint.
   preloadAdjacentPages(story.panels || [], story.pageVideos, 0);
 
+  // Auto-play audio is OFF by default every time an episode is opened
+  episodeAutoplay = false;
+  releaseAutoplayAudio();
+
   if (story.format === 'scroll') {
     contentHtml = `
       <div class="reader__scroll-content">
@@ -382,6 +401,11 @@ export function render(): string {
           <button class="reader__action-btn active" id="btn-cc" aria-label="Captions">
             <span class="reader__action-icon reader__cc-icon">CC</span>
           </button>
+          <button class="reader__action-btn" id="btn-autoplay" aria-label="Auto-play audio" aria-pressed="false" title="Auto-play audio: Off">
+            <span class="reader__action-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"></circle><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"></polygon></svg>
+            </span>
+          </button>
           ${(story.bgmUrl || (story as any).bgm_url) ? `
             <button class="reader__action-btn active" id="btn-bgm" aria-label="Toggle Background Music" title="Background Music: Playing">
               <span class="reader__action-icon" id="bgm-icon">
@@ -428,6 +452,10 @@ export async function init(): Promise<void> {
   let captionsOpen = true;
   let activeKaraokeCtrl: KaraokeController | null = null;
   let updateScrubberDisplay: (current: number, duration: number) => void = () => {};
+  // Auto-play state (the on/off flag itself is module-level `episodeAutoplay`)
+  let autoplayTimer: ReturnType<typeof setTimeout> | null = null;
+  let autoplayKick: (() => void) | null = null;   // scroll format: start with the panel on screen
+  let autoplayCancel: (() => void) | null = null; // scroll format: cancel pending start
   const container = document.getElementById('reader-container');
   if (!container) return;
 
@@ -750,6 +778,12 @@ export async function init(): Promise<void> {
 
   const cleanupReader = () => {
     stopBgm();
+    cancelAutoplay();
+    autoplayCancel?.();
+    if (activeKaraokeCtrl) { activeKaraokeCtrl.destroy(); activeKaraokeCtrl = null; }
+    stopSpeaking();
+    episodeAutoplay = false;
+    releaseAutoplayAudio();
     window.removeEventListener('keydown', handleKeyNav);
     window.removeEventListener('hashchange', cleanupReader);
     window.removeEventListener('popstate', cleanupReader);
@@ -863,6 +897,7 @@ export async function init(): Promise<void> {
     const dotsContainer = document.getElementById('book-dots');
 
     const updatePage = () => {
+      cancelAutoplay(); // swiped away before the ~1s delay finished -> never start the old page's audio
       const isInfoPage = showEndCard && currentPage === story.panels.length;
 
       if (pageContainer) {
@@ -1019,9 +1054,9 @@ export async function init(): Promise<void> {
               playAudioForPage(currentPage);
             });
 
-            // Autoplay if setting is on
-            if (getSettings().autoPlay) {
-              playAudioForPage(currentPage);
+            // Auto-play (per-episode toggle): waits ~1s, then plays from the start with a fade-in
+            if (episodeAutoplay) {
+              scheduleAutoplay(currentPage);
             }
           }
 
@@ -1295,7 +1330,6 @@ export async function init(): Promise<void> {
 
   // Waterfall autoplay with IntersectionObserver
   if (story.format === 'scroll' && story.pageAudio) {
-    const settings = getSettings();
     let currentPlayingPanel = -1;
 
     // Wire up manual audio buttons
@@ -1303,13 +1337,17 @@ export async function init(): Promise<void> {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const idx = parseInt(btn.getAttribute('data-audio-panel') || '0');
-        if (isSpeaking() && currentPlayingPanel === idx) {
+        const sharedEl = getAutoplayAudio();
+        const somethingPlaying = isSpeaking() || (!!sharedEl && !sharedEl.paused);
+        if (somethingPlaying && currentPlayingPanel === idx) {
           stopSpeaking();
+          stopAutoplayUrl();
           unduckBgm();
           currentPlayingPanel = -1;
           (btn as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
         } else {
           stopSpeaking();
+          stopAutoplayUrl();
           // Reset all buttons
           document.querySelectorAll('[data-audio-panel]').forEach(b => {
             (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
@@ -1325,34 +1363,63 @@ export async function init(): Promise<void> {
       });
     });
 
-    // Autoplay on scroll into view
-    if (settings.autoPlay) {
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const idx = parseInt((entry.target as HTMLElement).getAttribute('data-panel-index') || '-1');
-            if (idx >= 0 && idx !== currentPlayingPanel && story.pageAudio![idx]) {
-              stopSpeaking();
-              // Reset all buttons
-              document.querySelectorAll('[data-audio-panel]').forEach(b => {
-                (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-              });
-              duckBgm();
-              playAudioUrl(story.pageAudio![idx]);
-              currentPlayingPanel = idx;
-              const audioBtn = document.querySelector(`[data-audio-panel="${idx}"]`) as HTMLElement;
-              if (audioBtn) {
-                audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
-              }
-            }
-          }
-        });
-      }, { threshold: 0.8 }); // 80% visible triggers autoplay
+    // Auto-play on scroll into view (only while the episode's auto-play toggle is on)
+    let waterfallTimer: ReturnType<typeof setTimeout> | null = null;
+    const visiblePanels = new Set<number>();
 
-      document.querySelectorAll('[data-panel-index]').forEach(panel => {
-        observer.observe(panel);
+    const startPanelAutoplay = (idx: number) => {
+      if (waterfallTimer !== null) clearTimeout(waterfallTimer);
+      waterfallTimer = setTimeout(async () => {
+        waterfallTimer = null;
+        if (!episodeAutoplay || !visiblePanels.has(idx) || idx === currentPlayingPanel) return;
+        const url = story.pageAudio![idx];
+        if (!url) return;
+        stopSpeaking();
+        document.querySelectorAll('[data-audio-panel]').forEach(b => {
+          (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+        });
+        duckBgm();
+        const ok = await playAutoplayUrl(url, true);
+        if (!ok) {
+          unduckBgm();
+          showActionToast('Tap ▶ to start the audio');
+          return;
+        }
+        currentPlayingPanel = idx;
+        const audioBtn = document.querySelector(`[data-audio-panel="${idx}"]`) as HTMLElement;
+        if (audioBtn) {
+          audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+        }
+      }, AUTOPLAY_DELAY_MS);
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const idx = parseInt((entry.target as HTMLElement).getAttribute('data-panel-index') || '-1');
+        if (idx < 0) return;
+        if (entry.isIntersecting) {
+          visiblePanels.add(idx);
+          if (episodeAutoplay && idx !== currentPlayingPanel && story.pageAudio![idx]) {
+            startPanelAutoplay(idx);
+          }
+        } else {
+          visiblePanels.delete(idx);
+        }
       });
-    }
+    }, { threshold: 0.8 }); // 80% visible triggers autoplay
+
+    document.querySelectorAll('[data-panel-index]').forEach(panel => {
+      observer.observe(panel);
+    });
+
+    // When the toggle is switched on, start with whatever panel is already on screen
+    autoplayKick = () => {
+      const idx = [...visiblePanels].sort((a, b) => a - b)[0];
+      if (idx !== undefined && story.pageAudio![idx]) startPanelAutoplay(idx);
+    };
+    autoplayCancel = () => {
+      if (waterfallTimer !== null) { clearTimeout(waterfallTimer); waterfallTimer = null; }
+    };
   }
 
   // ─── Dynamic End Card for Scroll Format ───
@@ -1459,6 +1526,31 @@ export async function init(): Promise<void> {
     showActionToast(isNowMuted ? 'Background Music Muted' : 'Background Music Playing');
   });
 
+  // ─── Auto-play audio toggle (per episode, OFF by default) ───
+  const autoplayBtn = document.getElementById('btn-autoplay');
+  autoplayBtn?.addEventListener('click', () => {
+    episodeAutoplay = !episodeAutoplay;
+    autoplayBtn.classList.toggle('active', episodeAutoplay);
+    autoplayBtn.setAttribute('aria-pressed', String(episodeAutoplay));
+    autoplayBtn.title = episodeAutoplay ? 'Auto-play audio: On' : 'Auto-play audio: Off';
+    if (episodeAutoplay) {
+      ensureAutoplayAudio(); // inside the tap -> unlocks audio for the rest of the episode
+      showActionToast('Auto-play audio on');
+      // Start on the page/panel the reader is already looking at
+      if (story.format === 'book') {
+        const stillPlaying = !!activeKaraokeCtrl && !activeKaraokeCtrl.paused;
+        if (!stillPlaying) scheduleAutoplay(currentPage);
+      } else {
+        autoplayKick?.();
+      }
+    } else {
+      // Only stops FUTURE auto-starts; audio already playing is left alone
+      cancelAutoplay();
+      autoplayCancel?.();
+      showActionToast('Auto-play audio off');
+    }
+  });
+
   function escapeHtml(str: string): string {
     if (!str) return '';
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1484,7 +1576,28 @@ export async function init(): Promise<void> {
     }
   }
 
-  function playAudioForPage(pageIdx: number, startWordIdx?: number) {
+  // ─── Per-episode auto-play (off by default, resets every time an episode opens) ───
+  function cancelAutoplay() {
+    if (autoplayTimer !== null) {
+      clearTimeout(autoplayTimer);
+      autoplayTimer = null;
+    }
+  }
+
+  function scheduleAutoplay(pageIdx: number) {
+    cancelAutoplay();
+    if (!episodeAutoplay) return;
+    autoplayTimer = setTimeout(() => {
+      autoplayTimer = null;
+      // Bail out if the toggle was turned off, the reader moved on, or something is already playing
+      if (!episodeAutoplay || currentPage !== pageIdx) return;
+      if (activeKaraokeCtrl && !activeKaraokeCtrl.paused) return;
+      if (!document.getElementById('reader-audio-toggle')) return; // page has no audio
+      playAudioForPage(pageIdx, undefined, { fade: true });
+    }, AUTOPLAY_DELAY_MS);
+  }
+
+  function playAudioForPage(pageIdx: number, startWordIdx?: number, opts?: { fade?: boolean }) {
     const s = story || getStoryById(storyId);
     if (!s) return;
     const pageAudioUrl = s.pageAudio?.[pageIdx];
@@ -1540,6 +1653,12 @@ export async function init(): Promise<void> {
         }));
       }
 
+      // When auto-play is armed, reuse the pre-unlocked element (iOS needs this) and set the start level
+      const sharedAudioEl = getAutoplayAudio();
+      if (sharedAudioEl) {
+        if (opts?.fade && typeof startWordIdx !== 'number') prepareAudioFade(); else resetAudioLevel();
+      }
+
       activeKaraokeCtrl = new KaraokeController(audioUrlToPlay, wordMap, {
         onWordChange: (wordIdx) => {
           const overlay = document.getElementById('reader-captions-overlay');
@@ -1568,10 +1687,25 @@ export async function init(): Promise<void> {
         onTimeUpdate: (cur, dur) => {
           updateScrubberDisplay(cur, dur);
         }
-      });
+      }, sharedAudioEl);
 
       if (typeof startWordIdx === 'number') {
         activeKaraokeCtrl.seekToWord(startWordIdx);
+      } else if (sharedAudioEl && opts?.fade) {
+        // Auto-play: start quiet, then ramp up to full volume
+        const ctrl = activeKaraokeCtrl;
+        ctrl.tryPlay().then(ok => {
+          if (ok) {
+            fadeInAudio(AUTOPLAY_FADE_MS);
+          } else {
+            resetAudioLevel();
+            if (activeKaraokeCtrl === ctrl) {
+              updateAllPlayButtons(false);
+              unduckBgm();
+              showActionToast('Tap ▶ to start the audio');
+            }
+          }
+        });
       } else {
         activeKaraokeCtrl.play();
       }

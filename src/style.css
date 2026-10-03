@@ -3530,6 +3530,10 @@ button.profile-avatar {
 .reader__action-btn.liked {
   color: #EF4444;
 }
+/* Auto-play audio toggle: dim when off, filled emerald when on */
+#btn-autoplay { opacity: 0.7; }
+#btn-autoplay.active { opacity: 1; color: #10B981; }
+#btn-autoplay.active svg circle { fill: rgba(16, 185, 129, 0.2); }
 
 .reader__action-icon {
   display: flex;

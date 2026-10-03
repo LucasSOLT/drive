@@ -47,12 +47,39 @@ export class KaraokeController {
   private _destroyed = false;
   private animFrameId: number | null = null;
 
+  private onLoadedMetadata = () => {
+    if (this._destroyed) return;
+    this.callbacks.onTimeUpdate?.(0, this.audio.duration);
+  };
+  private onTimeUpdateEv = () => {
+    if (!this._destroyed) {
+      this.callbacks.onTimeUpdate?.(this.audio.currentTime, this.audio.duration || 0);
+    }
+  };
+  private onEnded = () => {
+    if (!this._destroyed) {
+      this.currentWordIdx = -1;
+      this.callbacks.onWordChange?.(-1, -1);
+      this.callbacks.onFinish?.();
+    }
+  };
+
+  /**
+   * @param sharedAudio Optional pre-unlocked element to reuse (reader auto-play, needed for iOS).
+   *                    When omitted a fresh Audio element is created.
+   */
   constructor(
     audioUrl: string,
     words: WordTimestamp[],
-    callbacks: KaraokeCallbacks = {}
+    callbacks: KaraokeCallbacks = {},
+    sharedAudio?: HTMLAudioElement | null
   ) {
-    this.audio = new Audio(audioUrl);
+    if (sharedAudio) {
+      this.audio = sharedAudio;
+      this.audio.src = audioUrl;
+    } else {
+      this.audio = new Audio(audioUrl);
+    }
     this.audio.preload = 'auto';
     this.words = words.sort((a, b) => a.startTime - b.startTime);
     this.callbacks = callbacks;
@@ -66,23 +93,9 @@ export class KaraokeController {
       this.animFrameId = requestAnimationFrame(tick);
     };
 
-    this.audio.addEventListener('loadedmetadata', () => {
-      this.callbacks.onTimeUpdate?.(0, this.audio.duration);
-    });
-
-    this.audio.addEventListener('timeupdate', () => {
-      if (!this._destroyed) {
-        this.callbacks.onTimeUpdate?.(this.audio.currentTime, this.audio.duration || 0);
-      }
-    });
-
-    this.audio.addEventListener('ended', () => {
-      if (!this._destroyed) {
-        this.currentWordIdx = -1;
-        this.callbacks.onWordChange?.(-1, -1);
-        this.callbacks.onFinish?.();
-      }
-    });
+    this.audio.addEventListener('loadedmetadata', this.onLoadedMetadata);
+    this.audio.addEventListener('timeupdate', this.onTimeUpdateEv);
+    this.audio.addEventListener('ended', this.onEnded);
 
     // Start the animation frame loop
     this.animFrameId = requestAnimationFrame(tick);
@@ -197,6 +210,18 @@ export class KaraokeController {
     this.audio.play().catch(() => {});
   }
 
+  /** Like play(), but resolves false if the browser blocked playback (autoplay policy). */
+  async tryPlay(): Promise<boolean> {
+    if (this._destroyed) return false;
+    this.audio.muted = this._muted;
+    try {
+      await this.audio.play();
+      return !this._destroyed;
+    } catch {
+      return false;
+    }
+  }
+
   pause(): void {
     if (this._destroyed) return;
     this.audio.pause();
@@ -262,6 +287,9 @@ export class KaraokeController {
 
   destroy(): void {
     this._destroyed = true;
+    this.audio.removeEventListener('loadedmetadata', this.onLoadedMetadata);
+    this.audio.removeEventListener('timeupdate', this.onTimeUpdateEv);
+    this.audio.removeEventListener('ended', this.onEnded);
     this.audio.pause();
     this.audio.removeAttribute('src');
     this.audio.load(); // Release resources
