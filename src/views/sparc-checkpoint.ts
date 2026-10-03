@@ -49,6 +49,60 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
+const ALLOWED_RICH_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'BR', 'DIV', 'P', 'SPAN', 'A', 'UL', 'OL', 'LI']);
+const DROP_WITH_CONTENT = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE', 'NOSCRIPT']);
+
+/** Keep basic formatting (bold/italic/underline/links/lists), strip everything else. */
+function sanitizeRichText(html: string): string {
+  const doc = new DOMParser().parseFromString(`<div>${html || ''}</div>`, 'text/html');
+  const root = doc.body.firstElementChild as HTMLElement | null;
+  if (!root) return '';
+
+  const clean = (node: Element) => {
+    for (const child of Array.from(node.children)) {
+      if (DROP_WITH_CONTENT.has(child.tagName)) {
+        child.remove();
+        continue;
+      }
+      if (!ALLOWED_RICH_TAGS.has(child.tagName)) {
+        // Unknown tag: keep its (cleaned) children, drop the tag itself
+        clean(child);
+        child.replaceWith(...Array.from(child.childNodes));
+        continue;
+      }
+      for (const attr of Array.from(child.attributes)) {
+        if (!(child.tagName === 'A' && attr.name === 'href')) child.removeAttribute(attr.name);
+      }
+      if (child.tagName === 'A') {
+        const href = child.getAttribute('href') || '';
+        if (/^https?:\/\//i.test(href)) {
+          child.setAttribute('target', '_blank');
+          child.setAttribute('rel', 'noopener noreferrer nofollow');
+        } else {
+          child.removeAttribute('href');
+        }
+      }
+      clean(child);
+    }
+  };
+  clean(root);
+  return root.innerHTML;
+}
+
+const IMAGE_URL_RE = /\.(png|jpe?g|gif|webp|avif|heic)(\?.*)?$/i;
+
+/** One attachment: images render inline, anything else becomes a safe outbound link. */
+function renderMediaItem(url: string): string {
+  if (!/^https?:\/\//i.test(url)) return '';
+  const safe = escapeHtml(url);
+  if (IMAGE_URL_RE.test(url) || url.includes('/storage/v1/object/public/')) {
+    return `<img src="${safe}" class="sparc-feed__media-img" alt="Attachment" loading="lazy">`;
+  }
+  let host = url;
+  try { host = new URL(url).hostname; } catch { /* keep raw */ }
+  return `<a href="${safe}" target="_blank" rel="noopener noreferrer nofollow" style="display:inline-block; padding:8px 12px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:8px; font-size:0.82rem; color:var(--color-purple); text-decoration:none; word-break:break-all;">🔗 ${escapeHtml(host)}</a>`;
+}
+
 function getTimeAgo(dateStr: string): string {
   const d = new Date(dateStr);
   const now = new Date();
@@ -109,10 +163,10 @@ function renderFeed(posts: SparcPost[], members: SquadMemberState[]): string {
           </div>
           <span class="sparc-feed__badge">✅ Greenlit</span>
         </div>
-        <div class="sparc-feed__content">${post.content}</div>
+        <div class="sparc-feed__content">${sanitizeRichText(post.content)}</div>
         ${post.mediaUrls.length > 0 ? `
           <div class="sparc-feed__media">
-            ${post.mediaUrls.map(url => `<img src="${url}" class="sparc-feed__media-img" alt="Attachment">`).join('')}
+            ${post.mediaUrls.map(renderMediaItem).join('')}
           </div>
         ` : ''}
 
@@ -160,8 +214,8 @@ function renderAttachments(): string {
   return attachments.map((att, i) => `
     <div style="display:inline-block; position:relative; margin-right:8px; margin-top:8px;">
       ${att.type === 'photo' 
-        ? `<img src="${att.url}" style="height:60px; border-radius:4px;">`
-        : `<a href="${att.url}" target="_blank" style="display:inline-block; padding:8px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:4px;">🔗 Link</a>`
+        ? `<img src="${escapeHtml(att.url)}" style="height:60px; border-radius:4px;">`
+        : `<a href="${escapeHtml(att.url)}" target="_blank" rel="noopener noreferrer nofollow" style="display:inline-block; padding:8px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:4px;">🔗 Link</a>`
       }
       <button class="remove-attachment-btn" data-index="${i}" style="position:absolute; top:-6px; right:-6px; background:red; color:white; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; font-size:12px;">×</button>
     </div>
@@ -247,6 +301,8 @@ export async function init(): Promise<void> {
   attachments = [];
   hasSubmitted = false;
   hasAutoAdvanced = false;
+  openThreads.clear();
+  lastFeedSignature = '';
 
   const titleEl = document.getElementById('sparc-title');
   if (titleEl) titleEl.textContent = `Episode ${currentEpisodeNumber} Complete`;
@@ -297,7 +353,7 @@ export async function init(): Promise<void> {
     if (promptRes.data?.sparc_prompt) {
       if (promptTextEl) promptTextEl.textContent = promptRes.data.sparc_prompt.text || 'Reflect on what you just read.';
       if (promptMediaEl && promptRes.data.sparc_prompt.mediaUrls?.length) {
-        promptMediaEl.innerHTML = promptRes.data.sparc_prompt.mediaUrls.map((url: string) => `<img src="${url}" style="max-width:100%; border-radius:4px; margin-top:8px;">`).join('');
+        promptMediaEl.innerHTML = promptRes.data.sparc_prompt.mediaUrls.map((url: string) => /^https?:\/\//i.test(url) ? `<img src="${escapeHtml(url)}" style="max-width:100%; border-radius:4px; margin-top:8px;">` : '').join('');
       }
     } else {
       if (promptTextEl) promptTextEl.textContent = 'Reflect on what you just read.';
@@ -382,7 +438,7 @@ export async function init(): Promise<void> {
       } catch (err) {
         console.error('Polling error', err);
       }
-    }, 10000);
+    }, 6000);
     window.addEventListener('hashchange', () => clearInterval(pollInterval), { once: true });
 
   } catch (err) {
@@ -407,10 +463,53 @@ function updateTimer(startedAt: string, el: HTMLElement) {
   }
 }
 
-function refreshFeedUI() {
+/** Threads the user has expanded; survives feed rebuilds. */
+const openThreads = new Set<string>();
+let lastFeedSignature = '';
+
+function feedSignature(): string {
+  return JSON.stringify([
+    posts.map(p => [p.id, p.content, p.username, p.mediaUrls]),
+    members.map(m => m.userId),
+    posts.map(p => [
+      (reactions[p.id] || []).map(r => [r.emoji, r.count, r.userReacted]),
+      (replies[p.id] || []).map(r => [r.id, r.content]),
+    ]),
+  ]);
+}
+
+function refreshFeedUI(force = false) {
   const feedEl = document.getElementById('sparc-feed');
-  if (feedEl) {
+  const signature = feedSignature();
+  if (feedEl && (force || signature !== lastFeedSignature)) {
+    lastFeedSignature = signature;
+
+    // Capture in-progress reply drafts and focus so a rebuild never wipes what the user is typing
+    const drafts = new Map<string, string>();
+    feedEl.querySelectorAll<HTMLInputElement>('.sparc-reply-input').forEach(inp => {
+      if (inp.value) drafts.set(inp.dataset.responseId || '', inp.value);
+    });
+    const active = document.activeElement as HTMLInputElement | null;
+    const focusedId = active?.classList?.contains('sparc-reply-input') ? active.dataset.responseId : undefined;
+    const selStart = focusedId ? active?.selectionStart ?? null : null;
+
     feedEl.innerHTML = renderFeed(posts, members);
+
+    openThreads.forEach(id => {
+      const thread = feedEl.querySelector<HTMLElement>(`[data-thread-id="${id}"]`);
+      if (thread) thread.style.display = 'block';
+    });
+    drafts.forEach((val, id) => {
+      const inp = feedEl.querySelector<HTMLInputElement>(`.sparc-reply-input[data-response-id="${id}"]`);
+      if (inp) inp.value = val;
+    });
+    if (focusedId) {
+      const inp = feedEl.querySelector<HTMLInputElement>(`.sparc-reply-input[data-response-id="${focusedId}"]`);
+      if (inp) {
+        inp.focus({ preventScroll: true });
+        if (selStart !== null) inp.setSelectionRange(selStart, selStart);
+      }
+    }
     attachFeedInteractionListeners(feedEl);
   }
   updateProgressBar();
@@ -472,6 +571,7 @@ function attachFeedInteractionListeners(feedEl: HTMLElement) {
         refreshFeedUI();
       } catch (err) {
         console.error('Reaction error:', err);
+        el.classList.toggle('sparc-reaction-btn--active'); // revert optimistic change
       }
     });
   });
@@ -482,7 +582,9 @@ function attachFeedInteractionListeners(feedEl: HTMLElement) {
       const responseId = (btn as HTMLElement).dataset.responseId || '';
       const thread = feedEl.querySelector(`[data-thread-id="${responseId}"]`) as HTMLElement;
       if (thread) {
-        thread.style.display = thread.style.display === 'none' ? 'block' : 'none';
+        const open = thread.style.display === 'none';
+        thread.style.display = open ? 'block' : 'none';
+        if (open) openThreads.add(responseId); else openThreads.delete(responseId);
       }
     });
   });
@@ -490,27 +592,26 @@ function attachFeedInteractionListeners(feedEl: HTMLElement) {
   // Reply send buttons
   feedEl.querySelectorAll('.sparc-reply-send').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const el = btn as HTMLElement;
+      const el = btn as HTMLButtonElement;
       const responseId = el.dataset.responseId || '';
       const input = feedEl.querySelector(`.sparc-reply-input[data-response-id="${responseId}"]`) as HTMLInputElement;
       const content = input?.value?.trim();
-      if (!content || !responseId) return;
+      if (!content || !responseId || el.disabled) return;
 
+      el.disabled = true;
       el.textContent = '...';
       try {
         await submitSparcReply(responseId, content);
         input.value = '';
+        openThreads.add(responseId); // keep the thread open after the rebuild
         // Refresh replies
         const responseIds = posts.map(p => p.id);
         replies = await getSparcReplies(responseIds);
         refreshFeedUI();
-        // Auto-open the thread after sending
-        setTimeout(() => {
-          const thread = feedEl.querySelector(`[data-thread-id="${responseId}"]`) as HTMLElement;
-          if (thread) thread.style.display = 'block';
-        }, 50);
       } catch (err) {
         console.error('Reply error:', err);
+        el.disabled = false;
+        el.textContent = 'Send';
         alert('Failed to send reply');
       }
     });
@@ -545,8 +646,8 @@ function setupEventListeners() {
       e.preventDefault();
       const cmd = (e.currentTarget as HTMLButtonElement).dataset.cmd;
       if (cmd === 'createLink') {
-        const url = prompt('Enter link URL:');
-        if (url) document.execCommand(cmd, false, url);
+        const raw = prompt('Enter link URL:')?.trim();
+        if (raw) document.execCommand(cmd, false, /^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
       } else if (cmd) {
         document.execCommand(cmd, false);
       }
@@ -581,11 +682,17 @@ function setupEventListeners() {
   });
 
   document.getElementById('btn-attach-link')?.addEventListener('click', () => {
-    const url = prompt('Enter URL to attach:');
-    if (url) {
-      attachments.push({ type: 'link', url });
-      renderAttachmentsUI();
+    const raw = prompt('Enter URL to attach:')?.trim();
+    if (!raw) return;
+    const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    try {
+      new URL(url);
+    } catch {
+      alert('That does not look like a valid link.');
+      return;
     }
+    attachments.push({ type: 'link', url });
+    renderAttachmentsUI();
   });
 
   document.getElementById('sparc-attachments-container')?.addEventListener('click', (e) => {

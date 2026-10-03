@@ -2514,15 +2514,24 @@ export async function toggleSparcReaction(
 
   if (existing) {
     // Remove it
-    await supabase.from('sparc_reactions').delete().eq('id', existing.id);
+    const { error: delError } = await supabase.from('sparc_reactions').delete().eq('id', existing.id);
+    if (delError) {
+      console.error('[DB] Error removing SPARC reaction:', delError);
+      throw delError;
+    }
     return { added: false };
   } else {
     // Add it
-    await supabase.from('sparc_reactions').insert({
+    const { error: insError } = await supabase.from('sparc_reactions').insert({
       response_id: responseId,
       user_id: userId,
       emoji,
     });
+    // 23505 = already reacted from another tab/device: treat as added
+    if (insError && insError.code !== '23505') {
+      console.error('[DB] Error adding SPARC reaction:', insError);
+      throw insError;
+    }
     return { added: true };
   }
 }
