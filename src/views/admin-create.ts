@@ -4,7 +4,7 @@ import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { stopSpeaking, isSpeaking, preRecordAudio, preRecordPageAudio, batchPreRecordStory, type BatchPreRecordPage, type BatchPreRecordSummary, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
 
-import { saveOfficialStory, fetchOfficialStories, updateSharedStorySettings } from '../lib/db.ts';
+import { saveOfficialStory, fetchOfficialStories, updateSharedStorySettings, fetchStoryByIdFromDb } from '../lib/db.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { uploadMedia } from '../lib/storage.ts';
 import { uploadAudioData } from '../lib/storage.ts';
@@ -12,6 +12,7 @@ import { VOICE_OPTIONS } from '../lib/settings.ts';
 import { addUserStory } from '../state.ts';
 import { renderStoryPagePreview } from '../lib/story-preview.ts';
 import { auditionVoice, clearAuditionCache } from '../lib/voice-lab.ts';
+import { runPreflightChecks, getStatusLabel, getStatusColor, type PreflightResult, type PreflightCheck } from '../lib/publishing.ts';
 
 type CreatePhase = 'canvas' | 'details';
 
@@ -25,6 +26,8 @@ let storyContentRating: 'All Ages' | 'PG-13' | 'Mature' = 'All Ages';
 let storyCoverVideo = '';
 let storyCustomGenre = '';
 let storyThemeColor: string = '#141424';
+let currentStoryStatus: 'draft' | 'under-review' | 'published' | 'denied' = 'draft';
+let currentRejectionReason: string | undefined = undefined;
 let activeStorySettingsTab: 'general' | 'theme' | 'audio' | 'characters' | 'squad' = 'general';
 
 const THEME_COLOR_PRESETS = [
@@ -65,7 +68,7 @@ let sparcPromptText = '';
 let sparcPromptMediaUrls: string[] = [];
 
 /** Save story using the correct function based on user/admin mode */
-async function saveStoryForMode(story: Story): Promise<void> {
+async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-review' = 'draft'): Promise<void> {
   if (isUserMode()) {
     // Convert Story → UserStory for regular users (saves to user_stories table)
     const userStory: UserStory = {
@@ -74,7 +77,7 @@ async function saveStoryForMode(story: Story): Promise<void> {
       genre: story.genre as any || 'Drama',
       format: story.format || 'book',
       synopsis: story.synopsis || '',
-      status: 'draft',
+      status: targetStatus,
       createdAt: new Date().toISOString(),
       coverImage: story.coverImage,
       coverVideo: story.coverVideo,
@@ -97,6 +100,9 @@ async function saveStoryForMode(story: Story): Promise<void> {
     };
     await addUserStory(userStory);
   } else {
+    if (targetStatus === 'under-review') {
+      story.officialStatus = 'draft';
+    }
     await saveOfficialStory(story);
   }
 
@@ -301,6 +307,8 @@ interface DraftEntry {
   episodeStoryGroupId?: string | null;
   episodeNumber?: number;
   storyThemeColor?: string;
+  currentStoryStatus?: 'draft' | 'under-review' | 'published' | 'denied';
+  currentRejectionReason?: string;
 }
 
 function getDraft(): DraftEntry | null {
@@ -342,6 +350,8 @@ function saveDraft() {
     episodeStoryGroupId,
     episodeNumber,
     storyThemeColor,
+    currentStoryStatus,
+    currentRejectionReason,
   };
   
   // Pre-check: strip base64 data URLs to keep under localStorage limit
@@ -433,6 +443,8 @@ function loadDraft(draft: DraftEntry) {
   episodeStoryGroupId = draft.episodeStoryGroupId || null;
   episodeNumber = draft.episodeNumber || 1;
   storyThemeColor = draft.storyThemeColor || '#141424';
+  currentStoryStatus = draft.currentStoryStatus || 'draft';
+  currentRejectionReason = draft.currentRejectionReason;
 }
 
 function clearDraft() {
@@ -442,6 +454,8 @@ function clearDraft() {
   soloEpisodeCount = 1;
   sparcPromptText = '';
   sparcPromptMediaUrls = [];
+  currentStoryStatus = 'draft';
+  currentRejectionReason = undefined;
 }
 
 function getFormData(): void {
@@ -1760,10 +1774,18 @@ function renderCanvasToolbar(formatLabel: string): string {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
               Pre-Record All Audio
             </button>
+            <button class="canvas-toolbar__dd-item" id="btn-dd-publish" style="color:#10B981;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+              Publish & Review
+            </button>
           ` : `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Panel
+            </button>
+            <button class="canvas-toolbar__dd-item" id="btn-dd-publish" style="color:#10B981;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+              Publish & Review
             </button>
           `}
         </div>
@@ -3320,6 +3342,191 @@ function openBatchPreRecordModal(): void {
   renderInitialState();
 }
 
+function openPreflightPublishModal(): void {
+  getFormData();
+
+  // Remove existing modal if present
+  document.getElementById('preflight-publish-modal')?.remove();
+
+  // Gather current story data to validate
+  const allMedia = selectedFormat === 'book' ? bookPages.map(p => p.image || '') : scrollPanels.map(p => p.image || '');
+  const page0 = allMedia[0] || '';
+  const coverVideo = storyCoverVideo
+    || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined)
+    || (isVideoMedia(page0) ? page0 : undefined);
+  const coverImage = (!isVideoMedia(_coverThumbnail) && _coverThumbnail)
+    || (!isVideoMedia(page0) && page0)
+    || '';
+
+  const pageAudio: Record<number, string> = {};
+  const pageDialogue: Record<number, DialogueLine[]> = {};
+  if (selectedFormat === 'book') {
+    bookPages.forEach((bp, i) => {
+      if (bp.audioUrl) pageAudio[i] = bp.audioUrl;
+      if (bp.dialogueLines?.length) pageDialogue[i] = bp.dialogueLines;
+    });
+  }
+
+  const storyData = {
+    title: storyTitle,
+    synopsis: storySynopsis,
+    coverImage,
+    coverVideo,
+    panels: allMedia,
+    pages: selectedFormat === 'book'
+      ? bookPages.map(p => ({ image: p.image, text: p.text }))
+      : scrollPanels.map(p => ({ image: p.image, text: p.notes })),
+    pageScripts: selectedFormat === 'book'
+      ? Object.fromEntries(bookPages.map((p, i) => [i, p.text]))
+      : Object.fromEntries(scrollPanels.map((p, i) => [i, p.notes])),
+    pageAudio,
+    pageDialogue,
+    characters: storyCharacters,
+    audioMode: storyAudioMode,
+    narratorVoiceId: storyNarratorVoiceId,
+  };
+
+  const result = runPreflightChecks(storyData);
+
+  const modalEl = document.createElement('div');
+  modalEl.id = 'preflight-publish-modal';
+  modalEl.className = 'preflight-modal';
+
+  const statusBadge = getStatusLabel(currentStoryStatus as any);
+  const statusColor = getStatusColor(currentStoryStatus as any);
+
+  modalEl.innerHTML = `
+    <div class="preflight-modal__backdrop" id="preflight-backdrop"></div>
+    <div class="preflight-modal__dialog">
+      <div class="preflight-modal__header">
+        <div class="preflight-modal__title-wrap">
+          <span class="preflight-modal__badge" style="background:${statusColor}22; color:${statusColor}; border:1px solid ${statusColor}44;">
+            ${statusBadge}
+          </span>
+          <span class="preflight-modal__title">Publishing Checklist</span>
+        </div>
+        <button type="button" class="preflight-modal__close" id="preflight-close" title="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="preflight-modal__body">
+        ${currentStoryStatus === 'denied' ? `
+          <div class="preflight-alert preflight-alert--denied">
+            <div style="font-weight:700; color:#ef4444; margin-bottom:4px;">❌ Previous Submission Denied</div>
+            <div style="font-size:0.78rem; color:var(--color-text-secondary);">
+              Reason: "${currentRejectionReason || 'Please review community guidelines and resubmit'}"
+            </div>
+          </div>
+        ` : currentStoryStatus === 'under-review' ? `
+          <div class="preflight-alert preflight-alert--review">
+            <div style="font-weight:700; color:#f59e0b; margin-bottom:4px;">⏳ Currently Under Review</div>
+            <div style="font-size:0.78rem; color:var(--color-text-secondary);">
+              Your story is in the community moderation queue. Submitting changes will update your pending review.
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="preflight-score-card">
+          <div class="preflight-score-stat">
+            <span class="preflight-score-num" style="color:#10B981;">${result.passCount}</span>
+            <span class="preflight-score-label">Passed</span>
+          </div>
+          <div class="preflight-score-divider"></div>
+          <div class="preflight-score-stat">
+            <span class="preflight-score-num" style="color:${result.failCount > 0 ? '#ef4444' : '#10B981'};">${result.failCount}</span>
+            <span class="preflight-score-label">Required</span>
+          </div>
+          <div class="preflight-score-divider"></div>
+          <div class="preflight-score-stat">
+            <span class="preflight-score-num" style="color:#f59e0b;">${result.warnCount}</span>
+            <span class="preflight-score-label">Advisory</span>
+          </div>
+        </div>
+
+        <div class="preflight-check-list">
+          ${result.checks.map(c => `
+            <div class="preflight-check-item preflight-check-item--${c.status}">
+              <div class="preflight-check-icon">
+                ${c.status === 'pass' ? '✅' : c.status === 'fail' ? '❌' : '⚠️'}
+              </div>
+              <div class="preflight-check-info">
+                <div class="preflight-check-label">${c.label}</div>
+                <div class="preflight-check-detail">${c.detail}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="preflight-actions">
+          <button type="button" class="btn btn--secondary" id="preflight-cancel-btn">Back to Editor</button>
+          ${result.canSubmit ? `
+            <button type="button" class="btn btn--primary" id="preflight-submit-btn" style="background:#10B981; border-color:#10B981; font-weight:700;">
+              🚀 Submit for Review
+            </button>
+          ` : `
+            <button type="button" class="btn btn--secondary" disabled style="opacity:0.5; cursor:not-allowed;">
+              Fix ${result.failCount} Required Item${result.failCount === 1 ? '' : 's'}
+            </button>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modalEl);
+
+  const closeModal = () => modalEl.remove();
+  modalEl.querySelector('#preflight-close')?.addEventListener('click', closeModal);
+  modalEl.querySelector('#preflight-backdrop')?.addEventListener('click', closeModal);
+  modalEl.querySelector('#preflight-cancel-btn')?.addEventListener('click', closeModal);
+
+  modalEl.querySelector('#preflight-submit-btn')?.addEventListener('click', async () => {
+    const btn = modalEl.querySelector('#preflight-submit-btn') as HTMLButtonElement;
+    if (btn) {
+      btn.textContent = 'Submitting...';
+      btn.disabled = true;
+    }
+
+    try {
+      await preUploadBase64Images();
+      const story = buildStory('draft');
+      await saveStoryForMode(story, 'under-review');
+      currentStoryStatus = 'under-review';
+
+      // Replace modal body with celebration confirmation
+      const body = modalEl.querySelector('.preflight-modal__body');
+      if (body) {
+        body.innerHTML = `
+          <div style="text-align:center; padding:24px 12px;">
+            <div style="font-size:3rem; margin-bottom:12px;">🎉</div>
+            <h3 style="font-size:1.2rem; font-weight:800; color:var(--color-text-primary); margin:0 0 8px 0;">Submitted for Review!</h3>
+            <p style="font-size:0.82rem; color:var(--color-text-secondary); line-height:1.5; margin:0 0 20px 0;">
+              Your story <strong>"${escapeHtml(story.title || 'Untitled')}"</strong> is now in the community moderation queue. Admins review submissions within 24-48 hours.
+            </p>
+            <div style="display:flex; gap:10px; justify-content:center;">
+              <button type="button" class="btn btn--secondary" id="preflight-continue-btn">Continue Editing</button>
+              <button type="button" class="btn btn--primary" id="preflight-library-btn" style="background:#10B981; border-color:#10B981; font-weight:700;">Go to Library</button>
+            </div>
+          </div>
+        `;
+        body.querySelector('#preflight-continue-btn')?.addEventListener('click', closeModal);
+        body.querySelector('#preflight-library-btn')?.addEventListener('click', () => {
+          closeModal();
+          navigate(isUserMode() ? 'library' : 'admin');
+        });
+      }
+    } catch (err: any) {
+      console.error('Submission failed:', err);
+      alert('Submission failed: ' + (err?.message || 'Unknown error'));
+      if (btn) {
+        btn.textContent = '🚀 Submit for Review';
+        btn.disabled = false;
+      }
+    }
+  });
+}
+
 function openStoryboard(): void {
   if (!isDesktopScreen()) {
     showDesktopRequiredModal();
@@ -3480,6 +3687,9 @@ function openStoryboard(): void {
         <button class="sb-topbar__btn-action" id="sb-batch-prerecord" type="button" title="Pre-record audio for all pages">
           🎙️ Pre-Record All
         </button>
+        <button class="sb-topbar__btn-action" id="sb-publish-review" type="button" title="Publishing checklist & submit for review" style="background:rgba(16,185,129,0.15); color:#10B981; border:1px solid rgba(16,185,129,0.35); font-weight:700;">
+          🚀 Submit for Review
+        </button>
 
         <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
         ${!isDesktopScreen() ? `
@@ -3612,6 +3822,10 @@ function openStoryboard(): void {
 
   document.getElementById('sb-batch-prerecord')?.addEventListener('click', () => {
     openBatchPreRecordModal();
+  });
+
+  document.getElementById('sb-publish-review')?.addEventListener('click', () => {
+    openPreflightPublishModal();
   });
 
   document.getElementById('sb-save-draft')?.addEventListener('click', async () => {
@@ -4017,8 +4231,16 @@ export function init(): void {
       }
       
       const stories = await fetchOfficialStories();
-      const storyToEdit = stories.find(s => s.id === editId);
+      let storyToEdit = stories.find(s => s.id === editId);
+      if (!storyToEdit) {
+        try {
+          const userStory = await fetchStoryByIdFromDb(editId);
+          if (userStory) storyToEdit = userStory as any;
+        } catch {}
+      }
       if (storyToEdit) {
+        currentStoryStatus = (storyToEdit as any).status || storyToEdit.officialStatus || 'draft';
+        currentRejectionReason = (storyToEdit as any).rejectionReason || (storyToEdit as any).rejection_reason;
         editStoryId = storyToEdit.id;
         storyTitle = storyToEdit.title;
         storyGenre = storyToEdit.genre;
@@ -4601,6 +4823,10 @@ export function init(): void {
         scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
         updateView();
       });
+      document.getElementById('btn-dd-publish')?.addEventListener('click', () => {
+        if (dropdown) dropdown.style.display = 'none';
+        openPreflightPublishModal();
+      });
 
       // Panel gear icon clicks â†’ open layout overlay
       document.querySelectorAll('[data-gear-panel]').forEach(btn => {
@@ -4945,13 +5171,14 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         try { await saveStoryForMode(buildStory('draft')); } catch {}
         navigate(isUserMode() ? 'library' : 'admin');
       });
-      document.getElementById('btn-submit-review')?.addEventListener('click', () => { getFormData();
-        openStorySettings();
+      document.getElementById('btn-submit-review')?.addEventListener('click', () => {
+        getFormData();
+        openPreflightPublishModal();
       });
     }
 
 
-    // â”€â”€â”€ ILLUSTRATED BOOK CANVAS (single page view) â”€â”€â”€
+    // ─── ILLUSTRATED BOOK CANVAS (single page view) ───
     if (phase === 'canvas' && selectedFormat === 'book') {
       const i = currentPage;
 
@@ -4992,6 +5219,10 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       document.getElementById('btn-dd-batch-prerecord')?.addEventListener('click', () => {
         if (dropdown) dropdown.style.display = 'none';
         openBatchPreRecordModal();
+      });
+      document.getElementById('btn-dd-publish')?.addEventListener('click', () => {
+        if (dropdown) dropdown.style.display = 'none';
+        openPreflightPublishModal();
       });
       // Arrow navigation
       document.getElementById('btn-book-prev')?.addEventListener('click', () => {
