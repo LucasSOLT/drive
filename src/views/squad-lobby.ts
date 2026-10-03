@@ -15,6 +15,7 @@ import {
   hasAdminPrivileges,
 } from '../lib/db.ts';
 import { shareSquadInvite } from '../components/squad-gate-modal.ts';
+import { getFirstSquadEpisode } from '../lib/squad-engine.ts';
 import { supabase } from '../lib/supabase.ts';
 import { getStoryById, stories } from '../data/stories.ts';
 import type { Story } from '../types.ts';
@@ -589,9 +590,10 @@ function attachLobbyEventListeners(squadId: string): void {
         }
         const storyGroupId = storyData?.storyGroupId || currentSquad.storyId || 'story-group-1';
 
-        // 2. Get soloEpisodeCount to know which episode is the first post-gate one
+        // 2. Work out which episode the squad starts on: the first post-gate episode, or the gate
+        //    episode itself when the story has nothing after it (single-episode story)
         const soloEpCount = storyData?.soloEpisodeCount || 1;
-        const firstSquadEpisode = soloEpCount + 1;
+        const firstSquadEpisode = await getFirstSquadEpisode(storyGroupId, soloEpCount);
 
         // 3. Create or get squad session (starts at the first post-gate episode).
         //    Done BEFORE marking in-progress so other members never see "launched" without a session.
@@ -714,7 +716,7 @@ function startLobbyPolling(squadId: string): void {
             }
             const storyGroupId = storyData?.storyGroupId || currentSquad.storyId;
             const session = await getSquadSession(currentSquad.id);
-            const targetEp = session?.currentEpisodeNumber || ((storyData?.soloEpisodeCount || 1) + 1);
+            const targetEp = session?.currentEpisodeNumber || (await getFirstSquadEpisode(storyGroupId, storyData?.soloEpisodeCount || 1));
             let epData: { id: string } | null = null;
             try {
               epData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEp);

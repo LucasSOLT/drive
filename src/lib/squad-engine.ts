@@ -180,3 +180,14 @@ export async function getSoloEpisodeCount(storyGroupId: string): Promise<number>
 
   return data?.solo_episode_count || 1;
 }
+
+/**
+ * Which episode a squad session should START on.
+ * Normally that is the first post-gate episode (soloEpCount + 1). If the story has no episode
+ * after the gate (e.g. a single-episode story), the squad co-reads the gate episode itself so
+ * the squad flow (timer, SPARC, feed) still works instead of dead-ending on a missing episode.
+ */
+export async function getFirstSquadEpisode(storyGroupId: string, soloEpCount: number): Promise<number> {
+  const total = await getStoryGroupEpisodeCount(storyGroupId);
+  return total > soloEpCount ? soloEpCount + 1 : soloEpCount;
+}

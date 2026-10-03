@@ -578,9 +578,11 @@ export async function init(): Promise<void> {
   const episodeNumber = story.episodeNumber || 1;
   const storyGroupId = story.storyGroupId || story.id;
   let soloEpCount: number = story.soloEpisodeCount || 1;
-  const isPostGateEpisode = episodeNumber > soloEpCount;
-  const isGateEpisode = episodeNumber === soloEpCount;
+  let isPostGateEpisode = episodeNumber > soloEpCount;
+  let isGateEpisode = episodeNumber === soloEpCount;
   const showEndCard = isGateEpisode || isPostGateEpisode;
+  // Re-renders the scroll-format end card (assigned further down) when the gate flags flip
+  let refreshScrollEndCard: (() => void) | null = null;
 
   // Fetch soloEpisodeCount from DB for accuracy (async, won't block render)
   getSoloEpisodeCount(storyGroupId).then(count => {
@@ -615,12 +617,20 @@ export async function init(): Promise<void> {
     return;
   }
 
-  // 48h Timer for post-gate episodes
+  // 48h Timer for squad episodes (post-gate episodes, or the gate episode itself when the squad's
+  // session runs on it because the story has nothing after the gate)
   let activeSession: SquadSession | null = null;
-  if (isPostGateEpisode && squadId) {
+  if ((isPostGateEpisode || isGateEpisode) && squadId) {
     getSquadSession(squadId).then(session => {
       activeSession = session;
-      if (session) {
+      // Ignore a stale squad id that belongs to a different story
+      if (session && session.storyGroupId !== storyGroupId) return;
+      if (session && isGateEpisode && session.currentEpisodeNumber === episodeNumber) {
+        isGateEpisode = false;
+        isPostGateEpisode = true;
+        refreshScrollEndCard?.();
+      }
+      if (session && isPostGateEpisode) {
         const timerBanner = document.getElementById('reader-timer-banner');
         const timerText = document.getElementById('reader-timer-text');
         if (timerBanner && timerText) {
@@ -1424,8 +1434,9 @@ export async function init(): Promise<void> {
 
   // ─── Dynamic End Card for Scroll Format ───
   if (story.format === 'scroll') {
-    const scrollEndCard = document.getElementById('scroll-end-card');
-    if (scrollEndCard) {
+    const renderScrollEndCard = () => {
+      const scrollEndCard = document.getElementById('scroll-end-card');
+      if (!scrollEndCard) return;
       if (isGateEpisode) {
         scrollEndCard.innerHTML = renderGateInfoPage('scroll', soloEpCount);
         document.getElementById('btn-waterfall-lets-begin')?.addEventListener('click', () => {
@@ -1447,7 +1458,9 @@ export async function init(): Promise<void> {
           navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
         });
       }
-    }
+    };
+    renderScrollEndCard();
+    refreshScrollEndCard = renderScrollEndCard;
   }
 
   // ─── Comment button → fullscreen comments ───

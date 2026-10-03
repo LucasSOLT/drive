@@ -2340,32 +2340,46 @@ export async function advanceSquadToNextEpisode(sessionId: string): Promise<{ ne
 
   const hasMoreEpisodes = (count ?? 0) > 0;
 
+  const nowIso = new Date().toISOString();
+  // Conditional update: only succeeds if nobody else advanced/completed this session already
+  const guard = (q: any) => q
+    .eq('id', sessionId)
+    .eq('current_episode_number', session.current_episode_number)
+    .neq('status', 'completed');
+
   if (hasMoreEpisodes) {
-    const { error } = await supabase
+    const { data: updated, error } = await guard(supabase
       .from('squad_sessions')
       .update({
         current_episode_number: nextEpisode,
-        episode_started_at: new Date().toISOString(),
+        episode_started_at: nowIso,
         status: 'reading',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', sessionId);
+        updated_at: nowIso,
+      }))
+      .select('id');
 
     if (error) {
       console.error('[DB] Error advancing to next episode:', error);
       throw error;
     }
+    if (!updated || updated.length === 0) {
+      // Lost the race: someone else already advanced. Report the session's real state.
+      const { data: latest } = await supabase.from('squad_sessions').select('*').eq('id', sessionId).single();
+      return {
+        nextEpisode: latest?.current_episode_number ?? nextEpisode,
+        completed: latest?.status === 'completed',
+      };
+    }
     console.log(`[DB] Squad advanced to episode ${nextEpisode}`);
     return { nextEpisode, completed: false };
   } else {
     // No more episodes — mark session completed
-    const { error } = await supabase
+    const { error } = await guard(supabase
       .from('squad_sessions')
       .update({
         status: 'completed',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', sessionId);
+        updated_at: nowIso,
+      }));
 
     if (error) {
       console.error('[DB] Error completing squad session:', error);

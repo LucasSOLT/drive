@@ -27,6 +27,7 @@ let currentSession: SquadSession | null = null;
 let attachments: { type: 'photo' | 'link'; url: string }[] = [];
 let hasSubmitted = false;
 let hasAutoAdvanced = false;
+let isLastEpisode = false;
 let posts: SparcPost[] = [];
 let members: SquadMemberState[] = [];
 let reactions: Record<string, Array<{ emoji: string; count: number; userReacted: boolean }>> = {};
@@ -277,6 +278,19 @@ export async function init(): Promise<void> {
       replies = {};
     }
 
+    // Is there an episode after this one? Drives the "Finish Story" vs "Next Episode" label.
+    try {
+      const { count: nextCount } = await supabase
+        .from('official_stories')
+        .select('id', { count: 'exact', head: true })
+        .eq('story_group_id', currentStoryGroupId)
+        .eq('episode_number', currentEpisodeNumber + 1)
+        .is('deleted_at', null);
+      isLastEpisode = (nextCount ?? 0) === 0;
+    } catch {
+      isLastEpisode = false;
+    }
+
     // Render prompt
     const promptTextEl = document.getElementById('sparc-prompt-text');
     const promptMediaEl = document.getElementById('sparc-prompt-media');
@@ -330,6 +344,23 @@ export async function init(): Promise<void> {
             navigate('story/' + data.id);
           }
           return;
+        }
+
+        if (!session) {
+          // getSquadSession only returns active sessions: if the latest one is 'completed',
+          // the squad finished the story, so follow them out.
+          const { data: latest } = await supabase
+            .from('squad_sessions')
+            .select('status')
+            .eq('squad_id', currentSquadId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (latest?.status === 'completed') {
+            clearInterval(pollInterval);
+            navigate('library');
+            return;
+          }
         }
 
         const newPosts = await getSparcResponses(currentSquadId, currentStoryGroupId, currentEpisodeNumber);
@@ -390,24 +421,32 @@ function refreshFeedUI() {
   const nextBtn = document.getElementById('btn-next-episode') as HTMLButtonElement;
   if (nextBtn && currentSession) {
     const timerExpired = isEpisodeTimerExpired(currentSession);
+    const idleLabel = isLastEpisode ? '🎉 Finish Story' : 'Next Episode';
     
     if (allGreenlit || timerExpired) {
       nextBtn.disabled = false;
       
       if (timerExpired && !allGreenlit) {
-        nextBtn.textContent = '⏰ Time\'s up — Continue to Next Episode →';
+        nextBtn.textContent = isLastEpisode ? '⏰ Time\'s up — Finish Story →' : '⏰ Time\'s up — Continue to Next Episode →';
+      } else if (!hasAutoAdvanced) {
+        nextBtn.textContent = idleLabel;
       }
       
-      if (allGreenlit && !hasAutoAdvanced) {
+      // Everyone greenlit -> advance. Timer expired -> advance anyone who has already submitted.
+      if ((allGreenlit || (timerExpired && hasSubmitted)) && !hasAutoAdvanced) {
         hasAutoAdvanced = true;
-        nextBtn.textContent = '🚀 All squad members greenlit! Advancing in 5s...';
+        nextBtn.textContent = allGreenlit
+          ? '🚀 All squad members greenlit! Advancing in 5s...'
+          : '⏰ Time\'s up! Advancing in 5s...';
         nextBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
         setTimeout(() => {
-          nextBtn.click();
+          // Don't fire if the user already left this screen
+          if (document.getElementById('btn-next-episode') === nextBtn) nextBtn.click();
         }, 5000);
       }
     } else {
       nextBtn.disabled = true;
+      if (!hasAutoAdvanced) nextBtn.textContent = idleLabel;
     }
   }
 }
