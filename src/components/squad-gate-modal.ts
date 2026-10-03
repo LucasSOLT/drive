@@ -9,6 +9,7 @@ import {
   fetchSquadById,
   fetchSquadByCode,
   getSquadMembers,
+  leaveSquad,
 } from '../lib/db.ts';
 import { MONSTER_AVATARS } from '../data/avatars.ts';
 
@@ -292,6 +293,60 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
   });
 
   attachListeners(options, overlay);
+
+  // Live roster: friends who join show up without reopening the modal
+  const rosterSig = (list: typeof currentMembers) =>
+    JSON.stringify(list.map(m => [m.userId, m.username, m.avatarIndex, m.role, m.isReady]));
+  const rosterTimer = window.setInterval(async () => {
+    if (!document.body.contains(overlay)) { clearInterval(rosterTimer); return; }
+    if (!currentSquadId) return;
+    const input = overlay.querySelector('#sg-join-input') as HTMLInputElement | null;
+    if (input && document.activeElement === input) return; // don't wipe what they're typing
+    try {
+      const fresh = await getSquadMembers(currentSquadId);
+      if (rosterSig(fresh) === rosterSig(currentMembers)) return;
+      currentMembers = fresh;
+      const body = overlay.querySelector('#squad-gate-body');
+      if (body) {
+        body.innerHTML = renderBody(options);
+        attachBodySpecificListeners(options, overlay);
+      }
+    } catch {
+      // transient network error: try again next tick
+    }
+  }, 4000);
+}
+
+function escapeHtml(str: string): string {
+  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Share a squad invite link. Uses the phone's native share sheet when available,
+ * otherwise copies the link. Resolves 'shared' | 'copied' | 'cancelled' | 'failed'.
+ */
+export async function shareSquadInvite(
+  inviteCode: string,
+  storyId: string,
+  storyTitle?: string
+): Promise<'shared' | 'copied' | 'cancelled' | 'failed'> {
+  const url = `${window.location.origin}/#join?squad=${encodeURIComponent(inviteCode)}&story=${encodeURIComponent(storyId || '')}`;
+  const text = `Join my DRiVE squad${storyTitle ? ` for "${storyTitle}"` : ''}! Code: ${inviteCode}`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'Join my DRiVE squad', text, url });
+      return 'shared';
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return 'cancelled';
+      // fall through to clipboard
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    return 'copied';
+  } catch {
+    return 'failed';
+  }
 }
 
 function renderBody(options: SquadGateOptions): string {
@@ -309,7 +364,7 @@ function renderBody(options: SquadGateOptions): string {
         <div class="squad-slot filled">
           <div class="squad-slot-avatar">${avatarSvg}</div>
           <div class="squad-slot-info">
-            <span class="squad-slot-name">${member.username}</span>
+            <span class="squad-slot-name">${escapeHtml(member.username)}</span>
             <span class="squad-slot-role">${roleText}</span>
           </div>
           <span class="squad-slot-status ${member.isReady ? 'ready' : 'waiting'}">${member.isReady ? 'Ready' : 'Waiting...'}</span>
@@ -361,9 +416,10 @@ function renderBody(options: SquadGateOptions): string {
 
       <!-- Join existing squad row -->
       <div class="squad-join-row">
-        <input type="text" class="squad-join-input" id="sg-join-input" placeholder="Have a friend's squad code? (e.g. DRV-824)" maxlength="10" />
+        <input type="text" class="squad-join-input" id="sg-join-input" placeholder="Friend's squad code (e.g. DRV-AB7K)" maxlength="10" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" />
         <button class="squad-join-btn" id="sg-join-btn">Join Squad</button>
       </div>
+      <div id="sg-join-error" style="color:#ef4444; font-size:0.8rem; margin-top:6px; min-height:1em;"></div>
 
       <!-- Open Full Squad Lobby Button -->
       <button class="squad-open-lobby-btn" id="sg-open-lobby-btn" style="
@@ -414,15 +470,15 @@ function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLEle
     });
   });
 
-  // Copy share link
-  overlay.querySelector('#sg-btn-share-link')?.addEventListener('click', () => {
+  // Share invite link (native share sheet on phones, clipboard fallback)
+  overlay.querySelector('#sg-btn-share-link')?.addEventListener('click', async () => {
     if (!currentInviteCode) return;
-    const shareUrl = `${window.location.origin}/#join?squad=${currentInviteCode}&story=${options.storyId}`;
-    navigator.clipboard?.writeText(shareUrl).then(() => {
+    const result = await shareSquadInvite(currentInviteCode, options.storyId, options.storyTitle);
+    if (result === 'copied') {
       const txt = overlay.querySelector('#sg-share-link-text');
       if (txt) txt.textContent = 'Link Copied!';
       setTimeout(() => { if (txt) txt.textContent = 'Share Deep Link'; }, 2000);
-    });
+    }
   });
 
   // Join squad via code input
@@ -431,13 +487,21 @@ function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLEle
     const code = input?.value.trim().toUpperCase() || '';
     if (!code) return;
     
+    const errEl = overlay.querySelector('#sg-join-error') as HTMLElement | null;
+    if (errEl) errEl.textContent = '';
     const btn = overlay.querySelector('#sg-join-btn') as HTMLButtonElement;
     btn.disabled = true;
     btn.textContent = 'Joining...';
 
     try {
+      const previousSquadId = currentSquadId;
       const res = await dbJoinSquadByCode(code);
       if (res) {
+        // Joined a friend's squad: leave the (solo) squad we auto-created for this user
+        const uid = getUserId();
+        if (previousSquadId && previousSquadId !== res.squadId && uid && currentMembers.length <= 1) {
+          try { await leaveSquad(previousSquadId, uid); } catch (e) { console.warn('[SquadGate] Could not leave previous squad:', e); }
+        }
         currentSquadId = res.squadId;
         currentInviteCode = code;
         currentSquadName = res.name;
@@ -452,10 +516,15 @@ function attachBodySpecificListeners(options: SquadGateOptions, overlay: HTMLEle
         }
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to join squad.');
+      const el = overlay.querySelector('#sg-join-error') as HTMLElement | null;
+      if (el) el.textContent = err?.message || 'Failed to join squad.';
+      else alert(err?.message || 'Failed to join squad.');
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Join Squad';
+      const b = overlay.querySelector('#sg-join-btn') as HTMLButtonElement | null;
+      if (b) {
+        b.disabled = false;
+        b.textContent = 'Join Squad';
+      }
     }
   });
 

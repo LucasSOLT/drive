@@ -12,7 +12,9 @@ import {
   leaveSquad,
   fetchStoryByIdFromDb,
   fetchStoryByGroupAndEpisode,
+  hasAdminPrivileges,
 } from '../lib/db.ts';
+import { shareSquadInvite } from '../components/squad-gate-modal.ts';
 import { supabase } from '../lib/supabase.ts';
 import { getStoryById, stories } from '../data/stories.ts';
 import type { Story } from '../types.ts';
@@ -109,16 +111,18 @@ async function loadLiveSquadData(targetIdOrCode: string): Promise<boolean> {
     // Fetch members
     const membersData = await getSquadMembers(squadRecord.id);
 
-    // Auto-join if user is authenticated and not currently listed
+    // Auto-join if user is authenticated and not currently listed (only while the squad is still forming)
     const currentUid = getUserId();
-    if (currentUid && !membersData.some(m => m.userId === currentUid) && membersData.length < squadRecord.maxSize) {
+    if (currentUid && squadRecord.status === 'forming' && !membersData.some(m => m.userId === currentUid) && membersData.length < squadRecord.maxSize) {
       try {
-        await supabase.from('squad_members').insert({
+        const { error: joinErr } = await supabase.from('squad_members').insert({
           squad_id: squadRecord.id,
           user_id: currentUid,
           role: squadRecord.driverId === currentUid ? 'driver' : 'player',
           is_ready: false,
         });
+        // A duplicate row just means we raced with ourselves - treat as joined
+        if (joinErr && !String(joinErr.message).includes('duplicate key')) throw joinErr;
         membersData.push({
           userId: currentUid,
           username: localStorage.getItem('drive_username') || getUser()?.email?.split('@')[0] || 'You',
@@ -277,7 +281,7 @@ export function render(): string {
       padding: var(--space-md);
       max-width: 680px;
       margin: 0 auto;
-      padding-bottom: 180px; /* space for bottom ready dock */
+      padding-bottom: calc(240px + env(safe-area-inset-bottom)); /* space for bottom ready dock */
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -472,6 +476,12 @@ export function render(): string {
         </div>
         `}
 
+        ${isDriver && !allMembersReady && hasAdminPrivileges() ? `
+        <button id="admin-force-launch-btn" type="button" style="width:100%; padding:10px; background:none; border:1.5px dashed #f59e0b; color:#b45309; border-radius:var(--radius-lg); font-size:0.82rem; font-weight:700; cursor:pointer;">
+          🧪 Admin test launch (skips player/ready requirements)
+        </button>
+        ` : ''}
+
       </div>
 
     </div>
@@ -530,22 +540,20 @@ function attachLobbyEventListeners(squadId: string): void {
     });
   }
 
-  // ─── Launch Episode Button ───
-  const launchBtn = document.getElementById('start-story-btn');
-  if (launchBtn) {
-    launchBtn.addEventListener('click', async () => {
-      if (launchBtn.hasAttribute('disabled') || isLaunching) return;
+  // ─── Launch Episode (normal button + admin-only test override) ───
+  const launchSquad = async (force: boolean) => {
+      if (isLaunching) return;
 
       const memberCount = currentSquad.members.length;
       const minRequired = currentSquad.minSize || 3;
       const allReady = currentSquad.members.every(m => m.isReady);
 
-      if (memberCount < minRequired) {
+      if (!force && memberCount < minRequired) {
         alert(`⚠️ Not enough players!\n\nYou need at least ${minRequired} squad members to start. Currently: ${memberCount}.`);
         return;
       }
 
-      if (!allReady) {
+      if (!force && !allReady) {
         alert('⚠️ Waiting for all squad members to click the green "I\'M READY" button before launching!');
         return;
       }
@@ -574,30 +582,34 @@ function attachLobbyEventListeners(squadId: string): void {
       await new Promise(r => setTimeout(r, 500));
 
       try {
-        // 1. Mark squad in-progress
-        await updateSquadStatus(currentSquad.id, 'in-progress');
-
-        // 2. Determine storyGroupId from the story data
+        // 1. Determine storyGroupId from the story data
         let storyData = getStoryById(currentSquad.storyId);
         if (!storyData) {
           storyData = (await fetchStoryByIdFromDb(currentSquad.storyId)) || undefined;
         }
         const storyGroupId = storyData?.storyGroupId || currentSquad.storyId || 'story-group-1';
 
-        // 3. Get soloEpisodeCount to know which episode is the first post-gate one
+        // 2. Get soloEpisodeCount to know which episode is the first post-gate one
         const soloEpCount = storyData?.soloEpisodeCount || 1;
         const firstSquadEpisode = soloEpCount + 1;
 
-        // 4. Create or get squad session (starts at the first post-gate episode)
+        // 3. Create or get squad session (starts at the first post-gate episode).
+        //    Done BEFORE marking in-progress so other members never see "launched" without a session.
         let session = await getSquadSession(currentSquad.id);
         if (!session) {
           session = await createSquadSession(currentSquad.id, storyGroupId, firstSquadEpisode);
         }
+        if (!session) {
+          throw new Error('Could not create the squad session. Please try again.');
+        }
 
-        console.log('[Lobby] Squad session started:', session?.id, 'Episode:', session?.currentEpisodeNumber);
+        // 4. Mark squad in-progress (this is what makes everyone else's lobby auto-advance)
+        await updateSquadStatus(currentSquad.id, 'in-progress');
+
+        console.log('[Lobby] Squad session started:', session.id, 'Episode:', session.currentEpisodeNumber);
 
         // 5. Find the actual story ID for the target episode
-        const targetEpisode = session?.currentEpisodeNumber || firstSquadEpisode;
+        const targetEpisode = session.currentEpisodeNumber || firstSquadEpisode;
         let episodeData: { id: string } | null = null;
         try {
           episodeData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEpisode);
@@ -614,15 +626,22 @@ function attachLobbyEventListeners(squadId: string): void {
           console.warn('[Lobby] Could not find post-gate episode, falling back to story ID');
           navigate('story/' + currentSquad.storyId);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[Lobby] Error launching episode:', err);
         countdownOverlay.remove();
-        navigate('story/' + (currentSquad.storyId || 'story-1'));
+        alert(`Couldn't launch the squad mission.\n\n${err?.message || 'Please try again.'}`);
       } finally {
         isLaunching = false;
       }
-    });
-  }
+  };
+
+  const launchBtn = document.getElementById('start-story-btn');
+  launchBtn?.addEventListener('click', () => {
+    if (launchBtn.hasAttribute('disabled')) return;
+    launchSquad(false);
+  });
+  // Admin-only test launch (skips the 3-player + ready requirements)
+  document.getElementById('admin-force-launch-btn')?.addEventListener('click', () => launchSquad(true));
 
   // ─── Copy Invite Code ───
   const copyBtn = document.getElementById('copy-invite-btn');
@@ -638,12 +657,12 @@ function attachLobbyEventListeners(squadId: string): void {
   // ─── Share Link ───
   const shareBtn = document.getElementById('share-link-btn');
   if (shareBtn) {
-    shareBtn.addEventListener('click', () => {
-      const shareUrl = `${window.location.origin}/#squad-lobby/${currentSquad.id}`;
-      navigator.clipboard.writeText(shareUrl).then(() => {
+    shareBtn.addEventListener('click', async () => {
+      const result = await shareSquadInvite(currentSquad.inviteCode, currentSquad.storyId, currentSquad.storyTitle);
+      if (result === 'copied') {
         shareBtn.textContent = 'Link Copied!';
         setTimeout(() => { shareBtn.textContent = '🔗 Share'; }, 2000);
-      });
+      }
     });
   }
 
@@ -679,6 +698,9 @@ function startLobbyPolling(squadId: string): void {
       return;
     }
 
+    // Don't overwrite local state while the user's own ready toggle / the launch is in flight
+    if (isTogglingReady || isLaunching) return;
+
     try {
       const updated = await loadLiveSquadData(squadId);
       if (updated) {
@@ -692,7 +714,7 @@ function startLobbyPolling(squadId: string): void {
             }
             const storyGroupId = storyData?.storyGroupId || currentSquad.storyId;
             const session = await getSquadSession(currentSquad.id);
-            const targetEp = session?.currentEpisodeNumber || 2;
+            const targetEp = session?.currentEpisodeNumber || ((storyData?.soloEpisodeCount || 1) + 1);
             let epData: { id: string } | null = null;
             try {
               epData = await fetchStoryByGroupAndEpisode(storyGroupId, targetEp);
@@ -712,7 +734,7 @@ function startLobbyPolling(squadId: string): void {
           return;
         }
 
-        rerenderLobbyView();
+        rerenderLobbyView(false);
       }
     } catch (err) {
       console.warn('[Lobby] Polling error:', err);
@@ -727,14 +749,38 @@ function stopLobbyPolling(): void {
   }
 }
 
+/** Fingerprint of everything the lobby displays, so unchanged polls don't redraw the screen */
+function lobbySignature(): string {
+  return JSON.stringify([
+    currentSquad.id,
+    currentSquad.name,
+    currentSquad.status,
+    currentSquad.storyTitle || '',
+    (currentSquad.members || []).map(m => [m.userId, m.username, m.avatarIndex, m.role, m.isReady]),
+  ]);
+}
+
+let lastRenderedSig = '';
+
 /** Lightweight DOM update to keep scroll position and button states fluid */
-function rerenderLobbyView(): void {
+function rerenderLobbyView(force = true): void {
   const container = document.getElementById('squad-lobby-container');
   if (!container) return;
+
+  const sig = lobbySignature();
+  if (!force && sig === lastRenderedSig) return;
+  lastRenderedSig = sig;
 
   const scrollY = window.scrollY;
   container.outerHTML = render();
   window.scrollTo(0, scrollY);
+
+  // This is a refresh, not a page entrance: don't replay the fade/slide animations
+  const fresh = document.getElementById('squad-lobby-container');
+  if (fresh) {
+    fresh.classList.remove('fade-in');
+    fresh.querySelectorAll('.slide-up').forEach(el => el.classList.remove('slide-up'));
+  }
 
   attachLobbyEventListeners(currentSquad.id);
 }
