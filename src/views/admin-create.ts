@@ -2052,19 +2052,19 @@ function renderScreenplayEditor(pageIdx: number, prefix: string): string {
   `).join('');
 
   return `
-  <div class="screenplay-editor" data-${prefix}-screenplay="${pageIdx}">
+  <div class="screenplay-editor" data-${prefix}-screenplay="${pageIdx}" style="padding:10px 14px 14px; box-sizing:border-box;">
     <!-- Header -->
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-      <span style="font-size:0.75rem; font-weight:700; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.04em;">
-        🎬 Screenplay & Dialogue
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+      <span style="font-size:0.75rem; font-weight:700; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.04em; white-space:nowrap;">
+        🎬 Screenplay
       </span>
-      <button type="button" data-open-char-settings="true" style="background:none; border:none; color:var(--color-purple); font-size:0.73rem; font-weight:600; cursor:pointer; padding:0; font-family:var(--font-body);">
-        🎭 Cast & Voices (${storyCharacters.length})
+      <button type="button" data-open-char-settings="true" style="display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:8px; border:1px solid rgba(16,185,129,0.3); background:rgba(16,185,129,0.08); color:var(--color-purple); font-size:0.72rem; font-weight:700; cursor:pointer; font-family:var(--font-body); white-space:nowrap;">
+        🎭 Cast (${storyCharacters.length})
       </button>
     </div>
 
     <!-- Quick Character Tag Inserter -->
-    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-bottom:8px;">
+    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:8px;">
       <span style="font-size:0.72rem; color:var(--color-text-muted); font-weight:600;">Insert:</span>
       <button type="button" class="screenplay-chip" data-insert-tag="${prefix}-${pageIdx}" data-tag="NARRATOR:" style="
         display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px;
@@ -2086,32 +2086,32 @@ function renderScreenplayEditor(pageIdx: number, prefix: string): string {
     <!-- Unified Textarea -->
     <textarea class="${prefix === 'sbd' ? 'sb-card__textarea ' : 'book-tile__textarea '}screenplay-textarea"
       data-${prefix === 'sbd' ? 'sb-text' : 'tile-text'}="${pageIdx}"
-      rows="${prefix === 'sbd' ? '8' : '6'}"
+      rows="${prefix === 'sbd' ? '8' : '5'}"
       placeholder="Write story narration or character dialogue...&#10;&#10;e.g.&#10;The ancient gates creaked open.&#10;&#10;SARAH: &quot;Is anyone there?&quot;&#10;LUCAS: &quot;Stay close.&quot;"
       maxlength="2000"
-      style="width:100%; box-sizing:border-box; font-family:var(--font-body); font-size:0.88rem; line-height:1.5; border-radius:10px; resize:vertical;">${escapeHtml(page.text)}</textarea>
+      style="width:100%; box-sizing:border-box; font-family:var(--font-body); font-size:0.88rem; line-height:1.5; border-radius:10px; border:1px solid var(--color-border); background:rgba(0,0,0,0.18); padding:10px 12px; resize:vertical;">${escapeHtml(page.text)}</textarea>
 
     <!-- Audio & Line Summary Strip -->
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px; padding:6px 10px; background:rgba(255,255,255,0.03); border:1px solid var(--color-border); border-radius:8px;">
-      <div style="display:flex; align-items:center; gap:6px;">
-        <button type="button" class="sb-dialog-batch-btn" data-${prefix}-batch-rec="${pageIdx}" style="
-          padding:5px 12px; border-radius:6px; border:none; background:var(--color-purple); color:white;
-          font-size:0.75rem; font-weight:700; cursor:pointer; font-family:var(--font-body);
-        ">
-          🎙️ Pre-record Page Audio
-        </button>
+    <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--color-border); border-radius:10px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; font-size:0.74rem; color:var(--color-text-muted);">
+        <span>💬 <strong>${lines.length}</strong> speech line${lines.length !== 1 ? 's' : ''} detected</span>
         ${hasAnyAudio ? `
           <button type="button" class="sb-dialog-play-all" data-${prefix}-play-all="${pageIdx}" style="
-            padding:5px 10px; border-radius:6px; border:1px solid var(--color-border); background:var(--color-surface);
-            color:var(--color-text-primary); font-size:0.75rem; cursor:pointer; font-family:var(--font-body);
+            padding:3px 9px; border-radius:6px; border:1px solid var(--color-border); background:var(--color-surface);
+            color:var(--color-text-primary); font-size:0.72rem; font-weight:600; cursor:pointer; font-family:var(--font-body);
           ">
             ▶ Play All
           </button>
         ` : ''}
       </div>
-      <span style="font-size:0.72rem; color:var(--color-text-muted);">
-        ${lines.length} speech line${lines.length !== 1 ? 's' : ''} detected
-      </span>
+      <button type="button" class="sb-dialog-batch-btn" data-${prefix}-batch-rec="${pageIdx}" style="
+        width:100%; padding:9px 16px; border-radius:8px; border:none; background:var(--color-purple); color:white;
+        font-size:0.8rem; font-weight:700; cursor:pointer; font-family:var(--font-body);
+        display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 2px 8px rgba(16, 185, 129, 0.25);
+        transition:opacity 0.15s;
+      ">
+        🎙️ Pre-record Page Audio
+      </button>
     </div>
 
     <!-- Collapsible Recorded Lines Details (if lines exist) -->
@@ -2571,6 +2571,9 @@ function renderBookCanvas(): string {
           <button class="book-tile__maximize" data-tile-maximize="${i}" title="Expand page">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
+          <button type="button" class="book-tile__action-btn book-tile__action-btn--delete" data-page-delete="${i}" title="Delete Page" style="color:#ef4444;" ${bookPages.length <= 1 ? 'disabled style="opacity:0.3;"' : ''}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
         </div>
       </div>
 
@@ -2600,8 +2603,8 @@ function renderBookCanvas(): string {
       ` : ''}
       <!-- Per-Page Audio Source (video pages only) -->
       ${page.image && isVideoMedia(page.image) ? `
-        <div class="sb-card__audio-source" style="margin-top: var(--space-sm);">
-          <div class="book-tile__text-header"><span>🔊 PAGE AUDIO SOURCE</span></div>
+        <div class="sb-card__audio-source" style="padding:6px 14px 2px; margin-top:4px;">
+          <div class="book-tile__text-header" style="padding:0 0 6px 0;"><span>🔊 PAGE AUDIO SOURCE</span></div>
           <div class="sb-audio-source-selector" data-mob-audio-source="${i}">
             <button class="sb-audio-src-btn ${(page.audioSource || 'native') === 'native' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="native" data-audio-src-page="${i}" type="button">🔊 Native</button>
             <button class="sb-audio-src-btn ${page.audioSource === 'upload' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="upload" data-audio-src-page="${i}" type="button">🎙️ Upload</button>
@@ -2688,11 +2691,14 @@ function renderBookCanvas(): string {
       ${renderStudioOrbs()}
       ${renderCanvasToolbar((episodeNumber <= soloEpisodeCount ? 'Solo-Only Ep.' : 'Squad Ep.') + episodeNumber)}
 
-      <h2 class="create-phase__title" style="margin-bottom:4px;">Your Pages</h2>
-      <p class="create-phase__desc">Page ${currentPage + 1} of ${bookPages.length}. Long-press to delete.</p>
-
-      <!-- Page progress dots -->
-      <div class="book-dots" id="book-dots">${dotsHtml}</div>
+      <!-- Compact Page Indicator Bar -->
+      <div class="book-page-bar">
+        <span class="book-page-badge" title="Current Page">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          ${currentPage + 1} / ${bookPages.length}
+        </span>
+        <div class="book-dots" id="book-dots">${dotsHtml}</div>
+      </div>
 
       <!-- Single page view with arrow navigation -->
       <div class="book-single-view">
@@ -5639,6 +5645,25 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       wizard.querySelector(`[data-tile-maximize="${i}"]`)?.addEventListener('click', (e) => {
         e.stopPropagation();
         openPageFullscreen(i);
+      });
+
+      // Direct delete button click
+      wizard.querySelector(`[data-page-delete="${i}"]`)?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (bookPages.length <= 1) {
+          showModal({ title: 'Cannot Delete', content: '<p style="line-height:1.6;">At least one page must remain.</p>', confirmText: 'OK' });
+          return;
+        }
+        showModal({
+          title: 'Delete Page',
+          content: `<p style="line-height:1.6;">Remove <strong>Page ${i + 1}</strong>? This cannot be undone.</p>`,
+          confirmText: 'Delete', cancelText: 'Cancel',
+          onConfirm: () => {
+            bookPages.splice(i, 1);
+            if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
+            updateView();
+          },
+        });
       });
 
       // Long-press to delete
