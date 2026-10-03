@@ -34,6 +34,7 @@ import * as lfgBrowseView from './views/lfg-browse.ts';
 import * as sparcCheckpointView from './views/sparc-checkpoint.ts';
 import * as betaInviteView from './views/beta-invite.ts';
 import * as adminCreateView from './views/admin-create.ts';
+import * as seriesInfoView from './views/series-info.ts';
 
 function getHeaderAvatarHtml(): string {
   if (!isAuthenticated()) {
@@ -217,6 +218,7 @@ function renderView(route: string) {
     case 'profile': viewModule = profileView; title = 'Profile'; break;
     case 'friends': viewModule = friendsView; title = 'Social'; break;
     case 'story': viewModule = storyReaderView; title = ''; break;
+    case 'series': viewModule = seriesInfoView; title = ''; break;
     case 'book': viewModule = bookViewerView; title = ''; break;
     case 'shared': viewModule = guestViewerView; title = ''; break;
     case 'login': case 'signup': viewModule = authView; title = ''; break;
@@ -234,7 +236,7 @@ function renderView(route: string) {
   }
 
   // ── Phase 1: Compute layout state BEFORE touching the DOM ──
-  const isFullScreen = ['story', 'book', 'shared', 'login', 'signup', 'beta', 'admin-create'].includes(baseRoute);
+  const isFullScreen = ['story', 'book', 'shared', 'login', 'signup', 'beta', 'admin-create', 'series'].includes(baseRoute);
   const isCMActive = isContentManagementMode();
   const isCMFeedPage = ['home', 'featured', 'explore'].includes(baseRoute);
 

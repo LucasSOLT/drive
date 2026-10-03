@@ -124,7 +124,7 @@ export function renderStoryPagePreview(opts: PreviewOptions): { destroy: () => v
               <span class="reader-text-tag-label">Preview</span>
             </div>
           </div>
-          <div class="reader-dialogue-body" style="mask-image:linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%);-webkit-mask-image:linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%);">
+          <div class="reader-dialogue-body" style="mask-image:linear-gradient(to bottom, transparent 0%, black 5%, black 90%, transparent 100%);-webkit-mask-image:linear-gradient(to bottom, transparent 0%, black 5%, black 90%, transparent 100%);">
             ${dialogueHtml}
           </div>
         </div>

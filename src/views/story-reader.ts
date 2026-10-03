@@ -15,6 +15,8 @@ import { getSoloEpisodeCount, getEpisodeTimeRemaining, formatTimeRemaining } fro
 import { getSquadSession } from '../lib/db.ts';
 import { type SquadSession } from '../types.ts';
 import { BgmDuckingController } from '../lib/bgm-ducking.ts';
+import { preloadAdjacentPages, getPreloadedElement, isPreloaded } from '../lib/media-preloader.ts';
+import { saveReadingProgress } from './series-info.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -251,7 +253,6 @@ export function render(): string {
 
         <div class="reader__header-info">
           <h2 class="reader__header-title">${story.title}</h2>
-          <span class="reader__header-meta">${story.author} · ${story.genre}</span>
         </div>
 
         <div class="reader__desktop-hint">
@@ -266,9 +267,6 @@ export function render(): string {
           <button class="reader__action-btn ${liked ? 'active liked' : ''}" id="btn-like" aria-label="Like">
             <span class="reader__action-icon" id="like-icon">${liked ? ICON.heartOn : ICON.heartOff}</span>
             <span class="reader__action-count" id="like-count">${formatCount(likeCount)}</span>
-          </button>
-          <button class="reader__action-btn" id="btn-share" aria-label="Share">
-            <span class="reader__action-icon">${ICON.share}</span>
           </button>
           <button class="reader__action-btn" id="btn-comments" aria-label="Comments">
             <span class="reader__action-icon">${ICON.comment}</span>
@@ -565,7 +563,12 @@ export async function init(): Promise<void> {
   document.getElementById('reader-back')?.addEventListener('click', () => {
     stopBgm();
     stopSpeaking();
-    if (window.history.length > 1) {
+    // Return to stored route (Series Info, Library, etc.) or fallback
+    const returnRoute = sessionStorage.getItem('drive_reader_return_route');
+    if (returnRoute) {
+      sessionStorage.removeItem('drive_reader_return_route');
+      navigate(returnRoute);
+    } else if (window.history.length > 1) {
       window.history.back();
     } else {
       navigate('home');
@@ -719,27 +722,6 @@ export async function init(): Promise<void> {
     lastTapTime = now;
   });
 
-  // ─── Share ───
-  const shareBtn = document.getElementById('btn-share');
-  shareBtn?.addEventListener('click', async () => {
-    const shareData = {
-      title: story.title,
-      text: `Check out "${story.title}" by ${story.author} on DRiVE!`,
-      url: window.location.href,
-    };
-
-    try {
-      if (navigator.share) {
-        await navigator.share(shareData);
-      } else {
-        await navigator.clipboard.writeText(window.location.href);
-        showActionToast('Link copied!');
-      }
-    } catch {
-      await navigator.clipboard.writeText(window.location.href);
-      showActionToast('Link copied!');
-    }
-  });
 
   // ─── Book format page navigation ───
   captionsOpen = true; // CC ON by default — declared here so it's available in book page navigation
@@ -797,12 +779,68 @@ export async function init(): Promise<void> {
           );
           const focalPos = story.pageFocalPositions?.[currentPage];
           const objPosStyle = focalPos && focalPos !== 'center' ? `object-position:center ${focalPos};` : '';
+
+          // Check preload cache first, show spinner if not ready
+          const cachedEl = currentMedia ? getPreloadedElement(currentMedia) : null;
           if (isVideo) {
-            pageContainer.innerHTML = `<video id="book-video" src="${currentMedia}" autoplay loop playsinline webkit-playsinline style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;"></video>`;
-            const bv = pageContainer.querySelector('#book-video') as HTMLVideoElement | null;
-            if (bv) ensureVideoPlayback(bv);
+            if (cachedEl && cachedEl instanceof HTMLVideoElement) {
+              const clone = cachedEl.cloneNode(true) as HTMLVideoElement;
+              clone.id = 'book-video';
+              clone.autoplay = true;
+              clone.loop = true;
+              clone.style.cssText = `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`;
+              pageContainer.innerHTML = '';
+              pageContainer.appendChild(clone);
+              ensureVideoPlayback(clone);
+            } else {
+              pageContainer.innerHTML = `<div class="reader__media-spinner"><div class="reader__spinner-ring"></div></div>`;
+              const vid = document.createElement('video');
+              vid.id = 'book-video';
+              vid.src = currentMedia;
+              vid.autoplay = true;
+              vid.loop = true;
+              vid.playsInline = true;
+              vid.style.cssText = `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`;
+              vid.addEventListener('loadeddata', () => {
+                if (pageContainer.querySelector('.reader__media-spinner')) {
+                  pageContainer.innerHTML = '';
+                  pageContainer.appendChild(vid);
+                  ensureVideoPlayback(vid);
+                }
+              }, { once: true });
+            }
           } else {
-            pageContainer.innerHTML = `<img id="book-img" src="${story.panels?.[currentPage] || ''}" alt="Page ${currentPage + 1}" style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;">`;
+            if (cachedEl && cachedEl instanceof HTMLImageElement) {
+              const clone = cachedEl.cloneNode(true) as HTMLImageElement;
+              clone.id = 'book-img';
+              clone.alt = `Page ${currentPage + 1}`;
+              clone.style.cssText = `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`;
+              pageContainer.innerHTML = '';
+              pageContainer.appendChild(clone);
+            } else if (currentMedia) {
+              pageContainer.innerHTML = `<div class="reader__media-spinner"><div class="reader__spinner-ring"></div></div>`;
+              const img = new Image();
+              img.id = 'book-img';
+              img.src = currentMedia;
+              img.alt = `Page ${currentPage + 1}`;
+              img.style.cssText = `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`;
+              img.addEventListener('load', () => {
+                if (pageContainer.querySelector('.reader__media-spinner')) {
+                  pageContainer.innerHTML = '';
+                  pageContainer.appendChild(img);
+                }
+              }, { once: true });
+            } else {
+              pageContainer.innerHTML = `<img id="book-img" src="" alt="Page ${currentPage + 1}" style="max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;">`;
+            }
+          }
+
+          // Preload adjacent pages in background
+          preloadAdjacentPages(story.panels || [], story.pageVideos, currentPage);
+
+          // Save reading progress for Series Info "Continue Episode" feature
+          if (story.storyGroupId) {
+            saveReadingProgress(story.storyGroupId, story.id, story.episodeNumber || 1, currentPage);
           }
           // Add audio play button if page has audio
           if (hasAudio) {

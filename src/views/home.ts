@@ -380,7 +380,8 @@ export function init(): void {
         });
       } else {
         if (storyId && !storyId.startsWith('placeholder-') && !storyId.startsWith('empty-')) {
-          navigate('story/' + storyId);
+          sessionStorage.setItem('drive_pre_series_route', 'home');
+          navigate('series/' + storyId);
         }
       }
     }

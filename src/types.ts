@@ -61,6 +61,9 @@ export interface Story {
     text: string;                        // The challenge/question/prompt text
     mediaUrls?: string[];                // Attached images or videos
   };
+  seriesCoverImage?: string;             // Hero banner image for Series Info screen
+  episodeThumbnail?: string;             // Per-episode thumbnail for episode list
+  episodeTitle?: string;                 // Custom episode title (e.g., 'Hidden Inventory')
   themeColor?: string;                   // Custom background / atmosphere color (e.g. #000000, #141424)
 }
 
@@ -98,6 +101,9 @@ export interface UserStory {
   bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
   pageAudioSource?: Record<number, StoryPageAudioSource>;  // index → audio source for video pages
+  seriesCoverImage?: string;
+  episodeThumbnail?: string;
+  episodeTitle?: string;
   themeColor?: string;
 }
 

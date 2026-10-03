@@ -179,7 +179,8 @@ export async function init(): Promise<void> {
         });
       } else {
         if (storyId && !storyId.startsWith('placeholder-') && !storyId.startsWith('empty-')) {
-          navigate('story/' + storyId);
+          sessionStorage.setItem('drive_pre_series_route', 'explore');
+          navigate('series/' + storyId);
         }
       }
     }

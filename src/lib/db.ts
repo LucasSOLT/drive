@@ -333,6 +333,9 @@ export async function saveUserStory(story: UserStory): Promise<void> {
       bgm_volume: story.bgmVolume ?? 0.25,
       page_focal_positions: story.pageFocalPositions || {},
       theme_color: story.themeColor || '#141424',
+      series_cover_image: story.seriesCoverImage || null,
+      episode_thumbnail: story.episodeThumbnail || null,
+      episode_title: story.episodeTitle || null,
       narrator_voice_id: story.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM',
     };
 
@@ -875,6 +878,9 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     soloEpisodeCount: s.solo_episode_count || 1,
     sparcPrompt: s.sparc_prompt || undefined,
     themeColor: s.theme_color || '#141424',
+    seriesCoverImage: s.series_cover_image || '',
+    episodeThumbnail: s.episode_thumbnail || '',
+    episodeTitle: s.episode_title || '',
   };
 }
 
@@ -1021,6 +1027,9 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     solo_episode_count: story.soloEpisodeCount || 1,
     sparc_prompt: story.sparcPrompt || null,
     theme_color: story.themeColor || '#141424',
+    series_cover_image: story.seriesCoverImage || null,
+    episode_thumbnail: story.episodeThumbnail || null,
+    episode_title: story.episodeTitle || null,
     narrator_voice_id: story.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM',
   };
 
@@ -1206,6 +1215,7 @@ export async function updateSharedStorySettings(
   if (settings.pageAudioSource !== undefined) sharedPayload.page_audio_source = settings.pageAudioSource;
   if (settings.soloEpisodeCount !== undefined) sharedPayload.solo_episode_count = settings.soloEpisodeCount;
   if (settings.themeColor !== undefined) sharedPayload.theme_color = settings.themeColor;
+  if (settings.seriesCoverImage !== undefined) sharedPayload.series_cover_image = settings.seriesCoverImage;
 
   // 1. Update all matching rows in Supabase
   try {
@@ -1887,6 +1897,8 @@ export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
             ? panels[0]
             : undefined;
 
+        const userData = uData;
+
         return {
           id: uData.id,
           title: uData.title,
@@ -1910,6 +1922,10 @@ export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
           pageFocalPositions: uData.page_focal_positions || undefined,
           pageAudioSource: uData.page_audio_source || {},
           audioMode: uData.audio_mode || 'make_audio',
+          themeColor: userData.theme_color || '#141424',
+          seriesCoverImage: userData.series_cover_image || '',
+          episodeThumbnail: userData.episode_thumbnail || '',
+          episodeTitle: userData.episode_title || '',
         };
       }
     } catch (e) {

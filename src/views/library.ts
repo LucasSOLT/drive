@@ -429,6 +429,7 @@ async function loadActiveSquads(): Promise<void> {
         } else if (action === 'read') {
           const storyId = el.dataset.storyId || '';
           localStorage.setItem('drive_active_squad_id', squadId);
+          sessionStorage.setItem('drive_reader_return_route', 'library');
           navigate('story/' + storyId);
         }
       });
@@ -1030,7 +1031,10 @@ export function init(): void {
     root.querySelectorAll('[data-continue-reading]').forEach(btn => {
       btn.addEventListener('click', () => {
         const storyId = btn.getAttribute('data-continue-reading');
-        if (storyId) navigate(`story/${storyId}`);
+        if (storyId) {
+          sessionStorage.setItem('drive_reader_return_route', 'library');
+          navigate(`story/${storyId}`);
+        }
       });
     });
 
@@ -1097,7 +1101,10 @@ export function init(): void {
   container.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
       const storyId = btn.getAttribute('data-view');
-      if (storyId) navigate(`story/${storyId}`);
+      if (storyId) {
+        sessionStorage.setItem('drive_reader_return_route', 'library');
+        navigate(`story/${storyId}`);
+      }
     });
   });
 
@@ -1196,7 +1203,10 @@ export function init(): void {
     bmShelf.querySelectorAll('[data-story-id]').forEach(card => {
       card.addEventListener('click', () => {
         const storyId = (card as HTMLElement).getAttribute('data-story-id');
-        if (storyId) navigate(`story/${storyId}`);
+        if (storyId) {
+          sessionStorage.setItem('drive_reader_return_route', 'library');
+          navigate(`story/${storyId}`);
+        }
       });
     });
   }
