@@ -11,6 +11,7 @@ import { uploadAudioData } from '../lib/storage.ts';
 import { VOICE_OPTIONS } from '../lib/settings.ts';
 import { addUserStory } from '../state.ts';
 import { renderStoryPagePreview } from '../lib/story-preview.ts';
+import { auditionVoice, clearAuditionCache } from '../lib/voice-lab.ts';
 
 type CreatePhase = 'canvas' | 'details';
 
@@ -1100,7 +1101,9 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
 
   // ── Narrator Voice ──
   document.getElementById('ss-narrator-voice')?.addEventListener('change', (e) => {
+    const oldVoiceId = storyNarratorVoiceId;
     storyNarratorVoiceId = (e.target as HTMLSelectElement).value;
+    clearAuditionCache(oldVoiceId);
     saveDraft();
   });
   document.getElementById('ss-narrator-color-input')?.addEventListener('input', (e) => {
@@ -1112,10 +1115,25 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     if (!btn) return;
     btn.textContent = '🔊 Playing...';
     btn.disabled = true;
+    btn.classList.add('ss-char-audition-btn--playing');
     try {
-      await previewVoice(storyNarratorVoiceId, 'The journey begins here. Let me narrate your story.');
-    } catch {}
-    setTimeout(() => { btn.textContent = '🔊 Audition'; btn.disabled = false; }, 3000);
+      const audio = await auditionVoice(storyNarratorVoiceId, 'Narrator');
+      if (audio) {
+        audio.addEventListener('ended', () => {
+          btn.textContent = '🔊 Audition';
+          btn.disabled = false;
+          btn.classList.remove('ss-char-audition-btn--playing');
+        }, { once: true });
+      } else {
+        btn.textContent = '🔊 Audition';
+        btn.disabled = false;
+        btn.classList.remove('ss-char-audition-btn--playing');
+      }
+    } catch {
+      btn.textContent = '🔊 Audition';
+      btn.disabled = false;
+      btn.classList.remove('ss-char-audition-btn--playing');
+    }
   });
 
   // ── Character Cast Management ──
@@ -1166,7 +1184,9 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     sel.addEventListener('change', () => {
       const idx = parseInt((sel as HTMLElement).getAttribute('data-char-voice') || '0');
       if (!storyCharacters[idx]) return;
+      const oldVoiceId = storyCharacters[idx].voiceId;
       storyCharacters[idx].voiceId = (sel as HTMLSelectElement).value;
+      clearAuditionCache(oldVoiceId);
       saveDraft();
     });
   });
@@ -1180,10 +1200,25 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       const b = btn as HTMLButtonElement;
       b.textContent = '🔊 Playing...';
       b.disabled = true;
+      b.classList.add('ss-char-audition-btn--playing');
       try {
-        await previewVoice(ch.voiceId, `Hi, I'm ${ch.name}. Ready to bring your story to life.`);
-      } catch {}
-      setTimeout(() => { b.textContent = '🔊 Audition'; b.disabled = false; }, 3000);
+        const audio = await auditionVoice(ch.voiceId, ch.name);
+        if (audio) {
+          audio.addEventListener('ended', () => {
+            b.textContent = '🔊 Audition';
+            b.disabled = false;
+            b.classList.remove('ss-char-audition-btn--playing');
+          }, { once: true });
+        } else {
+          b.textContent = '🔊 Audition';
+          b.disabled = false;
+          b.classList.remove('ss-char-audition-btn--playing');
+        }
+      } catch {
+        b.textContent = '🔊 Audition';
+        b.disabled = false;
+        b.classList.remove('ss-char-audition-btn--playing');
+      }
     });
   });
 
@@ -2164,7 +2199,10 @@ function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => voi
       </div>
       <div class="char-quick-add-modal__field">
         <label class="char-quick-add-modal__label">Voice</label>
-        <select class="char-quick-add-modal__select" id="qa-char-voice">${voiceOptionsHtml}</select>
+        <div style="display:flex; gap:8px;">
+          <select class="char-quick-add-modal__select" id="qa-char-voice" style="flex:1;">${voiceOptionsHtml}</select>
+          <button type="button" class="btn btn--sm btn--secondary" id="qa-audition-btn" style="white-space:nowrap; padding:6px 12px; font-size:0.75rem;">🔊 Audition</button>
+        </div>
       </div>
       <div class="char-quick-add-modal__actions">
         <button class="char-quick-add-modal__btn char-quick-add-modal__btn--cancel" id="qa-cancel" type="button">Cancel</button>
@@ -2173,6 +2211,33 @@ function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => voi
     </div>
   `;
   document.body.appendChild(overlay);
+
+  const qaAuditionBtn = document.getElementById('qa-audition-btn') as HTMLButtonElement | null;
+  qaAuditionBtn?.addEventListener('click', async () => {
+    const voiceSelect = document.getElementById('qa-char-voice') as HTMLSelectElement | null;
+    const nameInput = document.getElementById('qa-char-name') as HTMLInputElement | null;
+    const voiceId = voiceSelect?.value || VOICE_OPTIONS[0]?.voiceId;
+    const name = nameInput?.value.trim() || 'Character';
+    if (!voiceId) return;
+
+    qaAuditionBtn.textContent = '🔊 Playing...';
+    qaAuditionBtn.disabled = true;
+    try {
+      const audio = await auditionVoice(voiceId, name);
+      if (audio) {
+        audio.addEventListener('ended', () => {
+          qaAuditionBtn.textContent = '🔊 Audition';
+          qaAuditionBtn.disabled = false;
+        }, { once: true });
+      } else {
+        qaAuditionBtn.textContent = '🔊 Audition';
+        qaAuditionBtn.disabled = false;
+      }
+    } catch {
+      qaAuditionBtn.textContent = '🔊 Audition';
+      qaAuditionBtn.disabled = false;
+    }
+  });
 
   document.getElementById('qa-cancel')?.addEventListener('click', () => { overlay.remove(); callback(null); });
   document.getElementById('qa-save')?.addEventListener('click', () => {

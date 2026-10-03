@@ -13526,6 +13526,19 @@ body.content-management-mode .story-card:hover {
   cursor: wait;
 }
 
+.ss-char-audition-btn--playing {
+  background: rgba(16, 185, 129, 0.22) !important;
+  border-color: #10B981 !important;
+  color: #10B981 !important;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);
+  animation: auditionPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes auditionPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
 /* Empty State */
 .ss-char-empty {
   background: var(--color-surface);

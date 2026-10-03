@@ -5,6 +5,7 @@
 
 import { getSelectedVoiceId } from './settings.ts';
 import { supabase } from './supabase.ts';
+import { resolveVoiceForLine } from './voice-lab.ts';
 
 /** Split dialogue text into sentences with their terminal punctuation for mood-aware TTS. */
 export function splitDialogueIntoSentences(text: string): { text: string; punctuation: string }[] {
@@ -627,13 +628,8 @@ export async function preRecordPageAudio(
 
     onProgress?.(i + 1, dialogueLines.length);
 
-    // Resolve voice ID: character voice > narrator voice > default
-    let voiceId = narratorVoiceId;
-    if (line.characterId !== 'narrator') {
-      const char = characters.find(c => c.id === line.characterId);
-      if (char?.voiceId) voiceId = char.voiceId;
-      if (line.voiceId) voiceId = line.voiceId;
-    }
+    // Resolve voice ID using Voice Lab priority chain
+    const { voiceId } = resolveVoiceForLine(line, characters, narratorVoiceId);
 
     // Call ElevenLabs WITH timestamps for alignment data
     const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
