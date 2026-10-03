@@ -921,7 +921,7 @@ export async function init(): Promise<void> {
               isVideo,
               id: isVideo ? 'book-video' : 'book-img',
               alt: `Page ${currentPage + 1}`,
-              style: `max-width:100%;max-height:100%;object-fit:contain;${objPosStyle}border-radius:8px;`,
+              style: `max-width:100%;object-fit:contain;${objPosStyle}border-radius:8px;`,
             });
           } else {
             // Text-only page: nothing to load, no empty image box

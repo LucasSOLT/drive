@@ -3607,7 +3607,11 @@ button.profile-avatar {
   padding: 0 16px 8px;
   box-sizing: border-box;
   overflow: hidden;
+  overscroll-behavior: contain;
   gap: 4px;
+  /* Tallest the media may be: screen - header(60) - dialogue min(110) - dots(~40) - gaps/padding.
+     Portrait (9:16) images letterbox inside this box instead of pushing the dialogue off-screen. */
+  --reader-media-max-h: min(62dvh, calc(100dvh - 250px));
 }
 .reader__page {
   flex: 0 1 auto;
@@ -3616,13 +3620,14 @@ button.profile-avatar {
   align-items: center;
   justify-content: center;
   width: 100%;
+  max-height: var(--reader-media-max-h);
   position: relative;
   overflow: hidden;
 }
 .reader__page img,
 .reader__page video {
   max-width: 100%;
-  max-height: 50dvh;
+  max-height: var(--reader-media-max-h);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -15858,7 +15863,7 @@ body.content-management-mode .story-card:hover {
   }
   .reader__book-content img,
   .reader__book-content video {
-    max-height: 85vh;
+    max-height: var(--reader-media-max-h);
     width: auto;
     max-width: 100%;
     margin: 0 auto;
