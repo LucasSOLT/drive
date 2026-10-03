@@ -16779,3 +16779,109 @@ body.content-management-mode .story-card:hover {
 .squad-gate-footer { flex-wrap: wrap; }
 .squad-gate-footer .admin-skip-btn { flex: 1 1 100%; margin-top: 0; }
 
+/* ---------------------------------------------------------------
+   SERIES INFO - desktop / large-screen layout
+   Phone layout above is untouched; these only apply on wide screens.
+   --------------------------------------------------------------- */
+@media (min-width: 900px) {
+  .si-hero {
+    height: clamp(300px, 40vh, 520px);
+    max-height: none;
+  }
+  .si-hero__bg { background-position: center 20%; }
+  .si-hero__error-text { font-size: 1rem; }
+  .si-close-btn {
+    top: 22px;
+    left: 28px;
+    width: 48px;
+    height: 48px;
+  }
+  .si-content {
+    max-width: 1240px;
+    margin: -90px auto 0;
+    padding: 0 48px;
+  }
+  .si-meta { gap: 10px; margin-bottom: 14px; }
+  .si-rating-badge { font-size: 0.85rem; padding: 3px 10px; }
+  .si-genre, .si-author, .si-meta-dot { font-size: 1.05rem; }
+  .si-stars-row { margin-bottom: 18px; }
+  .si-stars-text { font-size: 1rem; }
+  .si-actions { margin-bottom: 22px; }
+  .si-action-label { font-size: 0.9rem; }
+  .si-synopsis { max-width: 900px; margin-bottom: 28px; }
+  .si-synopsis-text { font-size: 1.12rem; line-height: 1.65; }
+  .si-more-details { font-size: 0.95rem; }
+  .si-tab { font-size: 1.05rem; padding: 14px 0; }
+  .si-season-row { padding: 16px 0; margin-bottom: 18px; }
+  .si-season-dropdown { font-size: 1.05rem; }
+
+  /* Episodes become a card grid instead of one narrow column */
+  .si-episode-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+    gap: 18px 24px;
+    padding-bottom: 16px;
+  }
+  .si-episode {
+    gap: 18px;
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  }
+  .si-episode:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(16, 185, 129, 0.35);
+    transform: translateY(-2px);
+  }
+  .si-episode__thumb-wrap {
+    width: 220px;
+    min-width: 220px;
+    border-radius: 8px;
+  }
+  .si-episode__thumb-placeholder { font-size: 2.4rem; }
+  .si-episode__watched { font-size: 0.75rem; bottom: 8px; left: 8px; }
+  .si-episode__info { gap: 6px; padding-top: 6px; }
+  .si-episode__number { font-size: 1rem; }
+  .si-episode__title { font-size: 1.15rem; line-height: 1.35; }
+  .si-episode__pages { font-size: 0.9rem; }
+
+  /* Sticky bar: align with the content column instead of spanning the screen */
+  .si-sticky-bar {
+    padding: 16px max(48px, calc((100vw - 1240px) / 2 + 48px));
+    padding-bottom: max(env(safe-area-inset-bottom, 16px), 16px);
+    gap: 12px;
+  }
+  .si-cta-btn {
+    flex: 0 1 420px;
+    padding: 16px 28px;
+    font-size: 1.05rem;
+    border-radius: 10px;
+  }
+  .si-sticky-bookmark { width: 56px; height: 56px; border-radius: 10px; }
+}
+
+@media (min-width: 1500px) {
+  .si-hero { height: clamp(340px, 42vh, 620px); }
+  .si-content { max-width: 1480px; margin-top: -100px; padding: 0 64px; }
+  .si-episode-list { grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 22px 28px; }
+  .si-episode__thumb-wrap { width: 260px; min-width: 260px; }
+  .si-episode__title { font-size: 1.3rem; }
+  .si-synopsis { max-width: 1040px; }
+  .si-synopsis-text { font-size: 1.22rem; }
+  .si-sticky-bar {
+    padding-left: max(64px, calc((100vw - 1480px) / 2 + 64px));
+    padding-right: max(64px, calc((100vw - 1480px) / 2 + 64px));
+  }
+}
+
+@media (min-width: 2200px) {
+  .si-content { max-width: 1800px; }
+  .si-episode-list { grid-template-columns: repeat(auto-fill, minmax(600px, 1fr)); }
+  .si-episode__thumb-wrap { width: 300px; min-width: 300px; }
+  .si-sticky-bar {
+    padding-left: max(64px, calc((100vw - 1800px) / 2 + 64px));
+    padding-right: max(64px, calc((100vw - 1800px) / 2 + 64px));
+  }
+}

@@ -213,6 +213,8 @@ export async function init(): Promise<void> {
   const synopsis = story.synopsis || 'No description available.';
   const synopsisShort = synopsis.length > 150 ? synopsis.substring(0, 150) + '...' : synopsis;
   const needsExpand = synopsis.length > 150;
+  // Wide (computer) screens have the room: start with the full synopsis open
+  const startExpanded = needsExpand && window.matchMedia('(min-width: 900px)').matches;
 
   // Continue / Start button
   let ctaText = `${ICON.play} Start Reading`;
@@ -276,8 +278,8 @@ export async function init(): Promise<void> {
 
       <!-- Synopsis -->
       <div class="si-synopsis">
-        <p class="si-synopsis-text" id="si-synopsis-text">${synopsisShort}</p>
-        ${needsExpand ? `<button class="si-more-details" id="si-more-details">More Details</button>` : ''}
+        <p class="si-synopsis-text" id="si-synopsis-text">${startExpanded ? synopsis : synopsisShort}</p>
+        ${needsExpand ? `<button class="si-more-details" id="si-more-details">${startExpanded ? 'Less Details' : 'More Details'}</button>` : ''}
       </div>
 
       <!-- Tab Bar -->
@@ -341,7 +343,7 @@ export async function init(): Promise<void> {
 
   // Store full synopsis for expand toggle
   const synopsisTextEl = document.getElementById('si-synopsis-text');
-  let synopsisExpanded = false;
+  let synopsisExpanded = startExpanded;
 
   // Cover failed or timed out → show dino now, swap the image in if it arrives later
   if (!heroOk && heroCover) {
