@@ -16,6 +16,7 @@ import {
 } from '../lib/db.ts';
 import { shareSquadInvite } from '../components/squad-gate-modal.ts';
 import { getFirstSquadEpisode } from '../lib/squad-engine.ts';
+import { adminSkipButtonHtml, adminSkipToNextEpisode } from '../lib/admin-skip.ts';
 import { supabase } from '../lib/supabase.ts';
 import { getStoryById, stories } from '../data/stories.ts';
 import type { Story } from '../types.ts';
@@ -483,6 +484,8 @@ export function render(): string {
         </button>
         ` : ''}
 
+        ${adminSkipButtonHtml('admin-skip-btn', 'Admin skip: read solo (no squad)')}
+
       </div>
 
     </div>
@@ -644,6 +647,12 @@ function attachLobbyEventListeners(squadId: string): void {
   });
   // Admin-only test launch (skips the 3-player + ready requirements)
   document.getElementById('admin-force-launch-btn')?.addEventListener('click', () => launchSquad(true));
+  // Admin-only: skip the squad lobby entirely and read the story solo
+  document.getElementById('admin-skip-btn')?.addEventListener('click', async () => {
+    const story = getStoryById(currentSquad.storyId) || (await fetchStoryByIdFromDb(currentSquad.storyId)) || undefined;
+    const groupId = story?.storyGroupId || currentSquad.storyId;
+    await adminSkipToNextEpisode(groupId, story?.soloEpisodeCount || 1);
+  });
 
   // ─── Copy Invite Code ───
   const copyBtn = document.getElementById('copy-invite-btn');

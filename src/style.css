@@ -16774,3 +16774,8 @@ body.content-management-mode .story-card:hover {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Admin skip button on squad gate footer: full-width row under the other actions */
+.squad-gate-footer { flex-wrap: wrap; }
+.squad-gate-footer .admin-skip-btn { flex: 1 1 100%; margin-top: 0; }
+

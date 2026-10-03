@@ -60,3 +60,10 @@ export function decidePreview(i: PreviewInputs): boolean {
   // A story created by the user (draft / under review / their own published story)
   return i.isOwner || (i.hasUserStory && i.admin);
 }
+/** sessionStorage key: storyGroupId an admin chose to "Admin skip" (read solo past squad/SPARC barriers). */
+export const ADMIN_SKIP_KEY = 'drive_admin_skip';
+
+/** Pure: admin skip applies only when the stored group matches AND the user is currently an admin. */
+export function adminSkipHonored(stored: string | null, groupKey: string, admin: boolean): boolean {
+  return admin && !!stored && stored === groupKey;
+}

@@ -15,6 +15,7 @@ import {
 } from '../lib/db.ts';
 import { tryAdvanceSquad, isEpisodeTimerExpired } from '../lib/squad-engine.ts';
 import { uploadMedia } from '../lib/storage.ts';
+import { adminSkipButtonHtml, adminSkipToNextEpisode } from '../lib/admin-skip.ts';
 import { MONSTER_AVATARS } from '../data/avatars.ts';
 import { type SparcPost, type SquadMemberState, type SquadSession } from '../types.ts';
 
@@ -287,6 +288,7 @@ export function render(): string {
         <div class="sparc-feed" id="sparc-feed" style="margin-bottom:24px;"></div>
 
         <button id="btn-next-episode" class="sparc-advance-btn btn btn--primary" style="width:100%; margin-top:24px;" disabled>Next Episode</button>
+        ${adminSkipButtonHtml('btn-admin-skip', 'Admin skip: continue solo')}
       </div>
     </div>
   `;
@@ -745,6 +747,13 @@ function setupEventListeners() {
       btn.disabled = false;
       btn.textContent = 'Submit';
     }
+  });
+
+  // Admin-only: skip the squad requirement and keep reading solo (button only exists for admins)
+  document.getElementById('btn-admin-skip')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-admin-skip') as HTMLButtonElement | null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Skipping...'; }
+    await adminSkipToNextEpisode(currentStoryGroupId, currentEpisodeNumber);
   });
 
   document.getElementById('btn-next-episode')?.addEventListener('click', async () => {

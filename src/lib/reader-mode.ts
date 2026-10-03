@@ -10,7 +10,7 @@ import type { Story } from '../types.ts';
 import { hasAdminPrivileges } from './db.ts';
 import { getUserId } from './auth.ts';
 import { getUserStoryById } from '../state.ts';
-import { decidePreview, PREVIEW_FLAG_KEY } from './reader-routes.ts';
+import { ADMIN_SKIP_KEY, adminSkipHonored, decidePreview, PREVIEW_FLAG_KEY } from './reader-routes.ts';
 
 /** Call right before navigating to `story/ID` from a Preview action (admin dashboard, owner preview). */
 export function markPreviewEntry(story: { id: string; storyGroupId?: string }): void {
@@ -39,4 +39,20 @@ export function isPreviewStory(story: Story): boolean {
     hasUserStory: !!userStory,
     isOwner: !!userStory && !!userStory.user_id && userStory.user_id === getUserId(),
   });
+}
+
+/**
+ * Admin skip: admins can read a story solo past the squad gate / SPARC barriers.
+ * The flag lives in sessionStorage and is only HONORED while the current user has admin privileges,
+ * so a normal user cannot enable it by editing their own storage. It never writes to the database.
+ */
+export function activateAdminSkip(storyGroupId: string): void {
+  if (!hasAdminPrivileges()) return;
+  try { sessionStorage.setItem(ADMIN_SKIP_KEY, storyGroupId); } catch { /* storage unavailable */ }
+}
+
+export function isAdminSkipActive(storyGroupId: string): boolean {
+  let stored: string | null = null;
+  try { stored = sessionStorage.getItem(ADMIN_SKIP_KEY); } catch { /* storage unavailable */ }
+  return adminSkipHonored(stored, storyGroupId, hasAdminPrivileges());
 }
