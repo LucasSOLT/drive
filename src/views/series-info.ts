@@ -8,9 +8,10 @@
  */
 
 import { getRouteParam, navigate } from '../router.ts';
-import { fetchStoryByIdFromDb, fetchOfficialStories } from '../lib/db.ts';
+import { fetchStoryByIdFromDb, fetchOfficialStories, getCachedOfficialStories } from '../lib/db.ts';
 import { isBookmarked, toggleBookmark } from '../state.ts';
 import { preloadEpisodeFirstPages } from '../lib/media-preloader.ts';
+import { isVideoMedia } from '../lib/media.ts';
 import { type Story } from '../types.ts';
 
 // ─── SVG Icons ───
@@ -85,6 +86,70 @@ function renderStars(rating: number): string {
   return html;
 }
 
+// ─── Hero cover preloading ───
+
+/** First non-video candidate for the hero banner (background-image can't show videos). */
+function pickHeroCover(s: Story): string {
+  const candidates = [s.seriesCoverImage, s.coverImage, s.panels?.[0]];
+  return candidates.find(u => !!u && !isVideoMedia(u)) || '';
+}
+
+type HeroLoad = {
+  /** true if the image loaded before the timeout */
+  ok: boolean;
+  /** resolves true whenever the image eventually loads (even after the timeout) */
+  late: Promise<boolean>;
+};
+
+const heroPreloads = new Map<string, Promise<HeroLoad>>();
+
+/** Load the hero image, resolving on load, error, or timeout — whichever comes first. */
+function preloadHero(url: string, timeoutMs = 5000): Promise<HeroLoad> {
+  if (!url) return Promise.resolve({ ok: true, late: Promise.resolve(true) });
+  const existing = heroPreloads.get(url);
+  if (existing) return existing;
+
+  const p = new Promise<HeroLoad>(resolve => {
+    const img = new Image();
+    let settled = false;
+    let lateResolve: (ok: boolean) => void = () => {};
+    const late = new Promise<boolean>(r => { lateResolve = r; });
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve({ ok: false, late });
+    }, timeoutMs);
+
+    img.onload = () => {
+      lateResolve(true);
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ ok: true, late });
+    };
+    img.onerror = () => {
+      lateResolve(false);
+      heroPreloads.delete(url); // allow a retry next time
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ ok: false, late });
+    };
+    img.decoding = 'async';
+    img.src = url;
+  });
+  heroPreloads.set(url, p);
+  return p;
+}
+
+/** Minimal line-art dinosaur for the connection-error state. */
+const DINO_SVG = `<svg class="si-hero__dino" width="64" height="64" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M34 8h16a4 4 0 0 1 4 4v9a2 2 0 0 1-2 2h-9v3h7v3h-7v6c0 8-6 14-14 15l-1 8h-4l1-8h-3l-1 8h-4l1-9c-4-2-7-6-8-10L4 41v-3l7-6c2-6 7-10 13-10h6V12a4 4 0 0 1 4-4z"/>
+  <circle cx="40" cy="13" r="1.3" fill="currentColor" stroke="none"/>
+  <path d="M36 34l5 3"/>
+</svg>`;
+
 // ─── Render ───
 
 export function render(): string {
@@ -104,15 +169,22 @@ export async function init(): Promise<void> {
   const container = document.getElementById('series-info');
   if (!container) return;
 
-  // Fetch story data
-  const story = await fetchStoryByIdFromDb(storyId);
+  // Head start: if this story is already cached, begin loading its cover
+  // before the network fetch even returns.
+  const cachedStory = getCachedOfficialStories()?.find(s => s.id === storyId);
+  if (cachedStory) preloadHero(pickHeroCover(cachedStory));
+
+  // Fetch story + all episodes in parallel
+  const [story, allStories] = await Promise.all([
+    fetchStoryByIdFromDb(storyId),
+    fetchOfficialStories(),
+  ]);
+  if (!container.isConnected) return; // user left while loading
   if (!story) {
     container.innerHTML = `<div style="padding:40px;text-align:center;color:#94a3b8;">Story not found.</div>`;
     return;
   }
 
-  // Fetch all episodes in this group
-  const allStories = await fetchOfficialStories();
   const groupId = story.storyGroupId || story.id;
   const episodes = allStories
     .filter(s => (s.storyGroupId || s.id) === groupId)
@@ -121,11 +193,17 @@ export async function init(): Promise<void> {
   // If only one episode and it's the same story, still show info screen
   if (episodes.length === 0) episodes.push(story);
 
+  // Data for template
+  const heroCover = pickHeroCover(story);
+
+  // Keep the spinner up until the cover is ready (or failed / 5s timeout)
+  const heroResult = await preloadHero(heroCover);
+  if (!container.isConnected) return;
+  const heroOk = heroResult.ok;
+
   // Preload first pages of each episode in background
   preloadEpisodeFirstPages(episodes);
 
-  // Data for template
-  const heroCover = story.seriesCoverImage || story.coverImage || story.panels?.[0] || '';
   const bookmarked = isBookmarked(storyId);
   const rating = getStarRating(groupId);
   const progress = getProgressForGroup(groupId);
@@ -156,7 +234,13 @@ export async function init(): Promise<void> {
 
   container.innerHTML = `
     <!-- Hero Section -->
-    <div class="si-hero" style="background-image: url('${heroCover}');">
+    <div class="si-hero" id="si-hero">
+      <div class="si-hero__bg ${heroOk && heroCover ? 'si-hero__bg--visible' : ''}" id="si-hero-bg" style="${heroOk && heroCover ? `background-image: url('${heroCover}');` : ''}"></div>
+      ${heroOk ? '' : `
+      <div class="si-hero__error" id="si-hero-error">
+        ${DINO_SVG}
+        <span class="si-hero__error-text">Connection issues, please check your network</span>
+      </div>`}
       <div class="si-hero__overlay"></div>
       <button class="si-close-btn" id="si-close" aria-label="Close">${ICON.close}</button>
     </div>
@@ -238,7 +322,7 @@ export async function init(): Promise<void> {
       </div>
 
       <!-- Bottom spacer for sticky bar -->
-      <div style="height: 80px;"></div>
+      <div style="height: calc(140px + env(safe-area-inset-bottom, 0px));"></div>
     </div>
 
     <!-- Sticky Bottom Bar -->
@@ -258,6 +342,25 @@ export async function init(): Promise<void> {
   // Store full synopsis for expand toggle
   const synopsisTextEl = document.getElementById('si-synopsis-text');
   let synopsisExpanded = false;
+
+  // Cover failed or timed out → show dino now, swap the image in if it arrives later
+  if (!heroOk && heroCover) {
+    const showLateHero = () => {
+      const bg = document.getElementById('si-hero-bg');
+      if (!bg || !bg.isConnected) return;
+      bg.style.backgroundImage = `url('${heroCover}')`;
+      // next frame so the opacity transition actually runs
+      requestAnimationFrame(() => bg.classList.add('si-hero__bg--visible'));
+      document.getElementById('si-hero-error')?.remove();
+      window.removeEventListener('online', retryHero);
+    };
+    const retryHero = () => {
+      heroPreloads.delete(heroCover);
+      preloadHero(heroCover, 15000).then(r => { if (r.ok) showLateHero(); });
+    };
+    heroResult.late.then(ok => { if (ok) showLateHero(); });
+    window.addEventListener('online', retryHero);
+  }
 
   // ─── Event Listeners ───
 

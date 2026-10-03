@@ -16236,13 +16236,16 @@ body.content-management-mode .story-card:hover {
   inset: 0;
   z-index: 9999;
   background: var(--color-bg, #0f172a);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  /* The WHOLE screen scrolls: cover scrolls away, episodes are fully reachable */
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .series-info__loading {
-  flex: 1;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16255,15 +16258,46 @@ body.content-management-mode .story-card:hover {
   height: 48vh;
   min-height: 280px;
   max-height: 420px;
+  overflow: hidden;
+}
+
+.si-hero__bg {
+  position: absolute;
+  inset: 0;
   background-size: cover;
   background-position: center top;
   background-repeat: no-repeat;
-  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.si-hero__bg--visible { opacity: 1; }
+
+/* Connection-error state (cover failed or timed out) */
+.si-hero__error {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 32px 40px;
+  color: #64748b;
+  text-align: center;
+}
+.si-hero__dino { color: #64748b; }
+.si-hero__error-text {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  line-height: 1.4;
 }
 
 .si-hero__overlay {
   position: absolute;
   inset: 0;
+  z-index: 2;
+  pointer-events: none;
   background: linear-gradient(
     to bottom,
     rgba(15, 23, 42, 0.15) 0%,
@@ -16274,10 +16308,11 @@ body.content-management-mode .story-card:hover {
 }
 
 .si-close-btn {
-  position: absolute;
+  /* Pinned so it stays reachable while the page scrolls */
+  position: fixed;
   top: max(env(safe-area-inset-top, 12px), 12px);
   left: 14px;
-  z-index: 10;
+  z-index: 10001;
   background: rgba(0, 0, 0, 0.45);
   border: none;
   border-radius: 50%;
@@ -16290,18 +16325,17 @@ body.content-management-mode .story-card:hover {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.15s;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 .si-close-btn:hover { background: rgba(0, 0, 0, 0.65); }
 
-/* ─── Scrollable Content ─── */
+/* ─── Content (scrolls with the whole screen) ─── */
 .si-content {
-  flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 0 16px;
   margin-top: -40px;
   position: relative;
-  z-index: 2;
+  z-index: 3;
 }
 
 /* ─── Meta Row ─── */
