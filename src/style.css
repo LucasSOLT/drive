@@ -16885,3 +16885,7 @@ body.content-management-mode .story-card:hover {
     padding-right: max(64px, calc((100vw - 1800px) / 2 + 64px));
   }
 }
+
+/* Editor Previous/Next Episode buttons: greyed out when there is no such episode */
+.canvas-toolbar__dd-item:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.sb-topbar__btn-action:disabled { opacity: 0.4; cursor: not-allowed; }

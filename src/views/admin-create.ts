@@ -4,7 +4,8 @@ import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { stopSpeaking, isSpeaking, preRecordAudio, preRecordPageAudio, batchPreRecordStory, type BatchPreRecordPage, type BatchPreRecordSummary, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
 
-import { saveOfficialStory, fetchOfficialStories, updateSharedStorySettings, fetchStoryByIdFromDb } from '../lib/db.ts';
+import { saveOfficialStory, fetchOfficialStories, getCachedOfficialStories, updateSharedStorySettings, fetchStoryByIdFromDb } from '../lib/db.ts';
+import { findEpisodeNeighbors, episodeNavLabel, NO_NEIGHBORS, type EpisodeNeighbors } from '../lib/episode-nav.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { uploadMedia } from '../lib/storage.ts';
 import { uploadAudioData } from '../lib/storage.ts';
@@ -603,6 +604,158 @@ async function preUploadBase64Images() {
       }
     }
   }
+}
+
+// ─── Episode navigation (Previous / Next Episode) ───
+// Lives in the toolbar "⋯" menu (mobile) and the storyboard top bar (desktop).
+// Clicking one SAVES the current episode first, then opens the other one, so
+// nothing the author typed is lost and nothing is overwritten by the switch.
+
+let episodeNeighbors: EpisodeNeighbors = NO_NEIGHBORS;
+let episodeNeighborsKey = '';
+let episodeNeighborsFetchedAt = 0;
+let episodeNavBusy = false;
+/** DB copy of the episode being edited (so a save can keep fields the editor doesn't own). */
+let currentOfficialRecord: Story | null = null;
+
+const EP_ARROW_PREV = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+const EP_ARROW_NEXT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+
+/** Toolbar-menu buttons. Greyed out (disabled) when there is no such episode. */
+function episodeNavItemsHtml(): string {
+  const item = (id: string, kind: 'prev' | 'next') => {
+    const ref = episodeNeighbors[kind];
+    return `
+          <button class="canvas-toolbar__dd-item" id="${id}" data-nav-ep="${ref ? ref.id : ''}" ${ref ? '' : 'disabled'}>
+            ${kind === 'prev' ? EP_ARROW_PREV : EP_ARROW_NEXT}
+            <span class="dd-ep-label">${episodeNavLabel(kind, ref)}</span>
+          </button>`;
+  };
+  return item('btn-dd-prev-episode', 'prev') + item('btn-dd-next-episode', 'next');
+}
+
+/** Desktop storyboard top-bar buttons (the toolbar menu is hidden behind the storyboard). */
+function episodeNavSbHtml(): string {
+  const btn = (id: string, kind: 'prev' | 'next', text: string) => {
+    const ref = episodeNeighbors[kind];
+    return `<button class="sb-topbar__btn-action" id="${id}" type="button" data-nav-ep="${ref ? ref.id : ''}" ${ref ? '' : 'disabled'} title="${episodeNavLabel(kind, ref)}">${text}</button>`;
+  };
+  return btn('sb-prev-episode', 'prev', '&#9664; Prev Ep') + btn('sb-next-episode', 'next', 'Next Ep &#9654;');
+}
+
+/** Push the current neighbors into any episode buttons that are on screen. */
+function applyEpisodeNeighborsToDom(): void {
+  const set = (id: string, kind: 'prev' | 'next') => {
+    const el = document.getElementById(id) as HTMLButtonElement | null;
+    if (!el) return;
+    const ref = episodeNeighbors[kind];
+    el.disabled = !ref || episodeNavBusy;
+    el.dataset.navEp = ref ? ref.id : '';
+    el.title = episodeNavLabel(kind, ref);
+    const label = el.querySelector('.dd-ep-label');
+    if (label) label.textContent = episodeNavLabel(kind, ref);
+  };
+  set('btn-dd-prev-episode', 'prev');
+  set('btn-dd-next-episode', 'next');
+  set('sb-prev-episode', 'prev');
+  set('sb-next-episode', 'next');
+}
+
+/** Work out the previous/next episode. Cheap to call often: it only hits the network when the episode changed or data is 20s old. */
+async function refreshEpisodeNeighbors(): Promise<void> {
+  const groupId = episodeStoryGroupId || editStoryId;
+  const key = `${isUserMode() ? 'u' : 'a'}|${groupId || ''}|${episodeNumber}|${editStoryId || ''}`;
+  const keyChanged = key !== episodeNeighborsKey;
+  if (!keyChanged && Date.now() - episodeNeighborsFetchedAt < 20000) return;
+  episodeNeighborsKey = key;
+
+  // Regular users' stories are single-episode: nothing to navigate to.
+  if (isUserMode() || !groupId) {
+    episodeNeighbors = NO_NEIGHBORS;
+    currentOfficialRecord = null;
+    applyEpisodeNeighborsToDom();
+    return;
+  }
+
+  if (keyChanged) {
+    // Show something right away from cache, then correct it from the database.
+    const cached = getCachedOfficialStories();
+    episodeNeighbors = cached ? findEpisodeNeighbors(cached, groupId, episodeNumber, editStoryId) : NO_NEIGHBORS;
+    applyEpisodeNeighborsToDom();
+  }
+
+  episodeNeighborsFetchedAt = Date.now();
+  try {
+    const all = await fetchOfficialStories();
+    if (key !== episodeNeighborsKey) return; // the author already moved on
+    episodeNeighbors = findEpisodeNeighbors(all, groupId, episodeNumber, editStoryId);
+    currentOfficialRecord = editStoryId ? (all.find(s => s.id === editStoryId) || null) : null;
+    applyEpisodeNeighborsToDom();
+  } catch (err) {
+    console.warn('[AdminCreate] Could not load sibling episodes:', err);
+  }
+}
+
+/** Build the story for an automatic save without unpublishing a Live episode or wiping fields the editor doesn't own. */
+function buildStoryKeepingLiveState(): Story {
+  const story = buildStory(String(currentStoryStatus) === 'live' ? 'live' : 'draft');
+  const rec = !isUserMode() && currentOfficialRecord && currentOfficialRecord.id === story.id ? currentOfficialRecord : null;
+  if (rec) {
+    story.sortOrder = rec.sortOrder;
+    story.isFeatured = rec.isFeatured;
+    story.isEditorPick = rec.isEditorPick;
+    story.episodeThumbnail = rec.episodeThumbnail;
+    story.episodeTitle = rec.episodeTitle;
+    story.seriesCoverImage = rec.seriesCoverImage;
+  }
+  return story;
+}
+
+/** Save this episode, then open another one. If the save fails we STAY here so no work is lost. */
+async function goToSiblingEpisode(targetId: string): Promise<void> {
+  if (episodeNavBusy || !targetId) return;
+  episodeNavBusy = true;
+  applyEpisodeNeighborsToDom();
+  const labels = ['btn-dd-prev-episode', 'btn-dd-next-episode']
+    .map(id => document.getElementById(id)?.querySelector('.dd-ep-label') as HTMLElement | null);
+  labels.forEach(l => { if (l) l.textContent = 'Saving...'; });
+
+  try {
+    if (!storyTitle.trim()) storyTitle = 'Untitled';
+    getFormData();
+    saveDraft(); // instant local backup
+    try { await preUploadBase64Images(); } catch (e) { console.warn('[AdminCreate] Pre-upload before episode switch failed:', e); }
+    const story = buildStoryKeepingLiveState();
+    registerStory(story);
+    await saveStoryForMode(story); // throws if the cloud save fails
+    editStoryId = story.id;
+    saveDraft();
+  } catch (err: any) {
+    console.error('[AdminCreate] Save before episode switch failed:', err);
+    episodeNavBusy = false;
+    applyEpisodeNeighborsToDom();
+    alert('Could not save this episode, so you were NOT moved to another one. Your work is still here. ' + (err?.message || ''));
+    return;
+  }
+
+  // Leave the desktop storyboard overlay (it is re-opened for the next episode)
+  document.querySelector('.storyboard-overlay')?.remove();
+  currentPage = 0;
+  episodeNavBusy = false;
+  navigate('admin-create/' + targetId);
+}
+
+function wireEpisodeNav(ids: string[]): void {
+  for (const id of ids) {
+    document.getElementById(id)?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const btn = e.currentTarget as HTMLButtonElement;
+      if (btn.disabled) return;
+      const target = btn.dataset.navEp;
+      if (target) void goToSiblingEpisode(target);
+    });
+  }
+  void refreshEpisodeNeighbors();
 }
 
 function openStorySettings(options?: { preserveScroll?: boolean }): void {
@@ -1757,6 +1910,7 @@ function renderCanvasToolbar(formatLabel: string): string {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l-.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06-.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Story Settings
           </button>
+          ${episodeNavItemsHtml()}
           ${isBook ? `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -3710,6 +3864,7 @@ function openStoryboard(): void {
             📱 Mobile View
           </button>
         ` : ''}
+        ${episodeNavSbHtml()}
         <button class="sb-topbar__btn-action" id="sb-story-settings" type="button" title="Edit story title, cover, and metadata">
           ⚙️ Settings
         </button>
@@ -3842,6 +3997,8 @@ function openStoryboard(): void {
       onCancel: () => {}
     });
   });
+
+  wireEpisodeNav(['sb-prev-episode', 'sb-next-episode']);
 
   document.getElementById('sb-story-settings')?.addEventListener('click', () => {
     // Keep activeEditorMode = 'storyboard' so that pressing "Back" in settings
@@ -4463,6 +4620,9 @@ export function init(): void {
     if (phase === 'canvas') {
       // SPARC Checkpoint Challenge Authoring
       attachSparcAdminListeners(document);
+
+      // Previous / Next Episode buttons in the toolbar menu
+      wireEpisodeNav(['btn-dd-prev-episode', 'btn-dd-next-episode']);
 
       // Auto-save and exit — with dropdown
       document.getElementById('btn-toolbar-quit')?.addEventListener('click', (e) => {
@@ -5878,7 +6038,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
     // Best-effort cloud save on navigation
     try {
       if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === 'untitled') storyTitle = 'Untitled Draft';
-      const story = buildStory('draft');
+      const story = buildStoryKeepingLiveState();
       registerStory(story);
       await preUploadBase64Images();
       await saveStoryForMode(story);
