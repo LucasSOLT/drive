@@ -276,6 +276,17 @@ export function render(): string {
           <button class="reader__action-btn active" id="btn-cc" aria-label="Captions">
             <span class="reader__action-icon reader__cc-icon">CC</span>
           </button>
+          ${(story.bgmUrl || (story as any).bgm_url) ? `
+            <button class="reader__action-btn active" id="btn-bgm" aria-label="Toggle Background Music" title="Background Music: Playing">
+              <span class="reader__action-icon" id="bgm-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 18V5l12-2v13"></path>
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <circle cx="18" cy="16" r="3"></circle>
+                </svg>
+              </span>
+            </button>
+          ` : ''}
         </div>
       </header>
 
@@ -503,7 +514,9 @@ export async function init(): Promise<void> {
   let bgmAudio: HTMLAudioElement | null = null;
   let bgmDucker: BgmDuckingController | null = null;
   if (bgmUrl) {
-    bgmAudio = new Audio(bgmUrl);
+    bgmAudio = new Audio();
+    bgmAudio.crossOrigin = 'anonymous';
+    bgmAudio.src = bgmUrl;
     bgmAudio.loop = true;
     // BgmDuckingController takes over volume control via Web Audio API GainNode
     bgmDucker = new BgmDuckingController(bgmAudio, bgmVolume, 0.3, 0.4);
@@ -1274,6 +1287,45 @@ export async function init(): Promise<void> {
     if (captionsOpen) {
       renderCaptionsOverlay(story, currentPage);
     }
+  });
+
+  // ─── BGM mute/unmute toggle ───
+  const bgmBtn = document.getElementById('btn-bgm');
+  const bgmIcon = document.getElementById('bgm-icon');
+  bgmBtn?.addEventListener('click', () => {
+    if (!bgmDucker && !bgmAudio) return;
+    const isNowMuted = bgmDucker ? !bgmDucker.isMuted : !(bgmAudio?.muted);
+    if (bgmDucker) {
+      if (isNowMuted) {
+        bgmDucker.mute();
+      } else {
+        bgmDucker.unmute();
+      }
+    } else if (bgmAudio) {
+      bgmAudio.muted = isNowMuted;
+    }
+
+    if (bgmBtn) {
+      bgmBtn.classList.toggle('active', !isNowMuted);
+      bgmBtn.title = isNowMuted ? 'Background Music: Muted' : 'Background Music: Playing';
+    }
+    if (bgmIcon) {
+      bgmIcon.innerHTML = isNowMuted ? `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.6;">
+          <path d="M9 18V5l12-2v13"></path>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="16" r="3"></circle>
+          <line x1="1" y1="1" x2="23" y2="23" stroke="#ef4444" stroke-width="2.5"></line>
+        </svg>
+      ` : `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"></path>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="16" r="3"></circle>
+        </svg>
+      `;
+    }
+    showActionToast(isNowMuted ? 'Background Music Muted' : 'Background Music Playing');
   });
 
   function escapeHtml(str: string): string {

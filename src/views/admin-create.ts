@@ -798,26 +798,37 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
           <!-- Background Music (BGM) -->
           <div class="ss-section" id="ss-bgm-section">
             <div class="ss-section__label">🎵 Background Music (BGM)</div>
-            <p style="font-size:0.78rem; color:var(--color-text-muted); margin: 0 0 10px 0;">Loops softly across all pages underneath dialogue.</p>
-            <div style="display:flex; flex-direction:column; gap:10px; background:var(--color-bg); padding:12px; border-radius:12px; border:1px solid var(--color-border);">
+            <p style="font-size:0.78rem; color:var(--color-text-muted); margin: 0 0 10px 0;">Loops softly across all pages underneath dialogue and narration.</p>
+            <div style="display:flex; flex-direction:column; gap:12px; background:var(--color-bg); padding:14px; border-radius:12px; border:1px solid var(--color-border);">
               <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                <span id="ss-bgm-name" style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                  ${storyBgmUrl ? '🎵 Music attached' : 'No music uploaded'}
-                </span>
-                <div style="display:flex; gap:6px;">
-                  <button id="ss-bgm-upload-btn" class="btn btn--sm btn--secondary" type="button">Upload BGM</button>
+                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                  <span style="font-size:1.1rem;">${storyBgmUrl ? '🎶' : '🔇'}</span>
+                  <span id="ss-bgm-name" style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    ${storyBgmUrl ? 'Background Music Attached' : 'No music uploaded yet'}
+                  </span>
+                </div>
+                <div style="display:flex; gap:6px; flex-shrink:0;">
+                  <button id="ss-bgm-upload-btn" class="btn btn--sm btn--secondary" type="button">
+                    ${storyBgmUrl ? 'Replace' : 'Upload Audio'}
+                  </button>
                   ${storyBgmUrl ? `
-                    <button id="ss-bgm-play-btn" class="btn btn--sm btn--ghost" type="button">▶</button>
-                    <button id="ss-bgm-remove-btn" class="btn btn--sm btn--ghost" type="button" style="color:#ef4444;">✕</button>
+                    <button id="ss-bgm-play-btn" class="btn btn--sm btn--ghost" type="button" title="Preview track">▶</button>
+                    <button id="ss-bgm-remove-btn" class="btn btn--sm btn--ghost" type="button" title="Remove track" style="color:#ef4444;">✕</button>
                   ` : ''}
                 </div>
                 <input type="file" id="ss-bgm-file-input" accept="audio/*,video/*" hidden>
               </div>
               ${storyBgmUrl ? `
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <span style="font-size:0.75rem; color:var(--color-text-secondary); width:55px;">Volume:</span>
-                  <input type="range" id="ss-bgm-vol-slider" min="5" max="60" value="${Math.round(storyBgmVolume * 100)}" style="flex:1;">
-                  <span id="ss-bgm-vol-val" style="font-size:0.75rem; font-weight:700; color:var(--color-purple); width:32px;">${Math.round(storyBgmVolume * 100)}%</span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:0.75rem; color:var(--color-text-secondary); width:50px;">Volume:</span>
+                  <input type="range" id="ss-bgm-vol-slider" min="5" max="80" value="${Math.round(storyBgmVolume * 100)}" style="flex:1; accent-color:#10B981;">
+                  <span id="ss-bgm-vol-val" style="font-size:0.75rem; font-weight:700; color:#10B981; width:34px; text-align:right;">${Math.round(storyBgmVolume * 100)}%</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; padding:6px 10px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:8px;">
+                  <span style="font-size:0.85rem;">🦆</span>
+                  <span style="font-size:0.72rem; color:var(--color-text-secondary); line-height:1.35;">
+                    <strong>Smart Audio Ducking Active:</strong> Music volume automatically lowers by 70% during voice & narration so dialogue is always crisp.
+                  </span>
                 </div>
               ` : ''}
             </div>
