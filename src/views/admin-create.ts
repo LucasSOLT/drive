@@ -2296,7 +2296,12 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
     });
   });
 
-  // Quick insert character chip into screenplay textarea (delegated for dynamic chips)
+  // Quick insert character chip into screenplay textarea (delegated for dynamic chips).
+  // Guarded: the mobile `wizard` container persists across re-renders, so without this
+  // guard every updateView() stacked another listener and one tap inserted N tags.
+  const insertGuardKey = '__insertTagDelegated';
+  if (!(container as any)[insertGuardKey]) {
+  (container as any)[insertGuardKey] = true;
   container.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('[data-insert-tag]');
     if (!btn) return;
@@ -2322,6 +2327,7 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
       }
     }
   });
+  }
 
   // Add dialogue line
   container.querySelectorAll(`[data-${prefix}-add-line]`).forEach(btn => {
@@ -5270,13 +5276,21 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         let swDeltaX = 0;
         let swLocked: 'h' | 'v' | null = null;
         let swActive = false;
+        // True when the current touch began on an interactive element (textarea, button…).
+        // touchmove/touchend must bail out too, otherwise they run with a stale start
+        // position and slide the whole page card sideways while scrolling in the text box.
+        let swIgnore = false;
         const SW_LOCK = 6;      // px dead zone
         const SW_DIST = 60;     // px to commit
         const SW_VEL = 0.3;     // px/ms to commit via flick
 
         bookSingleView.addEventListener('touchstart', (e: TouchEvent) => {
           const target = e.target as HTMLElement;
-          if (target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return;
+          if (target.closest('button, input, textarea, select, a, [contenteditable="true"]')) {
+            swIgnore = true;
+            return;
+          }
+          swIgnore = false;
           const t = e.touches[0];
           swStartX = t.clientX;
           swStartY = t.clientY;
@@ -5288,6 +5302,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         }, { passive: true });
 
         bookSingleView.addEventListener('touchmove', (e: TouchEvent) => {
+          if (swIgnore) return;
           if (swLocked === 'v') return;
           const t = e.touches[0];
           const dx = t.clientX - swStartX;
@@ -5315,6 +5330,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         }, { passive: false });
 
         bookSingleView.addEventListener('touchend', () => {
+          if (swIgnore) { swIgnore = false; return; }
           if (!swActive) {
             bookSingleView.style.transition = '';
             bookSingleView.style.transform = '';

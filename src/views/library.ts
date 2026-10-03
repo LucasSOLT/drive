@@ -988,6 +988,8 @@ export function init(): void {
             confirmText: 'Delete',
             cancelText: 'Cancel',
             onConfirm: () => {
+              // Remove from screen instantly, then clean up storage
+              btn.closest('.lib-card')?.remove();
               localStorage.removeItem('drive_admin_create_draft');
               const viewContainer = document.getElementById('view-container');
               if (viewContainer) {
@@ -1009,6 +1011,11 @@ export function init(): void {
             confirmText: 'Delete',
             cancelText: 'Cancel',
             onConfirm: async () => {
+              // Remove from screen instantly; keep a reference to restore on failure
+              const card = btn.closest('.lib-card') as HTMLElement | null;
+              const parent = card?.parentElement || null;
+              const nextSibling = card?.nextSibling || null;
+              card?.remove();
               try {
                 await deleteOfficialStory(storyId);
                 const viewContainer = document.getElementById('view-container');
@@ -1018,6 +1025,9 @@ export function init(): void {
                 }
               } catch (e) {
                 console.error('Failed to delete official draft', e);
+                // Put the card back so the UI matches reality
+                if (card && parent) parent.insertBefore(card, nextSibling);
+                alert('Delete failed: ' + ((e as any)?.message || 'Unknown error'));
               }
             }
           });
@@ -1048,6 +1058,7 @@ export function init(): void {
           confirmText: 'Remove',
           cancelText: 'Cancel',
           onConfirm: () => {
+            btn.closest('.lib-card')?.remove();
             removeTrackedStory(storyId);
             const viewContainer = document.getElementById('view-container');
             if (viewContainer) {
@@ -1178,6 +1189,8 @@ export function init(): void {
         confirmText: 'Delete',
         cancelText: 'Cancel',
         onConfirm: () => {
+          // Remove from screen instantly (cache is also updated synchronously inside deleteUserStory)
+          btn.closest('.lib-card')?.remove();
           deleteUserStory(storyId);
           const viewContainer = document.getElementById('view-container');
           if (viewContainer) {

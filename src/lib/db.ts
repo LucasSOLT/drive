@@ -411,16 +411,16 @@ export async function saveUserStory(story: UserStory): Promise<void> {
 export async function removeUserStory(id: string): Promise<void> {
   const userId = getUserId();
 
-  if (userId) {
-    await supabase.from('user_stories').delete().eq('id', id).eq('user_id', userId);
-  }
-
-  // Update cache
+  // Update cache FIRST (synchronously) so any immediate re-render no longer shows it.
   _stories = _stories.filter(s => s.id !== id);
   try {
     localStorage.setItem('drive_user_stories', JSON.stringify(_stories));
   } catch (e) {
     console.warn('localStorage error on removeUserStory:', e);
+  }
+
+  if (userId) {
+    await supabase.from('user_stories').delete().eq('id', id).eq('user_id', userId);
   }
 }
 

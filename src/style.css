@@ -15971,6 +15971,11 @@ body.content-management-mode .story-card:hover {
   outline: none;
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
 }
+/* Text wraps, so the box never needs horizontal panning — stops iOS sideways drift */
+.screenplay-textarea {
+  touch-action: pan-y;
+  overflow-x: hidden;
+}
 
 /* Storyboard Draft Saved Toast (Desktop bottom-right) */
 .storyboard-draft-toast {
