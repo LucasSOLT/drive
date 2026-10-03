@@ -22,9 +22,10 @@ import {
   unarchiveOfficialStory,
   checkIsGameMaster,
   hasAdminPrivileges,
-  getUserRole,
+  fetchStoryByIdFromDb,
   type AdminMetrics,
 } from '../lib/db.ts';
+import { runPreflightChecks } from '../lib/publishing.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { navigate } from '../router.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
@@ -701,25 +702,81 @@ function attachExpandCollapseListeners(): void {
 
 let _adminDropdownListenerAttached = false;
 
-function showGoLiveConfirm(storyId: string, storyTitle: string) {
+function showGoLiveConfirm(story: Story) {
+  const preflight = runPreflightChecks(story);
   const overlay = document.createElement('div');
   overlay.id = 'go-live-confirm-overlay';
   overlay.style.cssText = `
-    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     display: flex; align-items: center; justify-content: center;
-    z-index: 9999; padding: 20px;
+    z-index: 9999; padding: 16px; box-sizing: border-box;
   `;
+
+  const isBlocked = !preflight.canSubmit;
+
   overlay.innerHTML = `
-    <div style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 28px; max-width: 420px; width: 100%; text-align: center; font-family: var(--font-body);">
-      <div style="font-size: 2.5rem; margin-bottom: 12px;">🚀</div>
-      <h3 style="margin: 0 0 8px; font-family: var(--font-heading); font-size: 1.1rem; color: var(--color-text-primary);">Go Live with "${escapeHtml(storyTitle)}"?</h3>
-      <p style="font-size: 0.85rem; color: var(--color-text-muted); margin: 0 0 20px; line-height: 1.5;">
-        This will share the <strong>entire story</strong> to anyone on the internet via DRiVE. 
-        Please ensure there is no explicit or inappropriate content.
-      </p>
-      <div style="display: flex; gap: 12px; justify-content: center;">
-        <button id="go-live-cancel" style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.88rem; font-weight: 600;">Cancel</button>
-        <button id="go-live-confirm" style="flex: 1; padding: 12px; border-radius: 10px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700;">Yes, Go Live</button>
+    <div style="background: var(--color-surface); border: 1.5px solid ${isBlocked ? 'rgba(239,68,68,0.4)' : 'rgba(16,185,129,0.4)'}; border-radius: 20px; padding: 24px; max-width: 480px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; font-family: var(--font-body); box-shadow: 0 20px 60px rgba(0,0,0,0.6); box-sizing: border-box;">
+      
+      <!-- Header -->
+      <div style="text-align: center; margin-bottom: 14px;">
+        <div style="font-size: 2.5rem; margin-bottom: 8px;">${isBlocked ? '🛑' : '🚀'}</div>
+        <h3 style="margin: 0 0 6px; font-family: var(--font-heading); font-size: 1.15rem; color: var(--color-text-primary);">
+          ${isBlocked ? 'Cannot Go Live: Requirements Incomplete' : `Go Live with "${escapeHtml(story.title)}"?`}
+        </h3>
+        <p style="font-size: 0.82rem; color: var(--color-text-muted); margin: 0; line-height: 1.45;">
+          ${isBlocked 
+            ? `<strong>"${escapeHtml(story.title || 'Untitled')}"</strong> must pass all required quality checklist items before it can be published live.`
+            : 'This will publish the story live to Explore and Home feeds for anyone on DRiVE. Confirm below when you are ready.'}
+        </p>
+      </div>
+
+      <!-- Checklist Summary Badge -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 10px; margin-bottom: 12px; font-size: 0.8rem; font-weight: 700; background: ${isBlocked ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)'}; color: ${isBlocked ? '#ef4444' : '#10b981'}; border: 1px solid ${isBlocked ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)'};">
+        <span>${isBlocked ? `⚠️ ${preflight.failCount} Required Item(s) Incomplete` : '✅ All Required Items Passed'}</span>
+        <span>${preflight.passCount}/${preflight.checks.length} Passed</span>
+      </div>
+
+      <!-- Scrollable Checklist -->
+      <div style="flex: 1; overflow-y: auto; max-height: 240px; margin-bottom: 18px; padding-right: 4px; display: flex; flex-direction: column; gap: 8px;">
+        ${preflight.checks.map(c => `
+          <div style="padding: 10px 12px; border-radius: 10px; font-size: 0.78rem; display: flex; align-items: flex-start; gap: 10px; background: ${
+            c.status === 'fail' ? 'rgba(239,68,68,0.08)' : c.status === 'warn' ? 'rgba(245,158,11,0.06)' : 'rgba(16,185,129,0.06)'
+          }; border: 1px solid ${
+            c.status === 'fail' ? 'rgba(239,68,68,0.25)' : c.status === 'warn' ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.18)'
+          };">
+            <span style="font-size: 0.95rem; line-height: 1; margin-top: 1px;">${
+              c.status === 'fail' ? '❌' : c.status === 'warn' ? '⚠️' : '✅'
+            }</span>
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                <span style="font-weight: 700; color: ${
+                  c.status === 'fail' ? '#ef4444' : c.status === 'warn' ? '#f59e0b' : '#10b981'
+                };">${escapeHtml(c.label)}</span>
+                <span style="font-size: 0.65rem; text-transform: uppercase; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: ${
+                  c.status === 'fail' ? '#ef4444' : c.status === 'warn' ? '#f59e0b' : '#10b981'
+                }; color: ${c.status === 'warn' ? '#000' : '#fff'};">${c.status === 'fail' ? 'Required' : c.status === 'warn' ? 'Optional' : 'Pass'}</span>
+              </div>
+              <div style="color: var(--color-text-secondary); margin-top: 3px; line-height: 1.35; font-size: 0.74rem;">${escapeHtml(c.detail)}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display: flex; gap: 10px; justify-content: center;">
+        <button id="go-live-cancel" style="flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.88rem; font-weight: 600;">
+          ${isBlocked ? 'Close' : 'Cancel'}
+        </button>
+        ${isBlocked ? `
+          <button id="go-live-edit-btn" style="flex: 1.4; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            ✏️ Edit Story to Fix
+          </button>
+        ` : `
+          <button id="go-live-confirm" style="flex: 1.4; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700;">
+            Yes, Go Live
+          </button>
+        `}
       </div>
     </div>
   `;
@@ -728,19 +785,26 @@ function showGoLiveConfirm(storyId: string, storyTitle: string) {
   document.getElementById('go-live-cancel')?.addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', (ev) => { if (ev.target === overlay) overlay.remove(); });
 
-  document.getElementById('go-live-confirm')?.addEventListener('click', async () => {
-    const confirmBtn = document.getElementById('go-live-confirm') as HTMLButtonElement;
-    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Publishing...'; }
-    try {
-      await goOfficialStoryLive(storyId);
+  if (isBlocked) {
+    document.getElementById('go-live-edit-btn')?.addEventListener('click', () => {
       overlay.remove();
-      loadAllMetrics();
-      loadTabContent();
-    } catch (err) {
-      console.error('Go live failed:', err);
-      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Failed - Try Again'; }
-    }
-  });
+      navigate('admin-create/' + story.id);
+    });
+  } else {
+    document.getElementById('go-live-confirm')?.addEventListener('click', async () => {
+      const confirmBtn = document.getElementById('go-live-confirm') as HTMLButtonElement;
+      if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Publishing...'; }
+      try {
+        await goOfficialStoryLive(story.id);
+        overlay.remove();
+        loadAllMetrics();
+        loadTabContent();
+      } catch (err) {
+        console.error('Go live failed:', err);
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Failed - Try Again'; }
+      }
+    });
+  }
 }
 
 function attachOfficialCardListeners(): void {
@@ -937,8 +1001,11 @@ function attachOfficialCardListeners(): void {
           });
         } else if (menuItem.dataset.goLiveStory) {
           const storyId = menuItem.dataset.goLiveStory;
-          const story = currentOfficialStories.find(s => s.id === storyId);
-          if (story) showGoLiveConfirm(storyId, story.title);
+          let story = currentOfficialStories.find(s => s.id === storyId);
+          if (!story) {
+            story = (await fetchStoryByIdFromDb(storyId)) as any;
+          }
+          if (story) showGoLiveConfirm(story);
         } else if (menuItem.dataset.moveUp) {
           const id = menuItem.dataset.moveUp;
           const idx = currentOfficialStories.findIndex(s => s.id === id);
