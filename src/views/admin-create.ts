@@ -1776,7 +1776,7 @@ function renderCanvasToolbar(formatLabel: string): string {
             </button>
             <button class="canvas-toolbar__dd-item" id="btn-dd-publish" style="color:#10B981;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
-              Publish & Review
+              ${isUserMode() ? 'Submit for Review' : 'Pre-Flight Checklist'}
             </button>
           ` : `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
@@ -1785,7 +1785,7 @@ function renderCanvasToolbar(formatLabel: string): string {
             </button>
             <button class="canvas-toolbar__dd-item" id="btn-dd-publish" style="color:#10B981;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
-              Publish & Review
+              ${isUserMode() ? 'Submit for Review' : 'Pre-Flight Checklist'}
             </button>
           `}
         </div>
@@ -1927,7 +1927,7 @@ function renderScrollCanvas(): string {
             Save & Exit
           </button>
           <button type="button" class="scroll-bottom-btn scroll-bottom-btn--primary" id="btn-submit-review">
-            Submit for Review
+            ${isUserMode() ? 'Submit for Review' : 'Pre-Flight Checklist'}
           </button>
         </div>
       </div>
@@ -3409,7 +3409,7 @@ function openPreflightPublishModal(): void {
           <span class="preflight-modal__badge" style="background:${statusColor}22; color:${statusColor}; border:1px solid ${statusColor}44;">
             ${statusBadge}
           </span>
-          <span class="preflight-modal__title">Publishing Checklist</span>
+          <span class="preflight-modal__title">${isUserMode() ? 'Publishing Checklist' : 'Pre-Flight Quality Checklist'}</span>
         </div>
         <button type="button" class="preflight-modal__close" id="preflight-close" title="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -3417,6 +3417,11 @@ function openPreflightPublishModal(): void {
       </div>
 
       <div class="preflight-modal__body">
+        ${!isUserMode() ? `
+          <div style="margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); font-size: 0.78rem; color: var(--color-text-secondary); line-height: 1.45;">
+            ℹ️ <strong>Admin Notice:</strong> Official stories cannot be published live directly from the editor. Passing this checklist verifies quality. To make the story live on Explore, return to the <strong>Admin Dashboard</strong> and click <strong>"🚀 Go Live"</strong> in the story's 3-dot menu.
+          </div>
+        ` : ''}
         ${currentStoryStatus === 'denied' ? `
           <div class="preflight-alert preflight-alert--denied">
             <div style="font-weight:700; color:#ef4444; margin-bottom:4px;">❌ Previous Submission Denied</div>
@@ -3468,7 +3473,7 @@ function openPreflightPublishModal(): void {
           <button type="button" class="btn btn--secondary" id="preflight-cancel-btn">Back to Editor</button>
           ${result.canSubmit ? `
             <button type="button" class="btn btn--primary" id="preflight-submit-btn" style="background:#10B981; border-color:#10B981; font-weight:700;">
-              🚀 Submit for Review
+              ${isUserMode() ? '🚀 Submit for Review' : '💾 Save as Draft & Exit'}
             </button>
           ` : `
             <button type="button" class="btn btn--secondary" disabled style="opacity:0.5; cursor:not-allowed;">
@@ -3488,45 +3493,63 @@ function openPreflightPublishModal(): void {
   modalEl.querySelector('#preflight-cancel-btn')?.addEventListener('click', closeModal);
 
   modalEl.querySelector('#preflight-submit-btn')?.addEventListener('click', async () => {
+    const userMode = isUserMode();
     const btn = modalEl.querySelector('#preflight-submit-btn') as HTMLButtonElement;
     if (btn) {
-      btn.textContent = 'Submitting...';
+      btn.textContent = userMode ? 'Submitting...' : 'Saving Draft...';
       btn.disabled = true;
     }
 
     try {
       await preUploadBase64Images();
       const story = buildStory('draft');
-      await saveStoryForMode(story, 'under-review');
-      currentStoryStatus = 'under-review';
+      if (userMode) {
+        await saveStoryForMode(story, 'under-review');
+        currentStoryStatus = 'under-review';
+      } else {
+        await saveStoryForMode(story, 'draft');
+      }
 
-      // Replace modal body with celebration confirmation
+      // Replace modal body with confirmation
       const body = modalEl.querySelector('.preflight-modal__body');
       if (body) {
-        body.innerHTML = `
+        body.innerHTML = userMode ? `
           <div style="text-align:center; padding:24px 12px;">
             <div style="font-size:3rem; margin-bottom:12px;">🎉</div>
             <h3 style="font-size:1.2rem; font-weight:800; color:var(--color-text-primary); margin:0 0 8px 0;">Submitted for Review!</h3>
             <p style="font-size:0.82rem; color:var(--color-text-secondary); line-height:1.5; margin:0 0 20px 0;">
-              Your story <strong>"${escapeHtml(story.title || 'Untitled')}"</strong> is now in the community moderation queue. Admins review submissions within 24-48 hours.
+              Your story <strong>"${escapeHtml(story.title || 'Untitled')}"</strong> is now in the community moderation queue. Admins review submissions before they go live on Explore.
             </p>
             <div style="display:flex; gap:10px; justify-content:center;">
               <button type="button" class="btn btn--secondary" id="preflight-continue-btn">Continue Editing</button>
               <button type="button" class="btn btn--primary" id="preflight-library-btn" style="background:#10B981; border-color:#10B981; font-weight:700;">Go to Library</button>
             </div>
           </div>
+        ` : `
+          <div style="text-align:center; padding:24px 12px;">
+            <div style="font-size:3rem; margin-bottom:12px;">💾</div>
+            <h3 style="font-size:1.2rem; font-weight:800; color:var(--color-text-primary); margin:0 0 8px 0;">Draft Saved & Quality Verified!</h3>
+            <p style="font-size:0.82rem; color:var(--color-text-secondary); line-height:1.5; margin:0 0 20px 0;">
+              Your official story <strong>"${escapeHtml(story.title || 'Untitled')}"</strong> has passed quality verification and is safely saved as a Draft.<br><br>
+              To make it live to all readers, open the <strong>Admin Dashboard</strong>, find this story under <strong>DRiVE Originals</strong>, and select <strong>"🚀 Go Live"</strong> from the 3-dot menu.
+            </p>
+            <div style="display:flex; gap:10px; justify-content:center;">
+              <button type="button" class="btn btn--secondary" id="preflight-continue-btn">Continue Editing</button>
+              <button type="button" class="btn btn--primary" id="preflight-library-btn" style="background:#10B981; border-color:#10B981; font-weight:700;">Go to Admin Dashboard</button>
+            </div>
+          </div>
         `;
         body.querySelector('#preflight-continue-btn')?.addEventListener('click', closeModal);
         body.querySelector('#preflight-library-btn')?.addEventListener('click', () => {
           closeModal();
-          navigate(isUserMode() ? 'library' : 'admin');
+          navigate(userMode ? 'library' : 'admin');
         });
       }
     } catch (err: any) {
-      console.error('Submission failed:', err);
-      alert('Submission failed: ' + (err?.message || 'Unknown error'));
+      console.error('Save/Submission failed:', err);
+      alert('Operation failed: ' + (err?.message || 'Unknown error'));
       if (btn) {
-        btn.textContent = '🚀 Submit for Review';
+        btn.textContent = userMode ? '🚀 Submit for Review' : '💾 Save as Draft & Exit';
         btn.disabled = false;
       }
     }
@@ -3693,8 +3716,8 @@ function openStoryboard(): void {
         <button class="sb-topbar__btn-action" id="sb-batch-prerecord" type="button" title="Pre-record audio for all pages">
           🎙️ Pre-Record All
         </button>
-        <button class="sb-topbar__btn-action" id="sb-publish-review" type="button" title="Publishing checklist & submit for review" style="background:rgba(16,185,129,0.15); color:#10B981; border:1px solid rgba(16,185,129,0.35); font-weight:700;">
-          🚀 Submit for Review
+        <button class="sb-topbar__btn-action" id="sb-publish-review" type="button" title="${isUserMode() ? 'Publishing checklist & submit for review' : 'Pre-flight quality checklist'}" style="background:rgba(16,185,129,0.15); color:#10B981; border:1px solid rgba(16,185,129,0.35); font-weight:700;">
+          ${isUserMode() ? '🚀 Submit for Review' : '📋 Pre-Flight Checklist'}
         </button>
 
         <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
