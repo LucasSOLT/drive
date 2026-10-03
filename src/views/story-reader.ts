@@ -1,6 +1,7 @@
 import { openSquadGateModal } from '../components/squad-gate-modal.ts';
 import { trackStoryReading, updateTrackedStoryStatus } from '../lib/reading-tracker.ts';
 import { getRouteParam, navigate } from '../router.ts';
+import { leaveReader } from '../lib/reader-origin.ts';
 import { getStoryById, registerStory } from '../data/stories.ts';
 import { fetchStoryByIdFromDb, fetchOfficialStories } from '../lib/db.ts';
 import {
@@ -256,7 +257,7 @@ export function render(): string {
     return `
       <div class="reader-error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100dvh; gap:16px; text-align:center; padding:20px;">
         <p style="font-size:1.1rem; color:var(--color-text-secondary);">No story ID provided.</p>
-        <button class="btn btn--secondary" onclick="window.history.back()" style="padding:8px 20px;">← Go Back</button>
+        <button class="btn btn--secondary" onclick="window.__driveLeaveReader ? window.__driveLeaveReader() : (window.location.hash = 'home')" style="padding:8px 20px;">← Go Back</button>
       </div>
     `;
   }
@@ -266,14 +267,14 @@ export function render(): string {
     return `
       <div class="reader reader--loading" id="reader-container" data-story-id="${storyId}">
         <header class="reader__header" style="display:flex;">
-          <button class="reader__header-btn reader__header-btn--back" id="reader-back" aria-label="Go back" onclick="window.history.back()">
+          <button class="reader__header-btn reader__header-btn--back" id="reader-back" aria-label="Go back" onclick="window.__driveLeaveReader ? window.__driveLeaveReader() : (window.location.hash = 'home')">
             ${ICON.back}
           </button>
         </header>
         <div class="reader__content" id="reader-content" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:calc(100dvh - 60px); gap:16px;">
           <div style="width:36px; height:36px; border:3px solid rgba(255,255,255,0.15); border-top-color:var(--color-purple); border-radius:50%; animation:spin 1s linear infinite;"></div>
           <p style="color:var(--color-text-secondary); font-size:0.95rem;">Loading story...</p>
-          <button class="btn btn--secondary" onclick="window.history.back()" style="margin-top:12px; font-size:0.85rem; padding:8px 16px;">← Back to Stories</button>
+          <button class="btn btn--secondary" onclick="window.__driveLeaveReader ? window.__driveLeaveReader() : (window.location.hash = 'home')" style="margin-top:12px; font-size:0.85rem; padding:8px 16px;">← Back to Stories</button>
         </div>
       </div>
     `;
@@ -475,7 +476,7 @@ export async function init(): Promise<void> {
         content.innerHTML = `
           <div class="reader-error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:80dvh; gap:16px; text-align:center; padding:20px;">
             <p style="font-size:1.1rem; color:var(--color-text-secondary);">Story not found or unavailable.</p>
-            <button class="btn btn--secondary" onclick="window.history.length > 1 ? window.history.back() : window.location.hash = 'explore'" style="padding:8px 20px;">← Back to Stories</button>
+            <button class="btn btn--secondary" onclick="window.__driveLeaveReader ? window.__driveLeaveReader() : (window.location.hash = 'home')" style="padding:8px 20px;">← Back to Stories</button>
           </div>
         `;
       }
@@ -602,7 +603,7 @@ export async function init(): Promise<void> {
           This episode is part of a squad reading experience. Join or create a squad to continue the story together.
         </p>
         <button id="gate-guard-btn" class="btn btn--primary" style="padding:12px 28px; font-weight:700;">Open Squad Gate</button>
-        <button class="btn btn--secondary" onclick="window.history.length > 1 ? window.history.back() : window.location.hash = 'explore'" style="padding:8px 20px;">← Back</button>
+        <button class="btn btn--secondary" onclick="window.__driveLeaveReader ? window.__driveLeaveReader() : (window.location.hash = 'home')" style="padding:8px 20px;">← Back</button>
       </div>
     `;
     document.getElementById('gate-guard-btn')?.addEventListener('click', () => {
@@ -732,16 +733,9 @@ export async function init(): Promise<void> {
   document.getElementById('reader-back')?.addEventListener('click', () => {
     stopBgm();
     stopSpeaking();
-    // Return to stored route (Series Info, Library, etc.) or fallback
-    const returnRoute = sessionStorage.getItem('drive_reader_return_route');
-    if (returnRoute) {
-      sessionStorage.removeItem('drive_reader_return_route');
-      navigate(returnRoute);
-    } else if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      navigate('home');
-    }
+    // Return to the screen the user entered the story from (Series Info, Library, Dashboard...),
+    // never to another episode of the same story.
+    leaveReader();
   });
 
     // ─── Desktop Keyboard Navigation ───

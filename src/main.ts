@@ -1,5 +1,6 @@
 import './style.css';
 import { getCurrentRoute, onRouteChange, navigate, requireAuth } from './router.ts';
+import { initReaderOrigin } from './lib/reader-origin.ts';
 import { renderNav, initNav } from './components/nav.ts';
 import { renderMenu, initMenu } from './components/menu.ts';
 import { renderModalContainer, showModal } from './components/modal.ts';
@@ -169,6 +170,7 @@ async function initApp() {
   // Initialize desktop nav click listeners
   initNav();
 
+  initReaderOrigin();
   onRouteChange(renderView);
   
   const initialRoute = getCurrentRoute() || 'home';
