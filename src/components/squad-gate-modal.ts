@@ -206,10 +206,31 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
     if (currentSquadId) {
       currentMembers = await getSquadMembers(currentSquadId);
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error initializing squad:', err);
-    alert('Failed to initialize squad. Please try again.');
     loadingOverlay.remove();
+    const reason = String(err?.message || err?.details || 'Unknown error').slice(0, 200);
+    const errOverlay = document.createElement('div');
+    errOverlay.className = 'squad-gate-overlay open';
+    errOverlay.id = 'squad-gate-error';
+    errOverlay.innerHTML = `
+      <div class="squad-gate-card" style="text-align:center;">
+        <div style="padding:32px 24px;">
+          <div style="font-size:2.2rem; margin-bottom:10px;">⚠️</div>
+          <h2 style="font-family:var(--font-heading); font-size:1.2rem; font-weight:700; margin:0 0 8px;">Couldn't set up your squad</h2>
+          <p style="color:var(--color-text-secondary); font-size:0.85rem; line-height:1.5; margin:0 0 6px;">Check your connection and try again.</p>
+          <p style="color:var(--color-text-muted); font-size:0.72rem; margin:0 0 18px; word-break:break-word;">${reason.replace(/</g, '&lt;')}</p>
+          <button id="sg-error-retry" style="width:100%; padding:14px; background:linear-gradient(135deg, var(--color-purple), #059669); color:white; border:none; border-radius:var(--radius-lg); font-weight:700; cursor:pointer; margin-bottom:10px;">Try again</button>
+          <button id="sg-error-close" style="width:100%; padding:10px; background:var(--color-eggshell); color:var(--color-text-secondary); border:1px solid var(--color-border); border-radius:var(--radius-lg); font-size:0.85rem; cursor:pointer;">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(errOverlay);
+    document.getElementById('sg-error-close')?.addEventListener('click', () => errOverlay.remove());
+    document.getElementById('sg-error-retry')?.addEventListener('click', () => {
+      errOverlay.remove();
+      openSquadGateModal(options);
+    });
     return;
   }
 
