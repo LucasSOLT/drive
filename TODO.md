@@ -22,10 +22,14 @@
 
 ---
 
+## ⛔ STRICT PRODUCT RULES (DO NOT VIOLATE)
+- **NO In-App AI Image Generation**: Never implement in-app AI image/video generation. Users must create their artwork externally and upload it. Upload-only workflow for all media.
+
+---
+
 ## Backlog
-- [ ] Real AI generation (OpenRouter integration)
 - [ ] Stripe Customer Portal (manage/cancel subscriptions)
-- [ ] User story publishing & admin feed
+- [ ] Community Moderation & Curator Dashboard Polish
 - [ ] Idempotency checks on Stripe webhook
 - [ ] Terms of Service & Privacy Policy pages
 - [ ] Apple Pay domain verification
