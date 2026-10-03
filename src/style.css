@@ -5992,6 +5992,7 @@ button.profile-avatar {
   .book-single-view {
     overflow-x: hidden;
     touch-action: pan-y;
+    -ms-touch-action: pan-y;
   }
   .book-tile--single {
     width: 100%;

@@ -5270,7 +5270,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         let swDeltaX = 0;
         let swLocked: 'h' | 'v' | null = null;
         let swActive = false;
-        const SW_LOCK = 10;     // px dead zone
+        const SW_LOCK = 6;      // px dead zone
         const SW_DIST = 60;     // px to commit
         const SW_VEL = 0.3;     // px/ms to commit via flick
 
@@ -5295,7 +5295,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
 
           if (!swLocked) {
             if (Math.abs(dx) < SW_LOCK && Math.abs(dy) < SW_LOCK) return;
-            if (Math.abs(dx) > Math.abs(dy) * 1.2) {
+            if (Math.abs(dx) > Math.abs(dy) * 1.0) {
               swLocked = 'h';
               swActive = true;
             } else {
