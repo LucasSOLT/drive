@@ -136,8 +136,8 @@ export async function cleanupOrphanedTrackedStories(): Promise<boolean> {
     if (tracked.length === 0) return false;
 
     const [offRes, userRes] = await Promise.all([
-      supabase.from('official_stories').select('id'),
-      supabase.from('user_stories').select('id')
+      supabase.from('official_stories').select('id').is('deleted_at', null),
+      supabase.from('user_stories').select('id').is('user_deleted_at', null).is('admin_deleted_at', null)
     ]);
 
     // Safety check: if DB query failed (e.g. offline), do NOT wipe reading tracker

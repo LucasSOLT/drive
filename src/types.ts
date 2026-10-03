@@ -65,6 +65,9 @@ export interface Story {
   episodeThumbnail?: string;             // Per-episode thumbnail for episode list
   episodeTitle?: string;                 // Custom episode title (e.g., 'Hidden Inventory')
   themeColor?: string;                   // Custom background / atmosphere color (e.g. #000000, #141424)
+  // ─── Soft delete (Deleted tab / 30-day cleanup) ───
+  deletedAt?: string;                    // ISO timestamp when an admin moved it to Deleted
+  deletedBy?: string;                    // user id of the admin who deleted it
 }
 
 export interface UserStory {
@@ -105,6 +108,11 @@ export interface UserStory {
   episodeThumbnail?: string;
   episodeTitle?: string;
   themeColor?: string;
+  // ─── Soft delete ───
+  userDeletedAt?: string;    // creator removed it from their library
+  adminDeletedAt?: string;   // an admin moved it to Deleted
+  deletedBy?: string;        // user id of whoever deleted it
+  wasSubmitted?: boolean;    // ever submitted for review → can never be permanently erased
 }
 
 export type UserPlan = 'free' | 'starter' | 'creator';

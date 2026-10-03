@@ -45,7 +45,7 @@ export async function loadUserData(): Promise<void> {
     const [profileRes, subRes, storiesRes, bookmarksRes, likesRes] = await Promise.all([
       supabase.from('profiles').select('*, is_admin').eq('id', userId).single(),
       supabase.from('user_subscriptions').select('*').eq('user_id', userId).single(),
-      supabase.from('user_stories').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+      supabase.from('user_stories').select('*').eq('user_id', userId).is('user_deleted_at', null).is('admin_deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('bookmarks').select('story_id').eq('user_id', userId),
       supabase.from('story_likes').select('story_id').eq('user_id', userId),
     ]);
@@ -107,6 +107,7 @@ export async function loadUserData(): Promise<void> {
       readCount: s.read_count || 0,
       reviewedBy: s.reviewed_by || undefined,
       reviewedAt: s.reviewed_at || undefined,
+      wasSubmitted: s.was_submitted === true || (!!s.status && s.status !== 'draft'),
     }));
     _bookmarks = new Set((bookmarksRes.data || []).map((b: any) => b.story_id));
     _likedStories = new Set((likesRes.data || []).map((l: any) => l.story_id));
@@ -420,7 +421,14 @@ export async function removeUserStory(id: string): Promise<void> {
   }
 
   if (userId) {
-    await supabase.from('user_stories').delete().eq('id', id).eq('user_id', userId);
+    // Soft delete: never erase. Hidden from My Creations; admins can restore it from
+    // the Deleted tab. (Users have no DELETE permission on user_stories anymore.)
+    const { error } = await supabase
+      .from('user_stories')
+      .update({ user_deleted_at: new Date().toISOString(), deleted_by: userId })
+      .eq('id', id)
+      .eq('user_id', userId);
+    if (error) console.error('[DB] Failed to remove user story:', error.message);
   }
 }
 
@@ -616,7 +624,7 @@ export async function fetchAdminMetrics(): Promise<AdminMetrics> {
   try {
     const timeoutMs = 8000;
     const fetchAll = Promise.all([
-      supabase.from('user_stories').select('status, read_count, genre'),
+      supabase.from('user_stories').select('status, read_count, genre').is('admin_deleted_at', null),
       supabase.from('story_likes').select('id', { count: 'exact', head: true }),
     ]);
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Metrics timeout')), timeoutMs));
@@ -668,7 +676,9 @@ export async function fetchAdminStories(
   genreFilter?: string,
   formatFilter?: string
 ): Promise<UserStory[]> {
-  let query = supabase.from('user_stories').select('*, profiles(username)').eq('status', statusFilter);
+  // Admin lists hide admin-deleted rows but KEEP creator-removed ones (shown with a
+  // "Removed by creator" badge) — submitted stories always stay visible to admins.
+  let query = supabase.from('user_stories').select('*, profiles(username)').eq('status', statusFilter).is('admin_deleted_at', null);
 
   if (genreFilter && genreFilter !== 'all') {
     query = query.eq('genre', genreFilter);
@@ -712,6 +722,8 @@ export async function fetchAdminStories(
     readCount: s.read_count || 0,
     reviewedBy: s.reviewed_by || undefined,
     reviewedAt: s.reviewed_at || undefined,
+    userDeletedAt: s.user_deleted_at || undefined,
+    wasSubmitted: s.was_submitted === true || (!!s.status && s.status !== 'draft'),
   }));
 }
 
@@ -754,8 +766,81 @@ export async function revertStoryAdmin(storyId: string): Promise<void> {
   }).eq('id', storyId);
 }
 
+/** Admin "delete" of a user story → soft delete (moves it to the Deleted tab).
+ *  Refuses Live (published) stories — revoke them first. */
 export async function deleteStoryAdmin(storyId: string): Promise<void> {
-  await supabase.from('user_stories').delete().eq('id', storyId);
+  const adminId = getUserId();
+  const { data: row } = await supabase.from('user_stories').select('status').eq('id', storyId).maybeSingle();
+  if (row?.status === 'published') {
+    throw new Error('This story is Live. Revoke it before deleting.');
+  }
+  const { error } = await supabase
+    .from('user_stories')
+    .update({ admin_deleted_at: new Date().toISOString(), deleted_by: adminId })
+    .eq('id', storyId);
+  if (error) throw error;
+}
+
+/** Deleted tab: user stories removed by their creator or deleted by an admin. */
+export async function fetchDeletedUserStories(): Promise<UserStory[]> {
+  const { data, error } = await supabase
+    .from('user_stories')
+    .select('*, profiles(username)')
+    .or('user_deleted_at.not.is.null,admin_deleted_at.not.is.null');
+  if (error) {
+    console.error('[DB] fetchDeletedUserStories error:', error.message);
+    return [];
+  }
+  const rows = [...(data || [])].sort((a: any, b: any) => {
+    const ta = new Date(a.admin_deleted_at || a.user_deleted_at || 0).getTime();
+    const tb = new Date(b.admin_deleted_at || b.user_deleted_at || 0).getTime();
+    return tb - ta; // most recently deleted first
+  });
+  return rows.map((s: any) => ({
+    id: s.id,
+    user_id: s.user_id,
+    author_name: s.profiles?.username || s.author_name || 'Unknown Author',
+    title: s.title,
+    genre: s.genre,
+    format: s.format,
+    synopsis: s.synopsis || '',
+    status: s.status || 'draft',
+    createdAt: s.created_at,
+    pages: s.pages || [],
+    live_pages: s.live_pages || undefined,
+    coverImage: s.cover_image || '',
+    userDeletedAt: s.user_deleted_at || undefined,
+    adminDeletedAt: s.admin_deleted_at || undefined,
+    deletedBy: s.deleted_by || undefined,
+    wasSubmitted: s.was_submitted === true || (!!s.status && s.status !== 'draft'),
+  }));
+}
+
+/** Deleted tab: restore a user story (back in the creator's My Creations + admin lists). */
+export async function restoreUserStory(storyId: string): Promise<void> {
+  const { error } = await supabase
+    .from('user_stories')
+    .update({ user_deleted_at: null, admin_deleted_at: null, deleted_by: null })
+    .eq('id', storyId);
+  if (error) throw error;
+}
+
+/** Deleted tab ONLY: permanently erase a user story. Refuses stories that were ever submitted. */
+export async function permanentlyDeleteUserStory(storyId: string): Promise<void> {
+  const { data: row } = await supabase
+    .from('user_stories')
+    .select('status, was_submitted, user_deleted_at, admin_deleted_at')
+    .eq('id', storyId)
+    .maybeSingle();
+  if (!row) return;
+  if (row.was_submitted || (row.status && row.status !== 'draft')) {
+    throw new Error('Submitted stories can never be permanently deleted.');
+  }
+  if (!row.user_deleted_at && !row.admin_deleted_at) {
+    throw new Error('Only stories in the Deleted tab can be permanently deleted.');
+  }
+  const { error } = await supabase.from('user_stories').delete().eq('id', storyId);
+  if (error) throw error;
 }
 
 export async function resubmitStoryUser(storyId: string): Promise<void> {
@@ -780,6 +865,8 @@ export async function fetchPublishedExploreStories(): Promise<UserStory[]> {
     .from('user_stories')
     .select('*')
     .eq('status', 'published')
+    .is('user_deleted_at', null)
+    .is('admin_deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -881,6 +968,8 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     seriesCoverImage: s.series_cover_image || '',
     episodeThumbnail: s.episode_thumbnail || '',
     episodeTitle: s.episode_title || '',
+    deletedAt: s.deleted_at || undefined,
+    deletedBy: s.deleted_by || undefined,
   };
 }
 
@@ -925,10 +1014,13 @@ export async function fetchOfficialStories(): Promise<Story[]> {
       return getLocalDraftStories();
     }
 
-    const stories = (data || []).map((s: any) => mapOfficialStoryRecord(s));
+    const allRows: any[] = data || [];
+    // Soft-deleted stories are hidden everywhere outside the Deleted tab
+    const stories = allRows.filter((s: any) => !s.deleted_at).map((s: any) => mapOfficialStoryRecord(s));
     // Auto-sync any local drafts to Supabase (don't just display them locally)
     const localDrafts = getLocalDraftStories();
-    const cloudIds = new Set(stories.map((s: Story) => s.id));
+    // Include deleted IDs here so a stale local copy never re-uploads / resurrects a deleted story
+    const cloudIds = new Set(allRows.map((s: any) => s.id));
     for (const draft of localDrafts) {
       if (!cloudIds.has(draft.id)) {
         // This draft only exists locally — try to sync it to Supabase
@@ -1073,20 +1165,55 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
   throw new Error('Failed to save official story after stripping unknown columns');
 }
 
-/** Delete an official story from Supabase AND local storage */
+/** "Delete" an official story → SOFT delete (moves it to the admin Deleted tab).
+ *  - Refuses Live stories ("Take it offline first").
+ *  - A local-only draft (never synced) is uploaded first, so it lands in Deleted too.
+ *  - Nothing is erased here. Permanent erase = permanentlyDeleteOfficialStory()
+ *    (Deleted tab only) or the 30-day database cleanup job. */
 export async function deleteOfficialStory(storyId: string): Promise<void> {
-  // 1. Try to delete from Supabase (may not exist there if it was never synced)
+  const adminId = getUserId();
+
+  // 1. Look up the cloud row
+  const { data: row, error: readErr } = await supabase
+    .from('official_stories')
+    .select('id, status')
+    .eq('id', storyId)
+    .maybeSingle();
+  if (readErr) console.warn('[DB] Could not read story before delete:', readErr.message);
+
+  if (row?.status === 'live') {
+    throw new Error('This story is Live. Take it offline before deleting.');
+  }
+
+  // 2. Local-only draft? Upload it first so it can be recovered from the Deleted tab.
+  //    saveOfficialStory replaces non-UUID ids, so pick the cloud id ourselves.
+  let targetId = storyId;
+  if (!row) {
+    const local = getLocalDraftStories().find(s => s.id === storyId);
+    if (local) {
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      targetId = uuidRe.test(storyId) ? storyId : crypto.randomUUID();
+      try {
+        await saveOfficialStory({ ...local, id: targetId, officialStatus: 'draft' } as Partial<Story> & { id: string });
+      } catch (e) {
+        if (targetId !== storyId) removeLocalDraft(targetId);
+        throw e;
+      }
+    }
+  }
+
+  // 3. Stamp it as deleted
   const { error } = await supabase
     .from('official_stories')
-    .delete()
-    .eq('id', storyId);
+    .update({ deleted_at: new Date().toISOString(), deleted_by: adminId, is_featured: false, is_editor_pick: false })
+    .eq('id', targetId);
 
   if (error) {
-    console.warn('[DB] Supabase delete error (may be local-only draft):', error.message);
-    // If it is an explicit permission or RLS error, throw so the admin knows
+    console.warn('[DB] Supabase soft-delete error:', error.message);
     if (error.code === '42501') {
       throw new Error(`Permission denied: You do not have access to delete story ${storyId}. Ensure you are signed in as an admin.`);
     }
+    throw error;
   }
 
   // 2. Always remove from localStorage drafts
@@ -1103,9 +1230,105 @@ export async function deleteOfficialStory(storyId: string): Promise<void> {
     const raw = localStorage.getItem('drive_admin_create_draft');
     if (raw) {
       const draft = JSON.parse(raw);
-      if (draft?.id === storyId) localStorage.removeItem('drive_admin_create_draft');
+      if (draft?.id === storyId || draft?.editStoryId === storyId) localStorage.removeItem('drive_admin_create_draft');
     }
   } catch {}
+}
+
+/** Deleted tab: official stories that admins deleted (most recent first). */
+export async function fetchDeletedOfficialStories(): Promise<Story[]> {
+  const { data, error } = await supabase
+    .from('official_stories')
+    .select('*')
+    .not('deleted_at', 'is', null)
+    .order('deleted_at', { ascending: false });
+  if (error) {
+    console.error('[DB] fetchDeletedOfficialStories error:', error.message);
+    return [];
+  }
+  return (data || []).map((s: any) => mapOfficialStoryRecord(s));
+}
+
+/** Deleted tab: restore an official story. It always comes back as a DRAFT
+ *  (it must go through the Go Live checklist again). */
+export async function restoreOfficialStory(storyId: string): Promise<void> {
+  const { error } = await supabase
+    .from('official_stories')
+    .update({ deleted_at: null, deleted_by: null, status: 'draft', updated_at: new Date().toISOString() })
+    .eq('id', storyId);
+  if (error) throw error;
+  _cachedOfficialStories = null;
+  try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
+}
+
+/** Deleted tab ONLY: permanently erase an official story that is already in Deleted. */
+export async function permanentlyDeleteOfficialStory(storyId: string): Promise<void> {
+  const { data: row } = await supabase
+    .from('official_stories')
+    .select('deleted_at')
+    .eq('id', storyId)
+    .maybeSingle();
+  if (!row) return;
+  if (!row.deleted_at) {
+    throw new Error('Only stories in the Deleted tab can be permanently deleted.');
+  }
+  const { error } = await supabase.from('official_stories').delete().eq('id', storyId);
+  if (error) throw error;
+}
+
+/** Library "local admin draft" card → instead of discarding it, upload a copy into the
+ *  admin Deleted tab (recoverable for 30 days). Returns once the copy is safely stored. */
+export async function moveLocalAdminDraftToDeleted(draft: any): Promise<void> {
+  const newId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+    ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+  const isBook = (draft?.selectedFormat || 'book') === 'book';
+  const pages: any[] = isBook ? (draft?.bookPages || []) : (draft?.scrollPanels || []);
+  const pageScripts: Record<number, string> = {};
+  const pageDialogue: Record<number, any[]> = {};
+  pages.forEach((p: any, i: number) => {
+    pageScripts[i] = (isBook ? p?.text : p?.notes) || '';
+    if (isBook && Array.isArray(p?.dialogueLines)) pageDialogue[i] = p.dialogueLines;
+  });
+
+  const story: Partial<Story> & { id: string } = {
+    id: newId,
+    title: (draft?.storyTitle || 'Untitled') + (draft?.editStoryId ? ' (unsaved local copy)' : ''),
+    author: draft?.storyAuthorName || 'DRiVE Studios',
+    genre: draft?.storyGenre || 'Drama',
+    format: draft?.selectedFormat || 'book',
+    synopsis: draft?.storySynopsis || '',
+    coverImage: draft?.coverThumbnail || '',
+    coverVideo: draft?.storyCoverVideo || undefined,
+    panels: pages.map((p: any) => p?.image || ''),
+    pageScripts,
+    pageDialogue,
+    characters: draft?.storyCharacters || [],
+    officialStatus: 'draft',
+    storyGroupId: newId,
+    episodeNumber: 1,
+    readCount: 0,
+    isFeatured: false,
+    isEditorPick: false,
+    themeColor: draft?.storyThemeColor || '#141424',
+  };
+
+  try {
+    await saveOfficialStory(story);
+  } catch (e) {
+    removeLocalDraft(newId); // don't leave a backup that would auto-sync as a live draft
+    throw e;
+  }
+  const { error } = await supabase
+    .from('official_stories')
+    .update({ deleted_at: new Date().toISOString(), deleted_by: getUserId() })
+    .eq('id', newId);
+  if (error) throw error;
+  _cachedOfficialStories = null;
+  try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
 }
 
 /** Reorder official stories by updating their sort_order values */
@@ -1130,6 +1353,7 @@ export async function fetchLiveOfficialStories(): Promise<Story[]> {
     .from('official_stories')
     .select('*')
     .eq('status', 'live')
+    .is('deleted_at', null)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: false });
 
@@ -1866,6 +2090,8 @@ export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
         .maybeSingle();
 
       if (!offErr && offData) {
+        // Deleted stories are invisible outside the admin dashboard
+        if (offData.deleted_at && !checkIsAdmin()) return null;
         return mapOfficialStoryRecord(offData);
       }
     } catch (e) {
@@ -1880,7 +2106,7 @@ export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
         .eq('id', id)
         .maybeSingle();
 
-      if (!uErr && uData) {
+      if (!uErr && uData && (!(uData.user_deleted_at || uData.admin_deleted_at) || checkIsAdmin())) {
         const pages = uData.live_pages || uData.pages || [];
         const panels = pages.map((p: any) => p?.image).filter(Boolean);
         const pageScripts: Record<number, string> = {};
@@ -2093,7 +2319,8 @@ export async function advanceSquadToNextEpisode(sessionId: string): Promise<{ ne
     .from('official_stories')
     .select('id', { count: 'exact', head: true })
     .eq('story_group_id', session.story_group_id)
-    .eq('episode_number', nextEpisode);
+    .eq('episode_number', nextEpisode)
+    .is('deleted_at', null);
 
   const hasMoreEpisodes = (count ?? 0) > 0;
 
@@ -2464,6 +2691,7 @@ export async function fetchStoryByGroupAndEpisode(
     .select('id, sparc_prompt')
     .eq('story_group_id', storyGroupId)
     .eq('episode_number', episodeNumber)
+    .is('deleted_at', null)
     .single();
 
   if (error) {

@@ -467,7 +467,7 @@ function renderOriginalsContent(area: HTMLElement): void {
                   </div>
                   <div style="display: flex; gap: 6px; flex-shrink: 0;">
                     <button data-unarchive-group="${groupId}" style="background: rgba(16,185,129,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #10B981; cursor: pointer; font-weight: 600;" title="Restore to DRiVE Originals">↩ Restore</button>
-                    <button data-delete-archived-group="${groupId}" style="background: rgba(239,68,68,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #ef4444; cursor: pointer; font-weight: 600;" title="Delete permanently">🗑</button>
+                    <button data-delete-archived-group="${groupId}" style="background: rgba(239,68,68,0.15); border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #ef4444; cursor: pointer; font-weight: 600;" title="Move to Deleted">🗑</button>
                   </div>
                 </div>
               `;
@@ -519,9 +519,9 @@ function renderOriginalsContent(area: HTMLElement): void {
       const groupId = (btn as HTMLElement).dataset.deleteArchivedGroup!;
       const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
       showModal({
-        title: `🗑 Delete permanently?`,
-        content: `<p>This will permanently delete "${episodes[0]?.title || 'this story'}" and all its episodes. This cannot be undone.</p>`,
-        confirmText: 'Delete Permanently',
+        title: `🗑 Delete "${episodes[0]?.title || 'this story'}"?`,
+        content: `<p style="line-height:1.6;">This moves the story and all its episodes to the <strong>Deleted</strong> tab. It's permanently erased after 30 days unless an admin restores it.</p>`,
+        confirmText: 'Move to Deleted',
         cancelText: 'Cancel',
         onConfirm: async () => {
           try {
@@ -943,15 +943,24 @@ function attachOfficialCardListeners(): void {
         } else if (menuItem.dataset.deleteGroup) {
           const groupId = menuItem.dataset.deleteGroup;
           const story = currentOfficialStories.find(s => (s.storyGroupId || s.id) === groupId);
+          const groupEpisodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
+          // Live stories can never be deleted — take them offline first
+          if (groupEpisodes.some(s => s.officialStatus === 'live' || (s as any).status === 'live')) {
+            showModal({
+              title: '🔴 This story is Live',
+              content: '<p style="line-height:1.6;">Live stories can\'t be deleted. Use <strong>📴 Take Offline</strong> first, then delete it.</p>',
+              confirmText: 'OK',
+            });
+            return;
+          }
           showModal({
-            title: `🗑 Delete "${story?.title || 'Story'}" Permanently?`,
-            content: '<p>This will permanently delete this story AND all its episodes from everywhere — the admin dashboard, the library, and all public pages. This cannot be undone.</p>',
-            confirmText: 'Delete Permanently',
+            title: `🗑 Delete "${story?.title || 'Story'}"?`,
+            content: '<p style="line-height:1.6;">This moves the story and all its episodes to the <strong>Deleted</strong> tab. It\'s permanently erased after 30 days unless an admin restores it.</p>',
+            confirmText: 'Move to Deleted',
             cancelText: 'Cancel',
             onConfirm: async () => {
               try {
-                const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
-                for (const ep of episodes) {
+                for (const ep of groupEpisodes) {
                   await deleteOfficialStory(ep.id);
                 }
                 // Immediately remove from in-memory array so they don't reappear
@@ -967,10 +976,18 @@ function attachOfficialCardListeners(): void {
         } else if (menuItem.dataset.deleteOfficial) {
           const storyId = menuItem.dataset.deleteOfficial;
           const story = currentOfficialStories.find(s => s.id === storyId);
+          if (story && (story.officialStatus === 'live' || (story as any).status === 'live')) {
+            showModal({
+              title: '🔴 This episode is Live',
+              content: '<p style="line-height:1.6;">Live episodes can\'t be deleted. Use <strong>📴 Take Offline</strong> first, then delete it.</p>',
+              confirmText: 'OK',
+            });
+            return;
+          }
           showModal({
-            title: `Delete "${story?.title || 'Episode'}"?`,
-            content: '<p>Are you sure you want to permanently delete this episode? This cannot be undone.</p>',
-            confirmText: 'Delete',
+            title: `🗑 Delete "${story?.title || 'Episode'}"?`,
+            content: '<p style="line-height:1.6;">This moves the episode to the <strong>Deleted</strong> tab. It\'s permanently erased after 30 days unless an admin restores it.</p>',
+            confirmText: 'Move to Deleted',
             cancelText: 'Cancel',
             onConfirm: async () => {
               try {
@@ -1810,6 +1827,7 @@ function renderSubmissionCard(story: UserStory, _index: number): string {
           <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 6px;">
             by <strong>${escapeHtml(story.author_name || 'Anonymous')}</strong> \u00B7 ${story.genre} \u00B7 ${story.format}
           </div>
+          ${story.userDeletedAt ? `<div style="display:inline-block; margin-bottom: 6px; font-size: 0.65rem; font-weight: 700; color: #FCA5A5; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); padding: 2px 8px; border-radius: 6px;">Removed by creator</div>` : ''}
           ${story.synopsis ? `<p style="margin: 0; font-size: 0.78rem; color: var(--color-text-secondary); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(story.synopsis)}</p>` : ''}
           ${story.rejectionReason ? `<p style="margin: 4px 0 0; font-size: 0.72rem; color: #FCA5A5; background: rgba(239,68,68,0.1); padding: 4px 8px; border-radius: 6px;">\u274C ${escapeHtml(story.rejectionReason)}</p>` : ''}
         </div>
@@ -1892,13 +1910,32 @@ function attachSubmissionCardListeners(): void {
     btn.addEventListener('click', (e) => {
       const id = (e.currentTarget as HTMLElement).dataset.delete;
       if (!id) return;
+      const story = currentUserStories.find(s => s.id === id);
+      // Live (published) user stories can never be deleted — revoke first
+      if (story?.status === 'published') {
+        showModal({
+          title: '🔴 This story is Live',
+          content: '<p style="line-height:1.6;">Live stories can\'t be deleted. Use <strong>Revoke</strong> first, then delete it.</p>',
+          confirmText: 'OK',
+        });
+        return;
+      }
+      const keptForever = !!story?.wasSubmitted;
       showModal({
-        title: 'Delete Story Submission?',
-        content: '<p>Are you sure you want to permanently delete this story submission?</p>',
-        confirmText: 'Delete Permanently',
+        title: `🗑 Delete "${story?.title || 'Story'}"?`,
+        content: keptForever
+          ? '<p style="line-height:1.6;">This moves the submission to the <strong>Deleted</strong> tab. Because it was submitted for review, it\'s kept there permanently until an admin restores it.</p>'
+          : '<p style="line-height:1.6;">This moves the story to the <strong>Deleted</strong> tab. It\'s permanently erased after 30 days unless an admin restores it.</p>',
+        confirmText: 'Move to Deleted',
         cancelText: 'Cancel',
         onConfirm: async () => {
-          await deleteStoryAdmin(id);
+          try {
+            await deleteStoryAdmin(id);
+            currentUserStories = currentUserStories.filter(s => s.id !== id);
+          } catch (err: any) {
+            console.error('Delete failed:', err);
+            alert('Delete failed: ' + (err?.message || 'Unknown error'));
+          }
           loadAllMetrics();
           loadTabContent();
         },

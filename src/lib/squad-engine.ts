@@ -109,6 +109,7 @@ export async function tryAdvanceSquad(
       .select('id')
       .eq('story_group_id', session.storyGroupId)
       .eq('episode_number', session.currentEpisodeNumber)
+      .is('deleted_at', null)
       .single();
     if (data) {
       const { navigate } = await import('../router.ts');
@@ -146,7 +147,8 @@ export async function getStoryGroupEpisodeCount(storyGroupId: string): Promise<n
   const { count, error } = await supabase
     .from('official_stories')
     .select('id', { count: 'exact', head: true })
-    .eq('story_group_id', storyGroupId);
+    .eq('story_group_id', storyGroupId)
+    .is('deleted_at', null);
 
   if (error) {
     console.error('[SquadEngine] Error counting episodes:', error);
@@ -168,6 +170,7 @@ export async function getSoloEpisodeCount(storyGroupId: string): Promise<number>
     .select('solo_episode_count')
     .eq('story_group_id', storyGroupId)
     .eq('episode_number', 1)
+    .is('deleted_at', null)
     .single();
 
   if (error) {

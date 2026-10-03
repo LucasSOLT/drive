@@ -253,7 +253,7 @@ export async function init(): Promise<void> {
   // Fetch data
   try {
     const [promptRes, sessionData, membersData, postsData] = await Promise.all([
-      supabase.from('official_stories').select('sparc_prompt').eq('story_group_id', currentStoryGroupId).eq('episode_number', currentEpisodeNumber).single(),
+      supabase.from('official_stories').select('sparc_prompt').eq('story_group_id', currentStoryGroupId).eq('episode_number', currentEpisodeNumber).is('deleted_at', null).single(),
       getSquadSession(currentSquadId),
       getSquadMembers(currentSquadId),
       getSparcResponses(currentSquadId, currentStoryGroupId, currentEpisodeNumber)
@@ -324,6 +324,7 @@ export async function init(): Promise<void> {
             .select('id')
             .eq('story_group_id', currentStoryGroupId)
             .eq('episode_number', session.currentEpisodeNumber)
+            .is('deleted_at', null)
             .single();
           if (data) {
             navigate('story/' + data.id);
@@ -618,6 +619,7 @@ function setupEventListeners() {
           .select('id')
           .eq('story_group_id', currentStoryGroupId)
           .eq('episode_number', result.nextEpisode)
+          .is('deleted_at', null)
           .single();
           
         if (data && !error) {

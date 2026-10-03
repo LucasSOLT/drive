@@ -3,7 +3,7 @@ import { getTrackedStories, removeTrackedStory, cleanupOrphanedTrackedStories, t
 import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteUserStory, getUserPlan, getUserSubscription, canCreateStory, getTokensRemaining, getCreditsBalance, getBookmarkedStoryIds, isBookmarked, toggleBookmark } from '../state.ts';
 import { navigate } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory, getUserSquads, getSquadMembers } from '../lib/db.ts';
+import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory, moveLocalAdminDraftToDeleted, getUserSquads, getSquadMembers } from '../lib/db.ts';
 import { getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
 import { MONSTER_AVATARS } from '../data/avatars.ts';
 import { getUserId } from '../lib/auth.ts';
@@ -984,17 +984,29 @@ export function init(): void {
         btn.addEventListener('click', () => {
           showModal({
             title: 'Delete Local Admin Draft',
-            content: '<p style="line-height:1.6;">Are you sure you want to discard this local draft? This cannot be undone.</p>',
-            confirmText: 'Delete',
+            content: '<p style="line-height:1.6;">This moves the draft to the <strong>Deleted</strong> tab in the admin dashboard. It\'s permanently erased after 30 days unless restored.</p>',
+            confirmText: 'Move to Deleted',
             cancelText: 'Cancel',
-            onConfirm: () => {
-              // Remove from screen instantly, then clean up storage
-              btn.closest('.lib-card')?.remove();
-              localStorage.removeItem('drive_admin_create_draft');
-              const viewContainer = document.getElementById('view-container');
-              if (viewContainer) {
-                viewContainer.innerHTML = render();
-                init();
+            onConfirm: async () => {
+              // Remove from screen instantly; keep a reference to restore on failure
+              const card = btn.closest('.lib-card') as HTMLElement | null;
+              const parent = card?.parentElement || null;
+              const nextSibling = card?.nextSibling || null;
+              card?.remove();
+              try {
+                const draft = getLocalAdminDraft();
+                if (draft) await moveLocalAdminDraftToDeleted(draft);
+                localStorage.removeItem('drive_admin_create_draft');
+                const viewContainer = document.getElementById('view-container');
+                if (viewContainer) {
+                  viewContainer.innerHTML = render();
+                  init();
+                }
+              } catch (e) {
+                console.error('Failed to move local admin draft to Deleted', e);
+                // Keep the local draft and put the card back
+                if (card && parent) parent.insertBefore(card, nextSibling);
+                alert('Delete failed: ' + ((e as any)?.message || 'Unknown error') + '\nYour draft was kept.');
               }
             }
           });
@@ -1007,8 +1019,8 @@ export function init(): void {
           if (!storyId) return;
           showModal({
             title: 'Delete Admin Draft',
-            content: '<p style="line-height:1.6;">Are you sure you want to delete this admin draft storyboard? This cannot be undone.</p>',
-            confirmText: 'Delete',
+            content: '<p style="line-height:1.6;">This moves the draft to the <strong>Deleted</strong> tab in the admin dashboard. It\'s permanently erased after 30 days unless restored.</p>',
+            confirmText: 'Move to Deleted',
             cancelText: 'Cancel',
             onConfirm: async () => {
               // Remove from screen instantly; keep a reference to restore on failure
@@ -1183,9 +1195,12 @@ export function init(): void {
       const story = getUserStories().find(s => s.id === storyId);
       if (!story) return;
 
+      const submittedNote = story.wasSubmitted
+        ? ' Because it was submitted for review, the DRiVE team keeps a copy.'
+        : '';
       showModal({
         title: 'Delete Story',
-        content: `<p style="line-height:1.6;">Are you sure you want to delete <strong>“${story.title}”</strong>? This cannot be undone.</p>`,
+        content: `<p style="line-height:1.6;">This removes <strong>“${story.title}”</strong> from your library.${submittedNote}</p>`,
         confirmText: 'Delete',
         cancelText: 'Cancel',
         onConfirm: () => {
