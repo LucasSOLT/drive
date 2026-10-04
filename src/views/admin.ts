@@ -33,7 +33,7 @@ import {
   type AdminMetrics,
 } from '../lib/db.ts';
 import { runPreflightChecks, type PreflightCheck } from '../lib/publishing.ts';
-import { isEpisodeArchived, episodeNumberOf, laterLive, listEpisodeNames, orderRuleCheck } from '../lib/episode-publish.ts';
+import { isEpisodeArchived, episodeNumberOf, laterLive, listEpisodeNames, orderRuleCheck, planSeriesGoLive, seriesBadge, sortEpisodes } from '../lib/episode-publish.ts';
 import { isEpisodeLive } from '../lib/episode-visibility.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { navigate } from '../router.ts';
@@ -406,8 +406,8 @@ function renderOriginalsContent(area: HTMLElement): void {
   }
 
   // Split into active and archived
-  const activeFiltered = filtered.filter(s => (s as any).status !== 'archived');
-  const archivedFiltered = filtered.filter(s => (s as any).status === 'archived');
+  const activeFiltered = filtered.filter(s => !isEpisodeArchived(s));
+  const archivedFiltered = filtered.filter(s => isEpisodeArchived(s));
 
   // Group active stories
   const groupMap = new Map<string, Story[]>();
@@ -515,12 +515,12 @@ function renderOriginalsContent(area: HTMLElement): void {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const groupId = (btn as HTMLElement).dataset.unarchiveGroup!;
-      const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId);
+      const episodes = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === groupId && isEpisodeArchived(s));
       try {
         for (const ep of episodes) {
           await unarchiveOfficialStory(ep.id);
           const idx = currentOfficialStories.findIndex(s => s.id === ep.id);
-          if (idx >= 0) (currentOfficialStories[idx] as any).status = 'draft';
+          if (idx >= 0) { (currentOfficialStories[idx] as any).status = 'draft'; currentOfficialStories[idx].officialStatus = 'draft' as any; }
         }
         loadAllMetrics();
         loadTabContent();
@@ -571,8 +571,11 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
   const totalEps = episodes.length;
   
   const coverSrc = ep1.coverImage || (ep1.panels?.[0]) || '';
-  const isLive = ep1.officialStatus === 'live';
-  const statusLabel = isLive ? '🟢 LIVE' : '🟡 AWAITING';
+  const badge = seriesBadge(episodes);
+  const isLive = badge.live;
+  const statusLabel = badge.label;
+  const anyLive = episodes.some(e => isEpisodeLive(e));
+  const anyOffline = episodes.some(e => !isEpisodeLive(e) && !isEpisodeArchived(e));
   const formatBadge = ep1.format === 'book' ? '📖 Book' : '📜 Waterfall';
 
   let coverHtml = '';
@@ -640,7 +643,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
     <div class="story-group" data-group-id="${groupId}" data-expanded="false" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; overflow: visible; display: flex; flex-direction: column; position: relative; margin-bottom: 16px;">
       <!-- Collapsed Card (Episode 1) -->
       <div style="display: flex; padding: 16px; gap: 16px; align-items: flex-start; position: relative;">
-        <button class="story-card-menu-btn" data-menu-for="${groupId}" data-story-id="${ep1.id}" data-is-live="${isLive ? 'true' : 'false'}" style="
+        <button class="story-card-menu-btn" data-menu-for="${groupId}" data-story-id="${ep1.id}" data-is-live="${isLive ? 'true' : 'false'}" data-any-live="${anyLive ? 'true' : 'false'}" data-any-offline="${anyOffline ? 'true' : 'false'}" style="
           position: absolute; top: 10px; right: 10px;
           width: 32px; height: 32px;
           border-radius: 8px;
@@ -662,8 +665,8 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
           <div style="font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 6px;">
             ${escapeHtml(ep1.author)} · ${ep1.genre}
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: auto;">
-            <span style="font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: ${isLive ? 'rgba(5,150,105,0.12)' : 'rgba(161,98,7,0.12)'}; color: ${isLive ? '#059669' : '#a16207'};">${statusLabel}</span>
+          <div style="display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; margin-bottom: auto;">
+            <span style="font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; white-space: nowrap; background: ${isLive ? 'rgba(5,150,105,0.12)' : 'rgba(161,98,7,0.12)'}; color: ${isLive ? '#059669' : '#a16207'};">${statusLabel}</span>
             <span style="font-size: 0.75rem; color: var(--color-text-secondary); font-weight: 600;">${totalEps} Episode${totalEps > 1 ? 's' : ''}</span>
           </div>
         </div>
@@ -857,6 +860,117 @@ function showGoLiveConfirm(story: Story, opts: { extraChecks?: PreflightCheck[];
   }
 }
 
+/** Series-tile Go Live: checks every episode, publishes only the ones that can go live (in order). */
+function showSeriesGoLiveConfirm(group: Story[]) {
+  const plan = planSeriesGoLive(group, ep =>
+    runPreflightChecks(ep).checks.filter(c => c.status === 'fail').map(c => `${c.label}: ${c.detail}`),
+  );
+  const sorted = plan.rows.map(r => r.ep);
+  const title = sorted[0]?.title || 'Untitled';
+  const n = plan.toPublish.length;
+  const nothingToPublish = n === 0;
+  const firstFixable = plan.rows.find(r => r.state === 'blocked' && !isEpisodeArchived(r.ep)
+    && runPreflightChecks(r.ep).checks.some(c => c.status === 'fail'));
+  const allOk = plan.blocked.length === 0;
+  const accent = nothingToPublish ? '239,68,68' : allOk ? '16,185,129' : '245,158,11';
+  const accentHex = nothingToPublish ? '#ef4444' : allOk ? '#10b981' : '#f59e0b';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'go-live-confirm-overlay';
+  overlay.style.cssText = `
+    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; padding: 16px; box-sizing: border-box;
+  `;
+
+  const rowHtml = plan.rows.map(r => {
+    const icon = r.state === 'blocked' ? '❌' : r.state === 'live' ? '🟢' : '✅';
+    const tag = r.state === 'blocked' ? "Won't go live" : r.state === 'live' ? 'Already live' : 'Will go live';
+    const color = r.state === 'blocked' ? '#ef4444' : '#10b981';
+    const bg = r.state === 'blocked' ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.06)';
+    const border = r.state === 'blocked' ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.18)';
+    const pages = r.ep.panels?.length || 0;
+    const epTitle = r.ep.episodeTitle ? ` · ${escapeHtml(r.ep.episodeTitle)}` : '';
+    return `
+      <div style="padding: 10px 12px; border-radius: 10px; font-size: 0.78rem; display: flex; align-items: flex-start; gap: 10px; background: ${bg}; border: 1px solid ${border};">
+        <span style="font-size: 0.95rem; line-height: 1; margin-top: 1px;">${icon}</span>
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <span style="font-weight: 700; color: var(--color-text-primary);">Episode ${r.number}${epTitle} <span style="font-weight: 500; color: var(--color-text-muted);">· ${pages} page${pages === 1 ? '' : 's'}</span></span>
+            <span style="font-size: 0.65rem; text-transform: uppercase; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: ${color}; color: #fff; white-space: nowrap;">${tag}</span>
+          </div>
+          ${r.reasons.length ? `<ul style="margin: 5px 0 0; padding-left: 16px; color: var(--color-text-secondary); line-height: 1.4; font-size: 0.74rem;">${r.reasons.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  const blockedNames = listEpisodeNames(plan.blocked, sorted);
+  const intro = nothingToPublish
+    ? `None of the remaining episodes of <strong>"${escapeHtml(title)}"</strong> can go live yet. Fix the items below first.`
+    : allOk
+      ? `This publishes ${n === 1 ? listEpisodeNames(plan.toPublish, sorted) : `${n} episodes`} of <strong>"${escapeHtml(title)}"</strong> live for anyone on DRiVE.`
+      : `Only ${listEpisodeNames(plan.toPublish, sorted)} will go live. <strong>${blockedNames} won't go live</strong> until ${plan.blocked.length === 1 ? 'it is' : 'they are'} fixed. Later, use <strong>🚀 Go Live (This Episode)</strong> in that episode's ⋮ menu.`;
+
+  overlay.innerHTML = `
+    <div style="background: var(--color-surface); border: 1.5px solid rgba(${accent},0.4); border-radius: 20px; padding: 24px; max-width: 480px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; font-family: var(--font-body); box-shadow: 0 20px 60px rgba(0,0,0,0.6); box-sizing: border-box;">
+      <div style="text-align: center; margin-bottom: 14px;">
+        <div style="font-size: 2.5rem; margin-bottom: 8px;">${nothingToPublish ? '🛑' : '🚀'}</div>
+        <h3 style="margin: 0 0 6px; font-family: var(--font-heading); font-size: 1.15rem; color: var(--color-text-primary);">
+          ${nothingToPublish ? 'No Episodes Can Go Live Yet' : `Go Live with "${escapeHtml(title)}"?`}
+        </h3>
+        <p style="font-size: 0.82rem; color: var(--color-text-muted); margin: 0; line-height: 1.45;">${intro}</p>
+      </div>
+
+      <div id="series-go-live-summary" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 10px; margin-bottom: 12px; font-size: 0.82rem; font-weight: 800; background: rgba(${accent},0.12); color: ${accentHex}; border: 1px solid rgba(${accent},0.25);">
+        <span>${plan.ableCount} of ${plan.total} episode${plan.total === 1 ? '' : 's'} can go live</span>
+        <span>${plan.alreadyLive ? `${plan.alreadyLive} already live` : ''}</span>
+      </div>
+
+      <div style="flex: 1; overflow-y: auto; max-height: 300px; margin-bottom: 18px; padding-right: 4px; display: flex; flex-direction: column; gap: 8px;">
+        ${rowHtml}
+      </div>
+
+      <div style="display: flex; gap: 10px; justify-content: center;">
+        <button id="go-live-cancel" style="flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.88rem; font-weight: 600;">
+          ${nothingToPublish ? 'Close' : 'Cancel'}
+        </button>
+        ${nothingToPublish
+          ? (firstFixable ? `<button id="go-live-edit-btn" style="flex: 1.4; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700;">✏️ Edit Episode ${firstFixable.number} to Fix</button>` : '')
+          : `<button id="go-live-confirm" style="flex: 1.4; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700;">${n === 1 ? (plan.total === 1 ? 'Yes, Go Live' : `Go Live with ${listEpisodeNames(plan.toPublish, sorted)}`) : `Go Live with ${n} Episodes`}</button>`}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById('go-live-cancel')?.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) overlay.remove(); });
+  document.getElementById('go-live-edit-btn')?.addEventListener('click', () => {
+    overlay.remove();
+    if (firstFixable) navigate('admin-create/' + firstFixable.ep.id);
+  });
+  document.getElementById('go-live-confirm')?.addEventListener('click', async () => {
+    const confirmBtn = document.getElementById('go-live-confirm') as HTMLButtonElement;
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Publishing...'; }
+    const done: string[] = [];
+    try {
+      // Earliest first, so there is never a gap in the live episodes
+      for (const ep of plan.toPublish) {
+        await goOfficialStoryLive(ep.id);
+        done.push(ep.id);
+      }
+      setLocalOfficialStatus(done, 'live');
+      overlay.remove();
+      loadAllMetrics();
+      loadTabContent();
+    } catch (err) {
+      console.error('Go live failed:', err);
+      setLocalOfficialStatus(done, 'live');
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = done.length ? `Published ${done.length}. Retry the rest` : 'Failed - Try Again'; }
+    }
+  });
+}
+
 function attachOfficialCardListeners(): void {
   if (!_adminDropdownListenerAttached) {
     _adminDropdownListenerAttached = true;
@@ -877,7 +991,8 @@ function attachOfficialCardListeners(): void {
         document.querySelectorAll('.story-dropdown-menu').forEach(menu => menu.remove());
         const groupId = cardMenuBtn.dataset.menuFor!;
         const storyId = cardMenuBtn.dataset.storyId!;
-        const isLive = cardMenuBtn.dataset.isLive === 'true';
+        const anyLive = cardMenuBtn.dataset.anyLive === 'true';
+        const anyOffline = cardMenuBtn.dataset.anyOffline === 'true';
         const storyGroup = cardMenuBtn.closest('.story-group') as HTMLElement;
         const isExpanded = storyGroup.dataset.expanded === 'true';
 
@@ -893,7 +1008,8 @@ function attachOfficialCardListeners(): void {
           <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Story</div>
           <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview Story</div>
           <div class="menu-item" data-toggle-episodes="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">${isExpanded ? '▲ Collapse' : '📋 Show All Episodes'}</div>
-          ${!isLive ? `<div class="menu-item" data-go-live-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">🚀 Go Live</div>` : `<div class="menu-item" data-take-offline="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">📴 Take Offline</div>`}
+          ${anyOffline ? `<div class="menu-item" data-go-live-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">🚀 ${anyLive ? 'Go Live (Remaining Episodes)' : 'Go Live'}</div>` : ''}
+          ${anyLive ? `<div class="menu-item" data-take-offline="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">📴 Take Offline (All Episodes)</div>` : ''}
           <div style="border-top: 1px solid var(--color-border); margin: 4px 0;"></div>
           <div class="menu-item" data-archive-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">📦 Archive</div>
           <div class="menu-item" data-delete-group="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #ef4444;" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">🗑 Delete</div>
@@ -993,10 +1109,14 @@ function attachOfficialCardListeners(): void {
             confirmText: 'Archive',
             cancelText: 'Cancel',
             onConfirm: async () => {
-              await archiveOfficialStory(storyId);
+              // Archive the whole series (all episodes), not just Episode 1
+              const targets = story ? groupEpisodesOf(story) : [];
+              const ids = targets.length ? targets.map(s => s.id) : [storyId];
+              for (const id of ids) await archiveOfficialStory(id);
               // Update in-memory status so the archived section shows it immediately
-              const idx = currentOfficialStories.findIndex(s => s.id === storyId);
-              if (idx >= 0) (currentOfficialStories[idx] as any).status = 'archived';
+              for (const s of currentOfficialStories) {
+                if (ids.includes(s.id)) { (s as any).status = 'archived'; s.officialStatus = 'archived' as any; }
+              }
               loadAllMetrics();
               loadTabContent();
             },
@@ -1113,13 +1233,24 @@ function attachOfficialCardListeners(): void {
         } else if (menuItem.dataset.takeOffline) {
           const storyId = menuItem.dataset.takeOffline;
           const story = currentOfficialStories.find(s => s.id === storyId);
+          const group = story ? sortEpisodes(groupEpisodesOf(story)) : [];
+          const liveEps = group.filter(e => isEpisodeLive(e));
+          const targets = liveEps.length ? liveEps : (story ? [story] : []);
+          const n = targets.length;
           showModal({
-            title: `📴 Take Offline: "${story?.title || 'Story'}"`,
-            content: '<p>This will remove the story from Featured and Explore feeds. It will become a draft and can be re-published later.</p>',
-            confirmText: 'Take Offline',
+            title: `📴 Take Offline: "${escapeHtml(story?.title || 'Story')}"`,
+            content: `<p style="line-height:1.6;">This takes <strong>${n === 1 ? (group.length > 1 ? listEpisodeNames(targets, group) : 'the story') : `all ${n} live episodes`}</strong> offline and removes the story from Home, Featured and Explore. ${n === 1 ? 'It becomes a draft' : 'They become drafts'} and can be made live again later.</p>`,
+            confirmText: n > 1 ? `Take ${n} Episodes Offline` : 'Take Offline',
             cancelText: 'Cancel',
             onConfirm: async () => {
-              await takeOfficialStoryOffline(storyId);
+              try {
+                // Latest first, so there is never a gap in the live episodes
+                for (const ep of [...targets].reverse()) await takeOfficialStoryOffline(ep.id);
+                setLocalOfficialStatus(targets.map(e => e.id), 'draft');
+              } catch (err: any) {
+                console.error('Take offline failed:', err);
+                alert('Take offline failed: ' + (err?.message || 'Unknown error'));
+              }
               loadAllMetrics();
               loadTabContent();
             },
@@ -1130,7 +1261,7 @@ function attachOfficialCardListeners(): void {
           if (!story) {
             story = (await fetchStoryByIdFromDb(storyId)) as any;
           }
-          if (story) showGoLiveConfirm(story);
+          if (story) showSeriesGoLiveConfirm(groupEpisodesOf(story));
         } else if (menuItem.dataset.moveUp) {
           const id = menuItem.dataset.moveUp;
           const idx = currentOfficialStories.findIndex(s => s.id === id);
