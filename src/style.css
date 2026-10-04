@@ -3843,9 +3843,11 @@ button.profile-avatar {
 /* Clickable Karaoke Word Spans */
 .cc-word {
   cursor: pointer;
-  transition: color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease, transform 0.1s ease;
-  border-radius: 4px;
-  padding: 1px 3px;
+  /* Highlighting must NEVER change a word's size or position (no font-weight / scale / padding / border changes),
+     otherwise the line re-wraps while the audio plays. Only paint properties change. */
+  transition: color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+  border-radius: 3px;
+  padding: 0 1px;
   display: inline-block;
   user-select: none;
   -webkit-user-select: none;
@@ -3857,8 +3859,6 @@ button.profile-avatar {
   color: var(--word-active-color, #7C6FFA) !important;
   background-color: rgba(124, 111, 250, 0.22) !important;
   box-shadow: 0 0 10px rgba(124, 111, 250, 0.45) !important;
-  font-weight: 700;
-  transform: scale(1.05);
 }
 
 /* --- Reader First-Time Swipe Tutorial Overlay --- */
@@ -15035,16 +15035,6 @@ body.content-management-mode .story-card:hover {
   .story-stack {
     padding-bottom: 0 !important;
   }
-}
-
-.cc-word {
-  transition: color 0.1s, background 0.1s;
-  border-radius: 2px;
-  padding: 0 1px;
-}
-.cc-word--active {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.15);
 }
 
 /* Upload spinner */

@@ -1722,7 +1722,17 @@ export async function init(): Promise<void> {
               target.classList.add('cc-word--active');
               const color = target.getAttribute('data-highlight-color') || s.narratorHighlightColor || '#7C6FFA';
               target.style.setProperty('--word-active-color', color);
-              target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+              // Never scrollIntoView (it can scroll the whole page). Only nudge the text box itself, and only
+              // when the spoken word has left the visible area, so text that fits stays completely still.
+              const body = target.closest('.reader-dialogue-body') as HTMLElement | null;
+              if (body && body.scrollHeight > body.clientHeight + 1) {
+                const bRect = body.getBoundingClientRect();
+                const tRect = target.getBoundingClientRect();
+                const margin = bRect.height * 0.2;
+                if (tRect.bottom > bRect.bottom - margin || tRect.top < bRect.top + margin) {
+                  body.scrollTo({ top: body.scrollTop + (tRect.top - bRect.top) - bRect.height / 2 + tRect.height / 2, behavior: 'smooth' });
+                }
+              }
             }
           }
         },
