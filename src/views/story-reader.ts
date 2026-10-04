@@ -1687,25 +1687,28 @@ export async function init(): Promise<void> {
       stopSpeaking();
       duckBgm();
 
-      // Build word map
+      // Build word map. Word numbers follow the DISPLAYED text (what the cc-word spans are numbered by).
+      const displayWordCount = dialogueLines.length > 0
+        ? dialogueLines.reduce((n: number, l: any) => n + String(l.text || '').split(/\s+/).filter(Boolean).length, 0)
+        : String(scriptText).split(/\s+/).filter(Boolean).length;
       let wordMap: WordTimestamp[] = [];
-      const hasAlignments = dialogueLines.some((l: any) => !!l.alignment);
-      if (hasAlignments) {
+      let estimatedMap = false;
+      if (dialogueLines.length > 0) {
+        // Real alignment where it exists; lines with a known audio length but no usable alignment are
+        // spread over their own audio window. Includes the silence joined between lines.
         wordMap = KaraokeController.buildMultiLineWordMap(dialogueLines);
-      } else {
+      }
+      if (wordMap.length < displayWordCount || displayWordCount === 0) {
+        // Not every word could be timed (e.g. uploaded audio with no alignment): spread ALL words over the
+        // real audio length (fitted as soon as the browser knows it) instead of a flat guess per word.
         const allText = dialogueLines.length > 0
           ? dialogueLines.map((l: any) => l.text).join(' ')
           : scriptText;
         const words = allText.split(/\s+/).filter(Boolean);
-        const estSecPerWord = 0.35;
-        wordMap = words.map((_, i) => ({
-          wordIdx: i,
-          lineIdx: 0,
-          startTime: i * estSecPerWord,
-          endTime: (i + 1) * estSecPerWord,
-        }));
+        const est = KaraokeController.estimateWordTimes(words, 0, words.length * 0.35);
+        wordMap = est.map((w, i) => ({ wordIdx: i, lineIdx: 0, startTime: w.startTime, endTime: w.endTime }));
+        estimatedMap = true;
       }
-
       // When auto-play is armed, reuse the pre-unlocked element (iOS needs this). Always full volume.
       const sharedAudioEl = getAutoplayAudio();
       if (sharedAudioEl) resetAudioLevel();
@@ -1745,7 +1748,7 @@ export async function init(): Promise<void> {
             }, 650);
           }
         },
-      }, sharedAudioEl);
+      }, sharedAudioEl, { fitToAudioDuration: estimatedMap });
 
       if (typeof startWordIdx === 'number') {
         activeKaraokeCtrl.seekToWord(startWordIdx);

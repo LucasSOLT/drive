@@ -6,6 +6,7 @@
 import { getSelectedVoiceId } from './settings.ts';
 import { supabase } from './supabase.ts';
 import { resolveVoiceForLine } from './voice-lab.ts';
+import { LINE_GAP_SECONDS } from './karaoke.ts';
 
 /** Split dialogue text into sentences with their terminal punctuation for mood-aware TTS. */
 export function splitDialogueIntoSentences(text: string): { text: string; punctuation: string }[] {
@@ -688,7 +689,7 @@ export async function preRecordPageAudio(
   if (dataUrls.length === 1) {
     audioUrl = dataUrls[0];
   } else {
-    audioUrl = await concatenateAudioSegments(dataUrls, 150);
+    audioUrl = await concatenateAudioSegments(dataUrls, Math.round(LINE_GAP_SECONDS * 1000));
   }
 
   return {

@@ -3845,7 +3845,7 @@ button.profile-avatar {
   cursor: pointer;
   /* Highlighting must NEVER change a word's size or position (no font-weight / scale / padding / border changes),
      otherwise the line re-wraps while the audio plays. Only paint properties change. */
-  transition: color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+  transition: color 0.05s linear, background-color 0.05s linear, box-shadow 0.05s linear;
   border-radius: 3px;
   padding: 0 1px;
   display: inline-block;
