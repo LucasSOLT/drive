@@ -11,7 +11,7 @@ import { getRouteParam, navigate } from '../router.ts';
 import { fetchStoryByIdFromDb, fetchOfficialStories, getCachedOfficialStories } from '../lib/db.ts';
 import { isBookmarked, toggleBookmark } from '../state.ts';
 import { preloadEpisodeFirstPages } from '../lib/media-preloader.ts';
-import { isVideoMedia } from '../lib/media.ts';
+import { seriesCoverDisplay, episodeThumbDisplay } from '../lib/cover-pick.ts';
 import { type Story } from '../types.ts';
 import { isEpisodeLive, pickResumeEpisode } from '../lib/episode-visibility.ts';
 
@@ -89,10 +89,17 @@ function renderStars(rating: number): string {
 
 // ─── Hero cover preloading ───
 
-/** First non-video candidate for the hero banner (background-image can't show videos). */
-function pickHeroCover(s: Story): string {
-  const candidates = [s.seriesCoverImage, s.coverImage, s.panels?.[0]];
-  return candidates.find(u => !!u && !isVideoMedia(u)) || '';
+/**
+ * What the hero banner shows. Always a STILL picture: an image, or (for stories whose cover is a video)
+ * the video's first frame, shown paused. The still is a generated image when one exists.
+ */
+function heroDisplay(s: Story) {
+  return seriesCoverDisplay(s);
+}
+
+/** First-frame display for a video (paused; #t=0.1 makes browsers paint a frame without playing). */
+function stillVideoHtml(url: string, cls: string, alt = ''): string {
+  return `<video class="${cls}" src="${url.split('#')[0]}#t=0.1" preload="metadata" muted playsinline webkit-playsinline disablepictureinpicture tabindex="-1" aria-label="${alt}" style="pointer-events:none;"></video>`;
 }
 
 type HeroLoad = {
@@ -173,7 +180,7 @@ export async function init(): Promise<void> {
   // Head start: if this story is already cached, begin loading its cover
   // before the network fetch even returns.
   const cachedStory = getCachedOfficialStories()?.find(s => s.id === storyId);
-  if (cachedStory) preloadHero(pickHeroCover(cachedStory));
+  if (cachedStory) { const d = heroDisplay(cachedStory); if (d.kind === 'image') preloadHero(d.url); }
 
   // Fetch story + all episodes in parallel
   const [fetchedStory, allStories] = await Promise.all([
@@ -210,8 +217,11 @@ export async function init(): Promise<void> {
   // The page describes the story through a live episode (the opened id may be a draft episode)
   const story: Story = (fetchedStory.isOfficial && !isEpisodeLive(fetchedStory)) ? episodes[0] : fetchedStory;
 
-  // Data for template
-  const heroCover = pickHeroCover(story);
+  // Data for template. The series cover comes from Episode 1 (the first live episode if Episode 1 is offline).
+  const coverHolder: Story = story.isOfficial ? (episodes.find(e => (e.episodeNumber || 1) === 1) || episodes[0]) : story;
+  const heroDisp = heroDisplay(coverHolder);
+  const heroCover = heroDisp.kind === 'image' ? heroDisp.url : '';
+  const heroVideo = heroDisp.kind === 'video' ? heroDisp.url : '';
 
   // Keep the spinner up until the cover is ready (or failed / 5s timeout)
   const heroResult = await preloadHero(heroCover);
@@ -257,6 +267,7 @@ export async function init(): Promise<void> {
     <!-- Hero Section -->
     <div class="si-hero" id="si-hero">
       <div class="si-hero__bg ${heroOk && heroCover ? 'si-hero__bg--visible' : ''}" id="si-hero-bg" style="${heroOk && heroCover ? `background-image: url('${heroCover}');` : ''}"></div>
+      ${heroVideo ? stillVideoHtml(heroVideo, 'si-hero__video', 'Cover') : ''}
       ${heroOk ? '' : `
       <div class="si-hero__error" id="si-hero-error">
         ${DINO_SVG}
@@ -319,16 +330,18 @@ export async function init(): Promise<void> {
         ${episodes.map(ep => {
           const epNum = ep.episodeNumber || 1;
           const epTitle = ep.episodeTitle || `Episode ${epNum}`;
-          const epThumb = ep.episodeThumbnail || ep.panels?.[0] || ep.coverImage || '';
+          const epThumb = episodeThumbDisplay(ep);
           const pageCount = ep.panels?.length || 0;
           const isRead = readEpisodes.has(ep.id);
 
           return `
             <div class="si-episode" data-episode-id="${ep.id}" data-episode-num="${epNum}">
               <div class="si-episode__thumb-wrap">
-                ${epThumb
-                  ? `<img class="si-episode__thumb" src="${epThumb}" alt="Episode ${epNum}" loading="lazy">`
-                  : `<div class="si-episode__thumb-placeholder">${epNum}</div>`
+                ${epThumb.kind === 'image'
+                  ? `<img class="si-episode__thumb" src="${epThumb.url}" alt="Episode ${epNum}" loading="lazy">`
+                  : epThumb.kind === 'video'
+                    ? stillVideoHtml(epThumb.url, 'si-episode__thumb', `Episode ${epNum}`)
+                    : `<div class="si-episode__thumb-placeholder">${epNum}</div>`
                 }
                 ${isRead ? `<span class="si-episode__watched">Read</span>` : ''}
               </div>

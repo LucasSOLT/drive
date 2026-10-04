@@ -8,6 +8,7 @@ import { saveOfficialStory, fetchOfficialStories, getCachedOfficialStories, upda
 import { findEpisodeNeighbors, episodeNavLabel, NO_NEIGHBORS, type EpisodeNeighbors } from '../lib/episode-nav.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { uploadMedia } from '../lib/storage.ts';
+import { makeMissingStills } from '../lib/media-still.ts';
 import { uploadAudioData } from '../lib/storage.ts';
 import { VOICE_OPTIONS } from '../lib/settings.ts';
 import { addUserStory } from '../state.ts';
@@ -68,6 +69,24 @@ let soloEpisodeCount: 1 | 2 | 3 = 1;
 let sparcPromptText = '';
 let sparcPromptMediaUrls: string[] = [];
 
+/** Fill in the auto-made stills (video first page -> still picture) on the story being saved. Never throws. */
+async function applyAutoStills(story: Story): Promise<void> {
+  try {
+    const rec = currentOfficialRecord && currentOfficialRecord.id === story.id ? currentOfficialRecord : null;
+    const stills = await makeMissingStills({
+      panels: story.panels,
+      coverImage: story.coverImage,
+      coverVideo: story.coverVideo,
+      episodeThumbnail: story.episodeThumbnail || rec?.episodeThumbnail,
+      seriesCoverImage: story.seriesCoverImage || rec?.seriesCoverImage,
+    }, (story.episodeNumber || 1) === 1);
+    if (stills.episodeThumbnail) { story.episodeThumbnail = stills.episodeThumbnail; _autoEpisodeThumbnail = stills.episodeThumbnail; }
+    if (stills.seriesCoverImage) { story.seriesCoverImage = stills.seriesCoverImage; _autoSeriesCover = stills.seriesCoverImage; }
+  } catch (err) {
+    console.warn('[AdminCreate] Auto still failed (save continues):', err);
+  }
+}
+
 /** Save story using the correct function based on user/admin mode */
 async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-review' = 'draft'): Promise<void> {
   if (isUserMode()) {
@@ -104,6 +123,9 @@ async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-rev
     if (targetStatus === 'under-review') {
       story.officialStatus = 'draft';
     }
+    // Make a still picture for the episode thumbnail / series cover when the first page is a video.
+    // Best effort: never blocks or fails the save.
+    await applyAutoStills(story);
     await saveOfficialStory(story);
   }
 
@@ -125,6 +147,8 @@ async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-rev
       audioMode: story.audioMode,
       soloEpisodeCount: story.soloEpisodeCount,
       themeColor: story.themeColor,
+      // The series cover is made from Episode 1 and shared with every episode
+      seriesCoverImage: (!isUserMode() && (story.episodeNumber || 1) === 1) ? story.seriesCoverImage : undefined,
     }, isUserMode()).catch(err => console.warn('[AdminCreate] Failed to sync shared settings:', err));
   }
 }
@@ -202,6 +226,9 @@ let storyCharacters: StoryCharacter[] = [];
 let currentPage = 0;
 let activeDraftId: string | null = null;
 let _coverThumbnail: string | null = null;
+/** Auto-made still pictures for the episode being edited (kept so a normal save never loses them). */
+let _autoEpisodeThumbnail = '';
+let _autoSeriesCover = '';
 let editStoryId: string | null = null;
 let episodeStoryGroupId: string | null = null;  // Links this episode to a story group
 let episodeNumber: number = 1;                  // Which episode number in the group
@@ -560,6 +587,8 @@ function buildStory(status: 'draft' | 'live'): Story {
     pageAudioSource: Object.keys(pageAudioSource).length > 0 ? pageAudioSource : undefined,
     soloEpisodeCount,
     themeColor: storyThemeColor,
+    episodeThumbnail: _autoEpisodeThumbnail || undefined,
+    seriesCoverImage: _autoSeriesCover || undefined,
     sparcPrompt: (sparcPromptText.trim() || sparcPromptMediaUrls.length > 0) ? {
       text: sparcPromptText.trim(),
       mediaUrls: sparcPromptMediaUrls.length > 0 ? sparcPromptMediaUrls : undefined,
@@ -704,9 +733,9 @@ function buildStoryKeepingLiveState(): Story {
     story.sortOrder = rec.sortOrder;
     story.isFeatured = rec.isFeatured;
     story.isEditorPick = rec.isEditorPick;
-    story.episodeThumbnail = rec.episodeThumbnail;
+    story.episodeThumbnail = story.episodeThumbnail || rec.episodeThumbnail;
     story.episodeTitle = rec.episodeTitle;
-    story.seriesCoverImage = rec.seriesCoverImage;
+    story.seriesCoverImage = story.seriesCoverImage || rec.seriesCoverImage;
   }
   return story;
 }
@@ -4441,6 +4470,8 @@ export function init(): void {
         _coverThumbnail = storyToEdit.coverImage;
         storyContentRating = storyToEdit.contentRating || 'All Ages';
         storyCoverVideo = storyToEdit.coverVideo || '';
+        _autoEpisodeThumbnail = storyToEdit.episodeThumbnail || '';
+        _autoSeriesCover = storyToEdit.seriesCoverImage || '';
         // Load episode metadata from existing story
         episodeStoryGroupId = storyToEdit.storyGroupId || storyToEdit.id;
         episodeNumber = storyToEdit.episodeNumber || 1;
@@ -4498,6 +4529,8 @@ export function init(): void {
       storyTitle = episodeParentTitle || '';
       _coverThumbnail = '';
       storyCoverVideo = '';
+      _autoEpisodeThumbnail = '';
+      _autoSeriesCover = '';
       storySynopsis = '';
       currentPage = 0;
 
@@ -4561,6 +4594,8 @@ export function init(): void {
         storyTitle = '';
         _coverThumbnail = '';
         storyCoverVideo = '';
+        _autoEpisodeThumbnail = '';
+        _autoSeriesCover = '';
         storySynopsis = '';
         currentPage = 0;
         storyCharacters = [];

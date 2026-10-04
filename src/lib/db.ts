@@ -1120,11 +1120,13 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     solo_episode_count: story.soloEpisodeCount || 1,
     sparc_prompt: story.sparcPrompt || null,
     theme_color: story.themeColor || '#141424',
-    series_cover_image: story.seriesCoverImage || null,
-    episode_thumbnail: story.episodeThumbnail || null,
-    episode_title: story.episodeTitle || null,
     narrator_voice_id: story.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM',
   };
+  // Only written when provided, so a save that doesn't carry them never wipes what is stored
+  // (the editor builds stories without these fields; the auto-made stills live in the first two).
+  if (story.seriesCoverImage !== undefined) payload.series_cover_image = story.seriesCoverImage || null;
+  if (story.episodeThumbnail !== undefined) payload.episode_thumbnail = story.episodeThumbnail || null;
+  if (story.episodeTitle !== undefined) payload.episode_title = story.episodeTitle || null;
 
   console.log('[DB] Saving official story:', payload.id, 'title:', payload.title, 'status:', payload.status);
 
