@@ -2336,6 +2336,7 @@ export async function advanceSquadToNextEpisode(sessionId: string): Promise<{ ne
     .select('id', { count: 'exact', head: true })
     .eq('story_group_id', session.story_group_id)
     .eq('episode_number', nextEpisode)
+    .eq('status', 'live')
     .is('deleted_at', null);
 
   const hasMoreEpisodes = (count ?? 0) > 0;
@@ -2730,6 +2731,7 @@ export async function fetchStoryByGroupAndEpisode(
     .select('id, sparc_prompt')
     .eq('story_group_id', storyGroupId)
     .eq('episode_number', episodeNumber)
+    .eq('status', 'live')
     .is('deleted_at', null)
     .single();
 

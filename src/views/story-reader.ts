@@ -5,7 +5,8 @@ import { leaveReader } from '../lib/reader-origin.ts';
 import { isPreviewStory, isAdminSkipActive, activateAdminSkip } from '../lib/reader-mode.ts';
 import { adminSkipToNextEpisode, adminSkipButtonHtml } from '../lib/admin-skip.ts';
 import { getStoryById, registerStory } from '../data/stories.ts';
-import { fetchStoryByIdFromDb, fetchOfficialStories } from '../lib/db.ts';
+import { fetchStoryByIdFromDb, fetchOfficialStories, hasAdminPrivileges } from '../lib/db.ts';
+import { isEpisodeLive, canViewerOpenEpisode } from '../lib/episode-visibility.ts';
 import {
   getStoryLikes, hasUserLiked, toggleStoryLike,
   isBookmarked, toggleBookmark
@@ -535,6 +536,17 @@ export async function init(): Promise<void> {
     return;
   }
 
+  // Draft / archived / under-review official episodes are for admins only (reachable by a guessed link otherwise)
+  if (!canViewerOpenEpisode(story, hasAdminPrivileges())) {
+    const content = container.querySelector('#reader-content') || container;
+    content.innerHTML = `
+      <div class="reader-error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:80dvh; gap:16px; text-align:center; padding:20px;">
+        <p style="font-size:1.1rem; color:var(--color-text-secondary);">This episode isn't available yet.</p>
+        <button class="btn btn--secondary" onclick="window.__driveLeaveReader ? window.__driveLeaveReader() : (window.location.hash = 'home')" style="padding:8px 20px;">&larr; Back to Stories</button>
+      </div>
+    `;
+    return;
+  }
   const themeColor = story.themeColor || (story as any).theme_color || '#141424';
   container.style.setProperty('--story-theme-color', themeColor);
   container.style.setProperty('background', themeColor, 'important');
@@ -544,8 +556,11 @@ export async function init(): Promise<void> {
   let siblingEpisodes: { id: string; episodeNumber: number }[] = [];
   if (story.storyGroupId) {
     const allStories = await fetchOfficialStories();
+    // Readers only ever move between LIVE episodes. A preview (owner/admin) sees every episode.
+    const includeNonLive = isPreviewStory(story);
     siblingEpisodes = allStories
       .filter(s => s.storyGroupId === story.storyGroupId)
+      .filter(s => includeNonLive || isEpisodeLive(s) || s.id === story.id)
       .map(s => ({ id: s.id, episodeNumber: s.episodeNumber || 1 }))
       .sort((a, b) => a.episodeNumber - b.episodeNumber);
   }

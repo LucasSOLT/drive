@@ -13,6 +13,7 @@ import { isBookmarked, toggleBookmark } from '../state.ts';
 import { preloadEpisodeFirstPages } from '../lib/media-preloader.ts';
 import { isVideoMedia } from '../lib/media.ts';
 import { type Story } from '../types.ts';
+import { isEpisodeLive, pickResumeEpisode } from '../lib/episode-visibility.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -175,23 +176,39 @@ export async function init(): Promise<void> {
   if (cachedStory) preloadHero(pickHeroCover(cachedStory));
 
   // Fetch story + all episodes in parallel
-  const [story, allStories] = await Promise.all([
+  const [fetchedStory, allStories] = await Promise.all([
     fetchStoryByIdFromDb(storyId),
     fetchOfficialStories(),
   ]);
   if (!container.isConnected) return; // user left while loading
-  if (!story) {
+  if (!fetchedStory) {
     container.innerHTML = `<div style="padding:40px;text-align:center;color:#94a3b8;">Story not found.</div>`;
     return;
   }
 
-  const groupId = story.storyGroupId || story.id;
+  const groupId = fetchedStory.storyGroupId || fetchedStory.id;
+  // Only LIVE episodes are public. Drafts / archived / under-review episodes never show here.
   const episodes = allStories
     .filter(s => (s.storyGroupId || s.id) === groupId)
+    .filter(isEpisodeLive)
     .sort((a, b) => (a.episodeNumber || 1) - (b.episodeNumber || 1));
 
-  // If only one episode and it's the same story, still show info screen
-  if (episodes.length === 0) episodes.push(story);
+  // Non-official (community) stories have no official episode list: show the story itself
+  if (episodes.length === 0 && !fetchedStory.isOfficial) episodes.push(fetchedStory);
+
+  if (episodes.length === 0) {
+    container.innerHTML = `
+      <button class="si-close-btn" id="si-close" aria-label="Close">${ICON.close}</button>
+      <div style="padding:40px;text-align:center;color:#94a3b8;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">This story isn't available yet.</div>`;
+    document.getElementById('si-close')?.addEventListener('click', () => {
+      const prevRoute = sessionStorage.getItem('drive_pre_series_route');
+      if (prevRoute) { navigate(prevRoute); sessionStorage.removeItem('drive_pre_series_route'); } else { navigate('home'); }
+    });
+    return;
+  }
+
+  // The page describes the story through a live episode (the opened id may be a draft episode)
+  const story: Story = (fetchedStory.isOfficial && !isEpisodeLive(fetchedStory)) ? episodes[0] : fetchedStory;
 
   // Data for template
   const heroCover = pickHeroCover(story);
@@ -216,19 +233,21 @@ export async function init(): Promise<void> {
   // Wide (computer) screens have the room: start with the full synopsis open
   const startExpanded = needsExpand && window.matchMedia('(min-width: 900px)').matches;
 
-  // Continue / Start button
+  // Continue / Start button (progress may point at an episode that is no longer live)
+  const resume = progress ? pickResumeEpisode(episodes, progress.lastEpisodeId, progress.lastEpisodeNumber) : null;
   let ctaText = `${ICON.play} Start Reading`;
   let ctaEpisodeId = episodes[0].id;
-  if (progress) {
-    ctaText = `${ICON.play} Continue Episode ${progress.lastEpisodeNumber}`;
-    ctaEpisodeId = progress.lastEpisodeId;
+  if (progress && resume) {
+    ctaText = `${ICON.play} Continue Episode ${resume.episodeNumber || 1}`;
+    ctaEpisodeId = resume.id;
   }
+  const resumeNumber = resume ? (resume.episodeNumber || 1) : 0;
 
   // Episode read status
   const readEpisodes = new Set<string>();
-  if (progress) {
+  if (progress && resume) {
     for (const ep of episodes) {
-      if ((ep.episodeNumber || 1) < progress.lastEpisodeNumber) {
+      if ((ep.episodeNumber || 1) < resumeNumber) {
         readEpisodes.add(ep.id);
       }
     }

@@ -22,6 +22,7 @@ export async function findNextEpisodeId(storyGroupId: string, afterEpisode: numb
     .select('id')
     .eq('story_group_id', storyGroupId)
     .gt('episode_number', afterEpisode)
+    .eq('status', 'live')
     .is('deleted_at', null)
     .order('episode_number', { ascending: true })
     .limit(1)

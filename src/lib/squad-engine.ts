@@ -109,6 +109,7 @@ export async function tryAdvanceSquad(
       .select('id')
       .eq('story_group_id', session.storyGroupId)
       .eq('episode_number', session.currentEpisodeNumber)
+      .eq('status', 'live')
       .is('deleted_at', null)
       .single();
     if (data) {
@@ -148,6 +149,7 @@ export async function getStoryGroupEpisodeCount(storyGroupId: string): Promise<n
     .from('official_stories')
     .select('id', { count: 'exact', head: true })
     .eq('story_group_id', storyGroupId)
+    .eq('status', 'live')
     .is('deleted_at', null);
 
   if (error) {

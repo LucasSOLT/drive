@@ -343,6 +343,7 @@ export async function init(): Promise<void> {
         .select('id', { count: 'exact', head: true })
         .eq('story_group_id', currentStoryGroupId)
         .eq('episode_number', currentEpisodeNumber + 1)
+        .eq('status', 'live')
         .is('deleted_at', null);
       isLastEpisode = (nextCount ?? 0) === 0;
     } catch {
@@ -396,6 +397,7 @@ export async function init(): Promise<void> {
             .select('id')
             .eq('story_group_id', currentStoryGroupId)
             .eq('episode_number', session.currentEpisodeNumber)
+            .eq('status', 'live')
             .is('deleted_at', null)
             .single();
           if (data) {
@@ -774,6 +776,7 @@ function setupEventListeners() {
           .select('id')
           .eq('story_group_id', currentStoryGroupId)
           .eq('episode_number', result.nextEpisode)
+          .eq('status', 'live')
           .is('deleted_at', null)
           .single();
           
