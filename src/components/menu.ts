@@ -22,7 +22,7 @@ export function renderMenu(): string {
 
       <!-- Brand -->
       <div class="fullmenu__brand" style="display: flex; align-items: center; gap: 12px;">
-        <img src="/logo.jpg" alt="DRiVE" style="width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--color-border); object-fit: contain; background: #ffffff; padding: 2px;">
+        <img src="/drive-logo.png" alt="DRiVE" style="width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--color-border); object-fit: contain; background: #ffffff; padding: 2px;">
         <span class="fullmenu__logo">SOL DRiVE</span>
       </div>
 

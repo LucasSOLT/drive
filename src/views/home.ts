@@ -141,7 +141,7 @@ export function render(): string {
           <div class="hero__spotlight" id="hero-spotlight-card">
             <div class="hero__spotlight-card" data-route="explore">
               <div class="hero__spotlight-media-wrap">
-                <img src="/logo.jpg" alt="DRiVE Spotlight" class="hero__spotlight-cover" style="width: 100%; height: 100%; object-fit: contain; background: #ffffff; padding: 16px;" />
+                <img src="/drive-logo.png" alt="DRiVE Spotlight" class="hero__spotlight-cover" style="width: 100%; height: 100%; object-fit: contain; background: #ffffff; padding: 16px;" />
                 <span class="hero__spotlight-pill">🔥 Trending Now</span>
               </div>
               <div class="hero__spotlight-body">

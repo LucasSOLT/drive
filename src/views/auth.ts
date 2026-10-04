@@ -15,7 +15,7 @@ export function render(): string {
         </button>
 
         <div class="auth-logo">
-          <img src="/logo.jpg" alt="DRiVE" style="width:64px; height:64px; border-radius:50%; object-fit:contain; background:#ffffff; padding:4px; border: 1.5px solid var(--color-border);">
+          <img src="/drive-logo.png" alt="DRiVE" style="width:64px; height:64px; border-radius:50%; object-fit:contain; background:#ffffff; padding:4px; border: 1.5px solid var(--color-border);">
           <span style="font-family:var(--font-heading); font-size:1.5rem; font-weight:700; margin-top:8px; letter-spacing:1px;">DRiVE</span>
         </div>
         
