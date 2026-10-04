@@ -11,7 +11,7 @@ import {
   getStoryLikes, hasUserLiked, toggleStoryLike,
   isBookmarked, toggleBookmark
 } from '../state.ts';
-import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAudio, seekAudio, formatTime, getCurrentAlignment, setWordHighlightCallback } from '../lib/tts.ts';
+import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAlignment, setWordHighlightCallback } from '../lib/tts.ts';
 import { KaraokeController, type WordTimestamp } from '../lib/karaoke.ts';
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
@@ -24,8 +24,6 @@ import { saveReadingProgress } from './series-info.ts';
 import {
   ensureAutoplayAudio,
   getAutoplayAudio,
-  prepareFade as prepareAudioFade,
-  fadeIn as fadeInAudio,
   resetLevel as resetAudioLevel,
   playAutoplayUrl,
   stopAutoplayUrl,
@@ -34,8 +32,7 @@ import {
 
 /** Per-episode auto-play toggle. OFF by default; reset every time an episode opens. */
 let episodeAutoplay = false;
-const AUTOPLAY_DELAY_MS = 1000; // wait after a page appears before audio starts
-const AUTOPLAY_FADE_MS = 900;   // quiet -> full volume
+const AUTOPLAY_DELAY_MS = 1000; // wait after a page appears before audio starts (audio then plays at full volume, no fade)
 
 // ─── SVG Icons ───
 const ICON = {
@@ -394,11 +391,6 @@ export function render(): string {
       <div class="reader__book-content">
         <div class="reader__page${page0Media ? ' reader__page--loading' : ''}" id="book-page" style="position:relative;">
           ${firstPageMedia}
-          ${hasAudio ? `
-            <button class="reader-audio-btn" id="reader-audio-toggle" type="button" title="Play audio">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            </button>
-          ` : ''}
         </div>
         <div class="reader__page-nav">
           <div class="reader__page-dots" id="book-dots">
@@ -504,7 +496,7 @@ export function render(): string {
 export async function init(): Promise<void> {
   let captionsOpen = true;
   let activeKaraokeCtrl: KaraokeController | null = null;
-  let updateScrubberDisplay: (current: number, duration: number) => void = () => {};
+
   // Auto-play state (the on/off flag itself is module-level `episodeAutoplay`)
   let autoplayTimer: ReturnType<typeof setTimeout> | null = null;
   let autoplayKick: (() => void) | null = null;   // scroll format: start with the panel on screen
@@ -603,6 +595,23 @@ export async function init(): Promise<void> {
       </div>
     `;
     container.insertAdjacentHTML('beforeend', navHtml);
+
+    // Reserve room for the fixed bar so page dots / captions never sit under it.
+    const epBar = document.getElementById('episode-nav-bar');
+    const readerRoot = container; // #reader-container
+    if (epBar && readerRoot) {
+      readerRoot.classList.add('reader--has-ep-bar');
+      const syncEpBarHeight = () => {
+        const h = Math.ceil(epBar.getBoundingClientRect().height) || 64;
+        readerRoot.style.setProperty('--ep-nav-h', `${h}px`);
+      };
+      syncEpBarHeight();
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(syncEpBarHeight);
+        ro.observe(epBar);
+        window.addEventListener('hashchange', () => ro.disconnect(), { once: true });
+      }
+    }
 
     const currentEpNum = story.episodeNumber || 1;
     const currentIdx = siblingEpisodes.findIndex(e => e.episodeNumber === currentEpNum);
@@ -880,9 +889,9 @@ export async function init(): Promise<void> {
         }
       } else if (e.code === 'Space') {
         e.preventDefault();
-        const bookAudioBtn = document.getElementById('reader-audio-toggle');
-        if (bookAudioBtn) {
-          bookAudioBtn.click();
+        // Space = play / pause the page audio (same as the Play button under the story text)
+        if (story.format === 'book' && pageHasAudio(currentPage)) {
+          playAudioForPage(currentPage);
         }
       }
     };
@@ -1032,7 +1041,7 @@ export async function init(): Promise<void> {
                 onReplay: () => {
                   currentPage = 0;
                   updatePage();
-                  if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
+                  renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
                 },
               });
             });
@@ -1089,91 +1098,10 @@ export async function init(): Promise<void> {
           if (story.storyGroupId) {
             saveReadingProgress(story.storyGroupId, story.id, story.episodeNumber || 1, currentPage);
           }
-          // Add audio play button if page has audio
+          // Pages with audio are played from the Play button under the story text (bottom right).
+          // (The green button over the video and the time bar were removed; tapping a word still seeks.)
           if (hasAudio) {
-            const audioBtn = document.createElement('button');
-            audioBtn.className = 'reader-audio-btn';
-            audioBtn.id = 'reader-audio-toggle';
-            audioBtn.title = isSpeaking() ? 'Pause audio' : 'Play audio';
-            audioBtn.innerHTML = isSpeaking()
-              ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
-              : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-            pageContainer.appendChild(audioBtn);
-
-            // Floating audio scrubber pill
-            const scrubberPill = document.createElement('div');
-            scrubberPill.className = 'reader-audio-scrubber-pill';
-            scrubberPill.innerHTML = `
-              <span class="reader-scrubber-time" id="reader-time-current">0:00</span>
-              <input type="range" class="audio-scrubber__slider" id="reader-audio-slider" min="0" max="100" value="0" step="0.1" aria-label="Audio progress">
-              <span class="reader-scrubber-time" id="reader-time-duration">--:--</span>
-            `;
-            pageContainer.appendChild(scrubberPill);
-
-            updateScrubberDisplay = (current: number, duration: number) => {
-              const slider = document.getElementById('reader-audio-slider') as HTMLInputElement | null;
-              const curEl = document.getElementById('reader-time-current');
-              const durEl = document.getElementById('reader-time-duration');
-              if (duration > 0 && !isNaN(duration)) {
-                const pct = ((current / duration) * 100).toFixed(1);
-                if (slider && document.activeElement !== slider) {
-                  slider.value = pct;
-                }
-                if (durEl) durEl.textContent = formatTime(duration);
-              }
-              if (curEl) curEl.textContent = formatTime(current);
-            };
-
-            // Pre-load audio duration for current page
-            const currentAudioSrc = story.pageAudio?.[currentPage];
-            if (currentAudioSrc) {
-              const pre = new Audio(currentAudioSrc);
-              pre.addEventListener('loadedmetadata', () => {
-                const durEl = document.getElementById('reader-time-duration');
-                if (durEl && pre.duration && !isNaN(pre.duration)) {
-                  durEl.textContent = formatTime(pre.duration);
-                }
-              });
-            }
-
-            // Scrubber range input seeking
-            const sliderEl = scrubberPill.querySelector('#reader-audio-slider') as HTMLInputElement | null;
-            sliderEl?.addEventListener('input', (e) => {
-              e.stopPropagation();
-              const audio = getCurrentAudio();
-              const dur = audio?.duration || 0;
-              const target = (parseFloat(sliderEl.value) / 100) * dur;
-              seekAudio(target);
-              const curEl = document.getElementById('reader-time-current');
-              if (curEl) curEl.textContent = formatTime(target);
-            });
-            sliderEl?.addEventListener('click', (e) => {
-              e.stopPropagation();
-            });
-
-            const onAudioFinished = () => {
-              audioBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-              audioBtn.title = 'Play audio';
-              const slider = document.getElementById('reader-audio-slider') as HTMLInputElement | null;
-              const curEl = document.getElementById('reader-time-current');
-              if (slider) slider.value = '0';
-              if (curEl) curEl.textContent = '0:00';
-              unduckBgm();
-
-              // Hands-free auto-advance
-              if (getSettings().autoAdvance && currentPage < story.panels.length - 1) {
-                setTimeout(() => {
-                  document.getElementById('book-next')?.click();
-                }, 650);
-              }
-            };
-
-            audioBtn.addEventListener('click', (e) => {
-              e.stopPropagation();
-              playAudioForPage(currentPage);
-            });
-
-            // Auto-play (per-episode toggle): waits ~1s, then plays from the start with a fade-in
+            // Auto-play (per-episode toggle): waits ~1s, then plays from the start at full volume
             if (episodeAutoplay) {
               scheduleAutoplay(currentPage);
             }
@@ -1211,7 +1139,7 @@ export async function init(): Promise<void> {
       unduckBgm();
       action();
       updatePage();
-      if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
+      renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
     };
 
     document.getElementById('book-prev')?.addEventListener('click', () => {
@@ -1234,7 +1162,7 @@ export async function init(): Promise<void> {
             onReplay: () => {
               currentPage = 0;
               updatePage();
-              if (captionsOpen) renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
+              renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
             },
           });
         } else if (isPostGateEpisode) {
@@ -1274,7 +1202,7 @@ export async function init(): Promise<void> {
 
         // Don't interfere with button taps or range inputs
         const target = e.target as HTMLElement;
-        if (target.closest('button, input, a, .reader-audio-btn, .reader-audio-scrubber-pill')) return;
+        if (target.closest('button, input, a, .reader-audio-btn')) return;
 
         const touch = e.touches[0];
         touchStartX = touch.clientX;
@@ -1389,8 +1317,8 @@ export async function init(): Promise<void> {
     }
 
     updatePage();
-    // Auto-render captions on initial load (CC is ON by default)
-    if (captionsOpen) {
+    // Auto-render captions on initial load (CC is ON by default). With CC off, the audio controls still show.
+    {
       const s = getStoryById(storyId);
       if (s) renderCaptionsOverlay(s, currentPage);
     }
@@ -1498,7 +1426,7 @@ export async function init(): Promise<void> {
           (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
         });
         duckBgm();
-        const ok = await playAutoplayUrl(url, true);
+        const ok = await playAutoplayUrl(url);
         if (!ok) {
           unduckBgm();
           showActionToast('Tap ▶ to start the audio');
@@ -1603,16 +1531,8 @@ export async function init(): Promise<void> {
     const ccBtn = document.getElementById('btn-cc');
     if (ccBtn) ccBtn.classList.toggle('active', captionsOpen);
 
-    // Toggle captions overlay
-    const existingOverlay = document.getElementById('reader-captions-overlay');
-    if (existingOverlay) {
-      existingOverlay.remove();
-      if (!captionsOpen) return;
-    }
-
-    if (captionsOpen) {
-      renderCaptionsOverlay(story, currentPage);
-    }
+    // Re-render: captions on = text + controls; captions off = just the audio controls (book pages with audio)
+    renderCaptionsOverlay(story, currentPage);
   });
 
   // ─── BGM mute/unmute toggle ───
@@ -1685,13 +1605,6 @@ export async function init(): Promise<void> {
   }
 
   function updateAllPlayButtons(playing: boolean) {
-    const audioBtn = document.getElementById('reader-audio-toggle');
-    if (audioBtn) {
-      audioBtn.innerHTML = playing 
-        ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
-        : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-      audioBtn.title = playing ? 'Pause audio' : 'Play audio';
-    }
     const textPlayIcon = document.getElementById('reader-text-play-icon');
     const textPlayLabel = document.getElementById('reader-text-play-label');
     if (textPlayIcon) {
@@ -1720,12 +1633,24 @@ export async function init(): Promise<void> {
       // Bail out if the toggle was turned off, the reader moved on, or something is already playing
       if (!episodeAutoplay || currentPage !== pageIdx) return;
       if (activeKaraokeCtrl && !activeKaraokeCtrl.paused) return;
-      if (!document.getElementById('reader-audio-toggle')) return; // page has no audio
-      playAudioForPage(pageIdx, undefined, { fade: true });
+      if (!pageHasAudio(pageIdx)) return; // page has no audio
+      playAudioForPage(pageIdx, undefined, { autoplay: true });
     }, AUTOPLAY_DELAY_MS);
   }
 
-  function playAudioForPage(pageIdx: number, startWordIdx?: number, opts?: { fade?: boolean }) {
+  /** Does this book page have playable story audio? */
+  function pageHasAudio(pageIdx: number): boolean {
+    const s = story || getStoryById(storyId);
+    if (!s || typeof pageIdx !== 'number' || pageIdx < 0 || pageIdx >= (s.panels?.length || 0)) return false;
+    const src = s.pageAudioSource?.[pageIdx];
+    const mode = src || (s.audioMode === 'simple_upload' ? 'upload' : 'ai');
+    return mode !== 'silent' && mode !== 'native' && (
+      !!s.pageAudio?.[pageIdx] ||
+      !!(s.pageDialogue?.[pageIdx]?.some((l: any) => !!l.audioUrl))
+    );
+  }
+
+  function playAudioForPage(pageIdx: number, startWordIdx?: number, opts?: { autoplay?: boolean }) {
     const s = story || getStoryById(storyId);
     if (!s) return;
     const pageAudioUrl = s.pageAudio?.[pageIdx];
@@ -1781,11 +1706,9 @@ export async function init(): Promise<void> {
         }));
       }
 
-      // When auto-play is armed, reuse the pre-unlocked element (iOS needs this) and set the start level
+      // When auto-play is armed, reuse the pre-unlocked element (iOS needs this). Always full volume.
       const sharedAudioEl = getAutoplayAudio();
-      if (sharedAudioEl) {
-        if (opts?.fade && typeof startWordIdx !== 'number') prepareAudioFade(); else resetAudioLevel();
-      }
+      if (sharedAudioEl) resetAudioLevel();
 
       activeKaraokeCtrl = new KaraokeController(audioUrlToPlay, wordMap, {
         onWordChange: (wordIdx) => {
@@ -1812,21 +1735,15 @@ export async function init(): Promise<void> {
             }, 650);
           }
         },
-        onTimeUpdate: (cur, dur) => {
-          updateScrubberDisplay(cur, dur);
-        }
       }, sharedAudioEl);
 
       if (typeof startWordIdx === 'number') {
         activeKaraokeCtrl.seekToWord(startWordIdx);
-      } else if (sharedAudioEl && opts?.fade) {
-        // Auto-play: start quiet, then ramp up to full volume
+      } else if (sharedAudioEl && opts?.autoplay) {
+        // Auto-play: starts straight away at full volume (no fade)
         const ctrl = activeKaraokeCtrl;
         ctrl.tryPlay().then(ok => {
-          if (ok) {
-            fadeInAudio(AUTOPLAY_FADE_MS);
-          } else {
-            resetAudioLevel();
+          if (!ok) {
             if (activeKaraokeCtrl === ctrl) {
               updateAllPlayButtons(false);
               unduckBgm();
@@ -1858,10 +1775,13 @@ export async function init(): Promise<void> {
   function renderCaptionsOverlay(story: any, pageIdx: number) {
     const existing = document.getElementById('reader-captions-overlay');
     if (existing) existing.remove();
-    if (!captionsOpen) return;
+    // The Play / Restart buttons live in this panel (the button over the video was removed), so a book
+    // page with audio still gets the controls when captions are off or the page has no text.
+    const controlsOnlyAllowed = story.format === 'book' && pageHasAudio(pageIdx);
+    if (!captionsOpen && !controlsOnlyAllowed) return;
 
-    const dialogueLines = story.pageDialogue?.[pageIdx] || [];
-    const scriptText = story.pageScripts?.[pageIdx] || '';
+    const dialogueLines = captionsOpen ? (story.pageDialogue?.[pageIdx] || []) : [];
+    const scriptText = captionsOpen ? (story.pageScripts?.[pageIdx] || '') : '';
     const narratorColor = story.narratorHighlightColor || '#7C6FFA';
 
     let content = '';
@@ -1906,15 +1826,17 @@ export async function init(): Promise<void> {
       `;
     }
 
-    if (!content) return;
+    if (!content && !controlsOnlyAllowed) return;
+    const controlsOnly = !content;
 
     const overlay = document.createElement('div');
     overlay.id = 'reader-captions-overlay';
+    if (controlsOnly) overlay.classList.add('reader-captions-overlay--controls-only');
     overlay.innerHTML = `
       <div class="reader-text-controls">
         <div class="reader-text-controls__tag">
           <span class="reader-text-dot"></span>
-          <span class="reader-text-tag-label">Story Text</span>
+          <span class="reader-text-tag-label">${controlsOnly ? 'Story Audio' : 'Story Text'}</span>
         </div>
         <div class="reader-text-controls__actions">
           <button type="button" class="reader-text-ctrl-btn" id="reader-text-restart" title="Restart page audio">
@@ -1927,9 +1849,9 @@ export async function init(): Promise<void> {
           </button>
         </div>
       </div>
-      <div class="reader-dialogue-body" id="reader-dialogue-body">
+      ${controlsOnly ? '' : `<div class="reader-dialogue-body" id="reader-dialogue-body">
         ${content}
-      </div>
+      </div>`}
     `;
 
     // Insert below page media inside .reader__book-content

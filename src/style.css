@@ -11484,7 +11484,8 @@ html.dark-mode .ss-narrator-tag {
 }
 [data-theme="dark"] .reader__dot,
 .reader .reader__dot {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 [data-theme="dark"] .reader__dot.active,
 .reader .reader__dot.active {
@@ -14413,38 +14414,6 @@ body.content-management-mode .story-card:hover {
   font-weight: 500;
 }
 
-/* Reader floating scrubber pill */
-.reader-audio-scrubber-pill {
-  position: absolute;
-  bottom: 12px;
-  left: 56px;
-  right: 16px;
-  max-width: 280px;
-  height: 36px;
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.82);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  z-index: 5;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-
-.reader-audio-scrubber-pill .audio-scrubber__slider {
-  flex: 1;
-}
-
-.reader-audio-scrubber-pill .reader-scrubber-time {
-  font-size: 0.68rem;
-  font-family: var(--font-mono, monospace);
-  font-weight: 600;
-  color: #f1f5f9;
-  white-space: nowrap;
-}
-
 /* Book Viewer scrubber bar */
 .bv-audio-scrubber {
   display: flex;
@@ -16903,4 +16872,25 @@ body.content-management-mode .story-card:hover {
 }
 @media (min-width: 900px) {
   .si-hero__video { object-position: center 20%; }
+}
+
+/* ─── Reader: keep page dots / captions clear of the fixed episode nav bar ─── */
+.reader--has-ep-bar .reader__book-content {
+  padding-bottom: calc(var(--ep-nav-h, 64px) + 8px);
+  --reader-media-max-h: min(62dvh, calc(100dvh - 250px - var(--ep-nav-h, 64px)));
+}
+.reader--has-ep-bar .reader__scroll-content {
+  padding-bottom: calc(var(--ep-nav-h, 64px) + 16px);
+}
+
+/* Captions off (or page has no text) but audio exists: just the Play / Restart strip */
+#reader-captions-overlay.reader-captions-overlay--controls-only {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: none;
+  padding-bottom: 2px;
+}
+#reader-captions-overlay.reader-captions-overlay--controls-only .reader-text-controls {
+  border-bottom: none;
+  margin-bottom: 0;
 }

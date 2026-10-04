@@ -1,7 +1,7 @@
 import { getRouteParam, navigate } from '../router.ts';
 import { getUserStories } from '../state.ts';
 import { getStoryById } from '../data/stories.ts';
-import { speakText, stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
+import { speakText, stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence } from '../lib/tts.ts';
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import type { DialogueLine } from '../types.ts';
@@ -140,14 +140,6 @@ function renderPageContent(page: StoryPage, pageIndex: number, totalPages: numbe
         </button>
       </div>
     </nav>
-
-    ${hasAudio ? `
-      <div class="bv-audio-scrubber" id="bv-scrubber-bar">
-        <span class="bv-audio-scrubber__time" id="bv-time-current">0:00</span>
-        <input type="range" class="audio-scrubber__slider" id="bv-audio-slider" min="0" max="100" value="0" step="0.1" aria-label="Audio progress">
-        <span class="bv-audio-scrubber__time" id="bv-time-duration">--:--</span>
-      </div>
-    ` : ''}
 
     ${textCollapsed ? '' : `
       <div class="book-viewer__text-area" id="bv-text">
@@ -290,28 +282,11 @@ export function init(): void {
   window.addEventListener('hashchange', stopBgm, { once: true });
   window.addEventListener('popstate', stopBgm, { once: true });
 
-  // Scrubber display updater
-  const updateScrubberDisplay = (current: number, duration: number) => {
-    const slider = document.getElementById('bv-audio-slider') as HTMLInputElement | null;
-    const curEl = document.getElementById('bv-time-current');
-    const durEl = document.getElementById('bv-time-duration');
-    if (slider && duration > 0) {
-      slider.value = ((current / duration) * 100).toFixed(1);
-    }
-    if (curEl) curEl.textContent = formatTime(current);
-    if (durEl && duration > 0) durEl.textContent = formatTime(duration);
-  };
-
   // Handler for when page narration finishes (used by both autoplay & manual play)
   const onAudioFinished = () => {
     speaking = false;
     const audioBtn = document.getElementById('bv-audio-toggle');
     if (audioBtn) audioBtn.classList.remove('book-viewer__circle-btn--speaking');
-    const slider = document.getElementById('bv-audio-slider') as HTMLInputElement | null;
-    const curEl = document.getElementById('bv-time-current');
-    if (slider) slider.value = '0';
-    if (curEl) curEl.textContent = '0:00';
-
     // If hands-free auto-advance is enabled in settings, auto-turn to next page
     if (getSettings().autoAdvance && currentPage < totalPages - 1) {
       setTimeout(() => {
@@ -349,10 +324,10 @@ export function init(): void {
         if (hasDialogueAudio) {
           playAudioSequence(audioUrls, undefined, onAudioFinished);
         } else {
-          playAudioUrl(pageAudio[currentPage], onAudioFinished, updateScrubberDisplay);
+          playAudioUrl(pageAudio[currentPage], onAudioFinished);
         }
       } else {
-        playAudioUrl(pageAudio[currentPage], onAudioFinished, updateScrubberDisplay);
+        playAudioUrl(pageAudio[currentPage], onAudioFinished);
       }
       // Update UI to show speaking state
       const audioBtn = document.getElementById('bv-audio-toggle');
@@ -364,29 +339,6 @@ export function init(): void {
 
   // ─── Wire up interactive controls on the current page ───
   function wirePageControls() {
-    // Pre-load audio duration for current page
-    const currentAudioUrl = pageAudio[currentPage];
-    if (currentAudioUrl) {
-      const pre = new Audio(currentAudioUrl);
-      pre.addEventListener('loadedmetadata', () => {
-        const durEl = document.getElementById('bv-time-duration');
-        if (durEl && pre.duration && !isNaN(pre.duration)) {
-          durEl.textContent = formatTime(pre.duration);
-        }
-      });
-    }
-
-    // Scrubber range input seeking
-    const audioSlider = document.getElementById('bv-audio-slider') as HTMLInputElement | null;
-    audioSlider?.addEventListener('input', () => {
-      const audio = getCurrentAudio();
-      const dur = audio?.duration || 0;
-      const target = (parseFloat(audioSlider.value) / 100) * dur;
-      seekAudio(target);
-      const curEl = document.getElementById('bv-time-current');
-      if (curEl) curEl.textContent = formatTime(target);
-    });
-
     // Prev
     document.getElementById('bv-prev')?.addEventListener('click', () => {
       if (currentPage > 0) {
@@ -424,10 +376,10 @@ export function init(): void {
             if (hasDialogueAudio) {
               playAudioSequence(audioUrls, undefined, onAudioFinished);
             } else {
-              playAudioUrl(audioUrl, onAudioFinished, updateScrubberDisplay);
+              playAudioUrl(audioUrl, onAudioFinished);
             }
           } else {
-            playAudioUrl(audioUrl, onAudioFinished, updateScrubberDisplay);
+            playAudioUrl(audioUrl, onAudioFinished);
           }
           updatePage();
         }
