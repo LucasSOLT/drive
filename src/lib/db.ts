@@ -330,8 +330,6 @@ export async function saveUserStory(story: UserStory): Promise<void> {
       page_audio: story.page_audio || {},
       page_audio_source: story.pageAudioSource || {},
       audio_mode: story.audioMode || 'make_audio',
-      bgm_url: story.bgmUrl || null,
-      bgm_volume: story.bgmVolume ?? 0.25,
       page_focal_positions: story.pageFocalPositions || {},
       theme_color: story.themeColor || '#141424',
       series_cover_image: story.seriesCoverImage || null,
@@ -959,8 +957,6 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     episodeNumber: s.episode_number || 1,
     audioMode: (s.audio_mode || 'make_audio') as any,
     narratorVoiceId: s.narrator_voice_id || undefined,
-    bgmUrl: s.bgm_url || undefined,
-    bgmVolume: typeof s.bgm_volume === 'number' ? s.bgm_volume : 0.25,
     pageFocalPositions: s.page_focal_positions || undefined,
     pageAudioSource: s.page_audio_source || {},
     soloEpisodeCount: s.solo_episode_count || 1,
@@ -1114,8 +1110,6 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     story_group_id: storyGroupId,
     episode_number: story.episodeNumber || 1,
     audio_mode: story.audioMode || 'make_audio',
-    bgm_url: story.bgmUrl || null,
-    bgm_volume: story.bgmVolume ?? 0.25,
     page_focal_positions: story.pageFocalPositions || {},
     solo_episode_count: story.soloEpisodeCount || 1,
     sparc_prompt: story.sparcPrompt || null,
@@ -1455,8 +1449,6 @@ export async function updateSharedStorySettings(
   if (settings.coverVideo !== undefined) sharedPayload.cover_video = settings.coverVideo;
   if (settings.characters !== undefined) sharedPayload.characters = settings.characters;
   if (settings.narratorVoiceId !== undefined) sharedPayload.narrator_voice_id = settings.narratorVoiceId;
-  if (settings.bgmUrl !== undefined) sharedPayload.bgm_url = settings.bgmUrl;
-  if (settings.bgmVolume !== undefined) sharedPayload.bgm_volume = settings.bgmVolume;
   if (settings.audioMode !== undefined) sharedPayload.audio_mode = settings.audioMode;
   if (settings.pageAudioSource !== undefined) sharedPayload.page_audio_source = settings.pageAudioSource;
   if (settings.soloEpisodeCount !== undefined) sharedPayload.solo_episode_count = settings.soloEpisodeCount;
@@ -2165,8 +2157,6 @@ export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
           pageAudio: uData.page_audio || {},
           characters: uData.characters || [],
           pageDialogue: uData.page_dialogue || {},
-          bgmUrl: uData.bgm_url || undefined,
-          bgmVolume: typeof uData.bgm_volume === 'number' ? uData.bgm_volume : 0.25,
           pageFocalPositions: uData.page_focal_positions || undefined,
           pageAudioSource: uData.page_audio_source || {},
           audioMode: uData.audio_mode || 'make_audio',
@@ -2218,8 +2208,6 @@ export async function fetchStoryByIdFromDb(id: string): Promise<Story | null> {
       pageAudio: cachedUserStory.page_audio || {},
       characters: cachedUserStory.characters || [],
       pageDialogue: cachedUserStory.page_dialogue || {},
-      bgmUrl: cachedUserStory.bgmUrl || undefined,
-      bgmVolume: typeof cachedUserStory.bgmVolume === 'number' ? cachedUserStory.bgmVolume : 0.25,
       pageFocalPositions: cachedUserStory.pageFocalPositions || undefined,
     };
   }

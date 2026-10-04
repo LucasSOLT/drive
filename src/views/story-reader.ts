@@ -18,7 +18,6 @@ import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { getSoloEpisodeCount, getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
 import { getSquadSession } from '../lib/db.ts';
 import { type SquadSession } from '../types.ts';
-import { BgmDuckingController } from '../lib/bgm-ducking.ts';
 import { preloadAdjacentPages, getPreloadedElement, isPreloaded } from '../lib/media-preloader.ts';
 import { saveReadingProgress } from './series-info.ts';
 import {
@@ -451,17 +450,6 @@ export function render(): string {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"></circle><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"></polygon></svg>
             </span>
           </button>
-          ${(story.bgmUrl || (story as any).bgm_url) ? `
-            <button class="reader__action-btn active" id="btn-bgm" aria-label="Toggle Background Music" title="Background Music: Playing">
-              <span class="reader__action-icon" id="bgm-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M9 18V5l12-2v13"></path>
-                  <circle cx="6" cy="18" r="3"></circle>
-                  <circle cx="18" cy="16" r="3"></circle>
-                </svg>
-              </span>
-            </button>
-          ` : ''}
         </div>
       </header>
 
@@ -673,7 +661,6 @@ export async function init(): Promise<void> {
 
   // Skip the solo checkpoint card: go to the next episode of this story, or leave the reader after the last one
   const previewSkip = () => {
-    stopBgm();
     stopSpeaking();
     if (adminSkipActive) {
       adminSkipToNextEpisode(storyGroupId, episodeNumber);
@@ -688,7 +675,6 @@ export async function init(): Promise<void> {
   // Admin-only "Admin skip" on the real barriers (same as a user sees, plus this button)
   const wireAdminSkip = (buttonId: string) => {
     document.getElementById(buttonId)?.addEventListener('click', () => {
-      stopBgm();
       stopSpeaking();
       adminSkipToNextEpisode(storyGroupId, episodeNumber);
     });
@@ -770,50 +756,6 @@ export async function init(): Promise<void> {
   const progressBar = document.getElementById('reader-progress');
   const header = document.getElementById('reader-header');
 
-  // ─── Background Music (BGM) with Smart Ducking ───
-  const bgmUrl = story.bgmUrl || (story as any).bgm_url;
-  const bgmVolume = typeof story.bgmVolume === 'number' ? story.bgmVolume : (typeof (story as any).bgm_volume === 'number' ? (story as any).bgm_volume : 0.25);
-  let bgmAudio: HTMLAudioElement | null = null;
-  let bgmDucker: BgmDuckingController | null = null;
-  if (bgmUrl) {
-    bgmAudio = new Audio();
-    bgmAudio.crossOrigin = 'anonymous';
-    bgmAudio.src = bgmUrl;
-    bgmAudio.loop = true;
-    // BgmDuckingController takes over volume control via Web Audio API GainNode
-    bgmDucker = new BgmDuckingController(bgmAudio, bgmVolume, 0.3, 0.4);
-    const playBgmWithGestureFallback = () => {
-      if (bgmAudio && bgmAudio.paused) {
-        bgmAudio.play().catch(() => {
-          const onUserGesture = () => {
-            if (bgmAudio && bgmAudio.paused) bgmAudio.play().catch(() => {});
-            document.removeEventListener('click', onUserGesture);
-            document.removeEventListener('keydown', onUserGesture);
-            document.removeEventListener('touchstart', onUserGesture);
-          };
-          document.addEventListener('click', onUserGesture, { once: true });
-          document.addEventListener('keydown', onUserGesture, { once: true });
-          document.addEventListener('touchstart', onUserGesture, { once: true });
-        });
-      }
-    };
-    playBgmWithGestureFallback();
-  }
-
-  const stopBgm = () => {
-    if (bgmDucker) {
-      bgmDucker.destroy();
-      bgmDucker = null;
-    }
-    if (bgmAudio) {
-      bgmAudio.pause();
-      bgmAudio = null;
-    }
-  };
-
-  // Duck/unduck helpers for voice playback integration
-  const duckBgm = () => { bgmDucker?.duck(); };
-  const unduckBgm = () => { bgmDucker?.unduck(); };
   // Ensure video playback (always muted — audio comes from upload/AI only)
   const initialBookVideo = document.getElementById('book-video') as HTMLVideoElement | null;
   if (initialBookVideo) {
@@ -848,7 +790,6 @@ export async function init(): Promise<void> {
 
   // ─── Back button ───
   document.getElementById('reader-back')?.addEventListener('click', () => {
-    stopBgm();
     stopSpeaking();
     // Return to the screen the user entered the story from (Series Info, Library, Dashboard...),
     // never to another episode of the same story.
@@ -898,7 +839,6 @@ export async function init(): Promise<void> {
     window.addEventListener('keydown', handleKeyNav);
 
   const cleanupReader = () => {
-    stopBgm();
     cancelAutoplay();
     autoplayCancel?.();
     if (activeKaraokeCtrl) { activeKaraokeCtrl.destroy(); activeKaraokeCtrl = null; }
@@ -1050,7 +990,6 @@ export async function init(): Promise<void> {
             pageContainer.innerHTML = renderSparcTransitionCard('book');
             wireAdminSkip('btn-book-sparc-transition-admin');
             document.getElementById('btn-book-sparc-transition')?.addEventListener('click', () => {
-              stopBgm();
               stopSpeaking();
               navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
             });
@@ -1136,7 +1075,6 @@ export async function init(): Promise<void> {
         activeKaraokeCtrl = null;
       }
       stopSpeaking();
-      unduckBgm();
       action();
       updatePage();
       renderCaptionsOverlay(getStoryById(storyId)!, currentPage);
@@ -1166,7 +1104,6 @@ export async function init(): Promise<void> {
             },
           });
         } else if (isPostGateEpisode) {
-          stopBgm();
           navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
         }
       }
@@ -1389,7 +1326,6 @@ export async function init(): Promise<void> {
         if (somethingPlaying && currentPlayingPanel === idx) {
           stopSpeaking();
           stopAutoplayUrl();
-          unduckBgm();
           currentPlayingPanel = -1;
           (btn as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
         } else {
@@ -1401,7 +1337,6 @@ export async function init(): Promise<void> {
           });
           const audioUrl = story.pageAudio![idx];
           if (audioUrl) {
-            duckBgm();
             playAudioUrl(audioUrl);
             currentPlayingPanel = idx;
             (btn as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
@@ -1425,10 +1360,8 @@ export async function init(): Promise<void> {
         document.querySelectorAll('[data-audio-panel]').forEach(b => {
           (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
         });
-        duckBgm();
         const ok = await playAutoplayUrl(url);
         if (!ok) {
-          unduckBgm();
           showActionToast('Tap ▶ to start the audio');
           return;
         }
@@ -1492,7 +1425,6 @@ export async function init(): Promise<void> {
         scrollEndCard.innerHTML = renderSparcTransitionCard('scroll');
         wireAdminSkip('btn-waterfall-sparc-transition-admin');
         document.getElementById('btn-waterfall-sparc-transition')?.addEventListener('click', () => {
-          stopBgm();
           stopSpeaking();
           navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
         });
@@ -1533,45 +1465,6 @@ export async function init(): Promise<void> {
 
     // Re-render: captions on = text + controls; captions off = just the audio controls (book pages with audio)
     renderCaptionsOverlay(story, currentPage);
-  });
-
-  // ─── BGM mute/unmute toggle ───
-  const bgmBtn = document.getElementById('btn-bgm');
-  const bgmIcon = document.getElementById('bgm-icon');
-  bgmBtn?.addEventListener('click', () => {
-    if (!bgmDucker && !bgmAudio) return;
-    const isNowMuted = bgmDucker ? !bgmDucker.isMuted : !(bgmAudio?.muted);
-    if (bgmDucker) {
-      if (isNowMuted) {
-        bgmDucker.mute();
-      } else {
-        bgmDucker.unmute();
-      }
-    } else if (bgmAudio) {
-      bgmAudio.muted = isNowMuted;
-    }
-
-    if (bgmBtn) {
-      bgmBtn.classList.toggle('active', !isNowMuted);
-      bgmBtn.title = isNowMuted ? 'Background Music: Muted' : 'Background Music: Playing';
-    }
-    if (bgmIcon) {
-      bgmIcon.innerHTML = isNowMuted ? `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.6;">
-          <path d="M9 18V5l12-2v13"></path>
-          <circle cx="6" cy="18" r="3"></circle>
-          <circle cx="18" cy="16" r="3"></circle>
-          <line x1="1" y1="1" x2="23" y2="23" stroke="#ef4444" stroke-width="2.5"></line>
-        </svg>
-      ` : `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 18V5l12-2v13"></path>
-          <circle cx="6" cy="18" r="3"></circle>
-          <circle cx="18" cy="16" r="3"></circle>
-        </svg>
-      `;
-    }
-    showActionToast(isNowMuted ? 'Background Music Muted' : 'Background Music Playing');
   });
 
   // ─── Auto-play audio toggle (per episode, OFF by default) ───
@@ -1666,11 +1559,9 @@ export async function init(): Promise<void> {
       }
       if (activeKaraokeCtrl.paused) {
         activeKaraokeCtrl.resume();
-        duckBgm();
         updateAllPlayButtons(true);
       } else {
         activeKaraokeCtrl.pause();
-        unduckBgm();
         updateAllPlayButtons(false);
       }
       return;
@@ -1685,7 +1576,6 @@ export async function init(): Promise<void> {
 
     if (audioUrlToPlay) {
       stopSpeaking();
-      duckBgm();
 
       // Build word map. Word numbers follow the DISPLAYED text (what the cc-word spans are numbered by).
       const displayWordCount = dialogueLines.length > 0
@@ -1741,7 +1631,6 @@ export async function init(): Promise<void> {
         },
         onFinish: () => {
           updateAllPlayButtons(false);
-          unduckBgm();
           if (getSettings().autoAdvance && currentPage < s.panels.length - 1) {
             setTimeout(() => {
               document.getElementById('book-next')?.click();
@@ -1759,7 +1648,6 @@ export async function init(): Promise<void> {
           if (!ok) {
             if (activeKaraokeCtrl === ctrl) {
               updateAllPlayButtons(false);
-              unduckBgm();
               showActionToast('Tap ▶ to start the audio');
             }
           }
@@ -1773,12 +1661,10 @@ export async function init(): Promise<void> {
       const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
       if (audioUrls.some((u: any) => !!u)) {
         stopSpeaking();
-        duckBgm();
         playAudioSequence(audioUrls, (idx) => {
           (window as any).__activeCaptionLineIdx = idx;
         }, () => {
           updateAllPlayButtons(false);
-          unduckBgm();
         });
         updateAllPlayButtons(true);
       }

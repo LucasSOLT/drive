@@ -111,8 +111,6 @@ async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-rev
       page_dialogue: story.pageDialogue,
       audioMode: story.audioMode,
       narratorVoiceId: story.narratorVoiceId,
-      bgmUrl: story.bgmUrl,
-      bgmVolume: story.bgmVolume,
       pageFocalPositions: story.pageFocalPositions,
       pageAudioSource: story.pageAudioSource,
       author_name: story.author,
@@ -142,8 +140,6 @@ async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-rev
       coverVideo: story.coverVideo,
       characters: story.characters,
       narratorVoiceId: story.narratorVoiceId,
-      bgmUrl: story.bgmUrl,
-      bgmVolume: story.bgmVolume,
       audioMode: story.audioMode,
       soloEpisodeCount: story.soloEpisodeCount,
       themeColor: story.themeColor,
@@ -236,8 +232,6 @@ let episodeParentTitle: string | null = null;    // Parent story title for conte
 let storyAudioMode: StoryAudioMode = 'make_audio';
 let storyNarratorVoiceId: string = '21m00Tcm4TlvDq8ikWAM'; // Rachel (default narrator)
 let storyNarratorHighlightColor: string = '#7C6FFA'; // Default narrator highlight accent
-let storyBgmUrl: string = '';
-let storyBgmVolume: number = 0.25;
 let updateView: () => void;
 // â”€â”€â”€ SVG Icons â”€â”€â”€
 const ICON = {
@@ -327,8 +321,6 @@ interface DraftEntry {
   coverThumbnail?: string | null;
   editStoryId?: string | null;
   storyCharacters?: StoryCharacter[];
-  bgmUrl?: string;
-  bgmVolume?: number;
   soloEpisodeCount?: 1 | 2 | 3;
   sparcPromptText?: string;
   sparcPromptMediaUrls?: string[];
@@ -370,8 +362,6 @@ function saveDraft() {
     coverThumbnail: _coverThumbnail,
     editStoryId,
     storyCharacters,
-    bgmUrl: storyBgmUrl,
-    bgmVolume: storyBgmVolume,
     soloEpisodeCount,
     sparcPromptText,
     sparcPromptMediaUrls,
@@ -463,8 +453,6 @@ function loadDraft(draft: DraftEntry) {
   _coverThumbnail = draft.coverThumbnail || null;
   editStoryId = draft.editStoryId || null;
   storyCharacters = draft.storyCharacters || [];
-  storyBgmUrl = draft.bgmUrl || '';
-  storyBgmVolume = typeof draft.bgmVolume === 'number' ? draft.bgmVolume : 0.25;
   soloEpisodeCount = draft.soloEpisodeCount || 1;
   sparcPromptText = draft.sparcPromptText || '';
   sparcPromptMediaUrls = draft.sparcPromptMediaUrls || [];
@@ -581,8 +569,6 @@ function buildStory(status: 'draft' | 'live'): Story {
     audioMode: storyAudioMode,
     narratorVoiceId: storyNarratorVoiceId,
     narratorHighlightColor: storyNarratorHighlightColor,
-    bgmUrl: storyBgmUrl || undefined,
-    bgmVolume: storyBgmVolume,
     pageFocalPositions: Object.keys(pageFocalPositions).length > 0 ? pageFocalPositions : undefined,
     pageAudioSource: Object.keys(pageAudioSource).length > 0 ? pageAudioSource : undefined,
     soloEpisodeCount,
@@ -989,45 +975,6 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
                   <span style="font-size:0.72rem; color:var(--color-text-muted);">Default: #7C6FFA</span>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <!-- Background Music (BGM) -->
-          <div class="ss-section" id="ss-bgm-section">
-            <div class="ss-section__label">🎵 Background Music (BGM)</div>
-            <p style="font-size:0.78rem; color:var(--color-text-muted); margin: 0 0 10px 0;">Loops softly across all pages underneath dialogue and narration.</p>
-            <div style="display:flex; flex-direction:column; gap:12px; background:var(--color-bg); padding:14px; border-radius:12px; border:1px solid var(--color-border);">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
-                  <span style="font-size:1.1rem;">${storyBgmUrl ? '🎶' : '🔇'}</span>
-                  <span id="ss-bgm-name" style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    ${storyBgmUrl ? 'Background Music Attached' : 'No music uploaded yet'}
-                  </span>
-                </div>
-                <div style="display:flex; gap:6px; flex-shrink:0;">
-                  <button id="ss-bgm-upload-btn" class="btn btn--sm btn--secondary" type="button">
-                    ${storyBgmUrl ? 'Replace' : 'Upload Audio'}
-                  </button>
-                  ${storyBgmUrl ? `
-                    <button id="ss-bgm-play-btn" class="btn btn--sm btn--ghost" type="button" title="Preview track">▶</button>
-                    <button id="ss-bgm-remove-btn" class="btn btn--sm btn--ghost" type="button" title="Remove track" style="color:#ef4444;">✕</button>
-                  ` : ''}
-                </div>
-                <input type="file" id="ss-bgm-file-input" accept="audio/*,video/*" hidden>
-              </div>
-              ${storyBgmUrl ? `
-                <div style="display:flex; align-items:center; gap:10px;">
-                  <span style="font-size:0.75rem; color:var(--color-text-secondary); width:50px;">Volume:</span>
-                  <input type="range" id="ss-bgm-vol-slider" min="5" max="80" value="${Math.round(storyBgmVolume * 100)}" style="flex:1; accent-color:#10B981;">
-                  <span id="ss-bgm-vol-val" style="font-size:0.75rem; font-weight:700; color:#10B981; width:34px; text-align:right;">${Math.round(storyBgmVolume * 100)}%</span>
-                </div>
-                <div style="display:flex; align-items:center; gap:6px; padding:6px 10px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:8px;">
-                  <span style="font-size:0.85rem;">🦆</span>
-                  <span style="font-size:0.72rem; color:var(--color-text-secondary); line-height:1.35;">
-                    <strong>Smart Audio Ducking Active:</strong> Music volume automatically lowers by 70% during voice & narration so dialogue is always crisp.
-                  </span>
-                </div>
-              ` : ''}
             </div>
           </div>
         </div>
@@ -1522,100 +1469,6 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       }
       saveDraft();
     });
-  });
-
-  // ── Background Music (BGM) Wiring ──
-  let bgmAudioPreview: HTMLAudioElement | null = null;
-  const stopBgmAudioPreview = () => {
-    if (bgmAudioPreview) {
-      bgmAudioPreview.pause();
-      bgmAudioPreview = null;
-    }
-    const playBtn = document.getElementById('ss-bgm-play-btn') as HTMLButtonElement | null;
-    if (playBtn) playBtn.textContent = '▶';
-  };
-
-  const bgmUploadBtn = document.getElementById('ss-bgm-upload-btn') as HTMLButtonElement | null;
-  const bgmFileInput = document.getElementById('ss-bgm-file-input') as HTMLInputElement | null;
-  const bgmPlayBtn = document.getElementById('ss-bgm-play-btn') as HTMLButtonElement | null;
-  const bgmRemoveBtn = document.getElementById('ss-bgm-remove-btn');
-  const bgmVolSlider = document.getElementById('ss-bgm-vol-slider') as HTMLInputElement | null;
-  const bgmVolVal = document.getElementById('ss-bgm-vol-val');
-
-  bgmUploadBtn?.addEventListener('click', () => bgmFileInput?.click());
-
-  bgmFileInput?.addEventListener('change', async () => {
-    const file = bgmFileInput.files?.[0];
-    if (!file) return;
-    const scrollY = window.scrollY;
-    const appContent = document.getElementById('app-content');
-    const appScrollY = appContent?.scrollTop || 0;
-    if (bgmUploadBtn) {
-      bgmUploadBtn.textContent = 'Uploading...';
-      bgmUploadBtn.disabled = true;
-    }
-    try {
-      const res = await uploadMedia(file, 'bgm');
-      storyBgmUrl = res.url;
-      getFormData(); // sync any other form fields before re-render
-      saveDraft();
-      openStorySettings({ preserveScroll: true });
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
-        if (appContent) appContent.scrollTop = appScrollY;
-      });
-    } catch (err: any) {
-      console.error('BGM upload failed:', err);
-      alert('BGM upload failed: ' + (err?.message || 'Unknown error'));
-      if (bgmUploadBtn) {
-        bgmUploadBtn.textContent = 'Upload BGM';
-        bgmUploadBtn.disabled = false;
-      }
-    }
-  });
-
-  bgmPlayBtn?.addEventListener('click', () => {
-    if (bgmAudioPreview && !bgmAudioPreview.paused) {
-      stopBgmAudioPreview();
-    } else {
-      if (!storyBgmUrl) return;
-      stopBgmAudioPreview();
-      bgmAudioPreview = new Audio(storyBgmUrl);
-      bgmAudioPreview.volume = storyBgmVolume;
-      bgmAudioPreview.loop = true;
-      bgmAudioPreview.play().catch(() => {});
-      if (bgmPlayBtn) bgmPlayBtn.textContent = '⏸';
-      bgmAudioPreview.onended = () => {
-        if (bgmPlayBtn) bgmPlayBtn.textContent = '▶';
-      };
-    }
-  });
-
-  bgmRemoveBtn?.addEventListener('click', () => {
-    const scrollY = window.scrollY;
-    const appContent = document.getElementById('app-content');
-    const appScrollY = appContent?.scrollTop || 0;
-    stopBgmAudioPreview();
-    storyBgmUrl = '';
-    getFormData();
-    saveDraft();
-    openStorySettings({ preserveScroll: true });
-    requestAnimationFrame(() => {
-      window.scrollTo({ top: scrollY, behavior: 'instant' });
-      if (appContent) appContent.scrollTop = appScrollY;
-    });
-  });
-
-  bgmVolSlider?.addEventListener('input', () => {
-    const val = parseInt(bgmVolSlider.value) / 100;
-    storyBgmVolume = val;
-    if (bgmVolVal) bgmVolVal.textContent = `${Math.round(val * 100)}%`;
-    if (bgmAudioPreview) bgmAudioPreview.volume = val;
-    saveDraft();
-  });
-
-  document.getElementById('ss-back')?.addEventListener('click', () => {
-    stopBgmAudioPreview();
   });
 
   // ── Auto-save on Form Changes ──
@@ -4475,9 +4328,6 @@ export function init(): void {
         // Load episode metadata from existing story
         episodeStoryGroupId = storyToEdit.storyGroupId || storyToEdit.id;
         episodeNumber = storyToEdit.episodeNumber || 1;
-        // Load BGM fields (Audit Fix B)
-        storyBgmUrl = storyToEdit.bgmUrl || '';
-        storyBgmVolume = typeof storyToEdit.bgmVolume === 'number' ? storyToEdit.bgmVolume : 0.25;
         // Load characters and audio mode
         storyCharacters = storyToEdit.characters || [];
         storyAudioMode = storyToEdit.audioMode || 'make_audio';
@@ -4547,14 +4397,12 @@ export function init(): void {
       if (voiceIdParam) storyNarratorVoiceId = decodeURIComponent(voiceIdParam[1]);
       if (soloEpParam) soloEpisodeCount = parseInt(soloEpParam[1], 10) as 1 | 2 | 3;
 
-      // Fetch characters and BGM from Episode 1 of this group
+      // Fetch characters from Episode 1 of this group
       try {
         const groupStories = await fetchOfficialStories();
         const ep1 = groupStories.find(s => (s.storyGroupId || s.id) === episodeStoryGroupId && (s.episodeNumber || 1) === 1);
         if (ep1) {
           if (ep1.characters && ep1.characters.length > 0) storyCharacters = [...ep1.characters];
-          if (ep1.bgmUrl) storyBgmUrl = ep1.bgmUrl;
-          if (typeof ep1.bgmVolume === 'number') storyBgmVolume = ep1.bgmVolume;
           // Inherit genre/rating/etc from episode 1 if not already set via URL params
           if (!genreParam && ep1.genre) storyGenre = ep1.genre;
           if (!ratingParam && ep1.contentRating) storyContentRating = ep1.contentRating;

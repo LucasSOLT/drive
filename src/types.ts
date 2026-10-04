@@ -51,8 +51,6 @@ export interface Story {
   audioMode?: StoryAudioMode;
   narratorVoiceId?: string;
   narratorHighlightColor?: string;
-  bgmUrl?: string;
-  bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
   pageAudioSource?: Record<number, StoryPageAudioSource>;  // index → audio source for video pages
   // ─── Squad Gate & SPARC Checkpoint ───
@@ -100,8 +98,6 @@ export interface UserStory {
   audioMode?: StoryAudioMode;
   narratorVoiceId?: string;
   narratorHighlightColor?: string;
-  bgmUrl?: string;
-  bgmVolume?: number;
   pageFocalPositions?: Record<number, string>;  // index → 'top' | 'center' | 'bottom'
   pageAudioSource?: Record<number, StoryPageAudioSource>;  // index → audio source for video pages
   seriesCoverImage?: string;
