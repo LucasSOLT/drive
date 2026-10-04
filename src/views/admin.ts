@@ -32,7 +32,9 @@ import {
   fetchUsernamesByIds,
   type AdminMetrics,
 } from '../lib/db.ts';
-import { runPreflightChecks } from '../lib/publishing.ts';
+import { runPreflightChecks, type PreflightCheck } from '../lib/publishing.ts';
+import { isEpisodeArchived, episodeNumberOf, laterLive, listEpisodeNames, orderRuleCheck } from '../lib/episode-publish.ts';
+import { isEpisodeLive } from '../lib/episode-visibility.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { navigate } from '../router.ts';
 import { markPreviewEntry } from '../lib/reader-mode.ts';
@@ -719,8 +721,36 @@ function attachExpandCollapseListeners(): void {
 
 let _adminDropdownListenerAttached = false;
 
-function showGoLiveConfirm(story: Story) {
-  const preflight = runPreflightChecks(story);
+/** All (non-deleted) episodes in the same series as `story`, from the admin list. */
+function groupEpisodesOf(story: Story): Story[] {
+  const gid = story.storyGroupId || story.id;
+  const group = currentOfficialStories.filter(s => (s.storyGroupId || s.id) === gid);
+  return group.some(s => s.id === story.id) ? group : [...group, story];
+}
+
+/** Reflect a publish action in the in-memory admin list right away (the tab re-fetches after). */
+function setLocalOfficialStatus(ids: string[], status: 'live' | 'draft'): void {
+  for (const s of currentOfficialStories) {
+    if (ids.includes(s.id)) {
+      s.officialStatus = status as any;
+      (s as any).status = status;
+    }
+  }
+}
+
+function showGoLiveConfirm(story: Story, opts: { extraChecks?: PreflightCheck[]; episodeLabel?: string } = {}) {
+  const base = runPreflightChecks(story);
+  const extra = opts.extraChecks || [];
+  const allChecks = [...extra, ...base.checks];
+  const preflight = {
+    checks: allChecks,
+    canSubmit: base.canSubmit && !extra.some(c => c.status === 'fail'),
+    failCount: allChecks.filter(c => c.status === 'fail').length,
+    passCount: allChecks.filter(c => c.status === 'pass').length,
+  };
+  // When only the order rule blocks (the episode itself is fine), editing this episode won't help.
+  const editCanFix = !base.canSubmit;
+  const displayTitle = `${story.title || 'Untitled'}${opts.episodeLabel ? ` · ${opts.episodeLabel}` : ''}`;
   const overlay = document.createElement('div');
   overlay.id = 'go-live-confirm-overlay';
   overlay.style.cssText = `
@@ -739,12 +769,14 @@ function showGoLiveConfirm(story: Story) {
       <div style="text-align: center; margin-bottom: 14px;">
         <div style="font-size: 2.5rem; margin-bottom: 8px;">${isBlocked ? '🛑' : '🚀'}</div>
         <h3 style="margin: 0 0 6px; font-family: var(--font-heading); font-size: 1.15rem; color: var(--color-text-primary);">
-          ${isBlocked ? 'Cannot Go Live: Requirements Incomplete' : `Go Live with "${escapeHtml(story.title)}"?`}
+          ${isBlocked ? 'Cannot Go Live: Requirements Incomplete' : `Go Live with "${escapeHtml(displayTitle)}"?`}
         </h3>
         <p style="font-size: 0.82rem; color: var(--color-text-muted); margin: 0; line-height: 1.45;">
           ${isBlocked 
-            ? `<strong>"${escapeHtml(story.title || 'Untitled')}"</strong> must pass all required quality checklist items before it can be published live.`
-            : 'This will publish the story live to Explore and Home feeds for anyone on DRiVE. Confirm below when you are ready.'}
+            ? `<strong>"${escapeHtml(displayTitle)}"</strong> must pass all required quality checklist items before it can be published live.`
+            : opts.episodeLabel
+              ? `This will publish only <strong>${escapeHtml(opts.episodeLabel)}</strong> live for anyone on DRiVE. Other episodes are not changed.`
+              : 'This will publish the story live to Explore and Home feeds for anyone on DRiVE. Confirm below when you are ready.'}
         </p>
       </div>
 
@@ -785,11 +817,11 @@ function showGoLiveConfirm(story: Story) {
         <button id="go-live-cancel" style="flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text-primary); cursor: pointer; font-size: 0.88rem; font-weight: 600;">
           ${isBlocked ? 'Close' : 'Cancel'}
         </button>
-        ${isBlocked ? `
+        ${isBlocked ? (editCanFix ? `
           <button id="go-live-edit-btn" style="flex: 1.4; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">
             ✏️ Edit Story to Fix
           </button>
-        ` : `
+        ` : '') : `
           <button id="go-live-confirm" style="flex: 1.4; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #10b981, #059669); color: white; cursor: pointer; font-size: 0.88rem; font-weight: 700;">
             Yes, Go Live
           </button>
@@ -813,6 +845,7 @@ function showGoLiveConfirm(story: Story) {
       if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Publishing...'; }
       try {
         await goOfficialStoryLive(story.id);
+        setLocalOfficialStatus([story.id], 'live');
         overlay.remove();
         loadAllMetrics();
         loadTabContent();
@@ -875,6 +908,14 @@ function attachOfficialCardListeners(): void {
         e.stopPropagation();
         document.querySelectorAll('.story-dropdown-menu').forEach(menu => menu.remove());
         const storyId = epMenuBtn.dataset.epMenuFor!;
+        const epStory = currentOfficialStories.find(s => s.id === storyId);
+        const epLive = !!epStory && isEpisodeLive(epStory);
+        const epArchived = !!epStory && isEpisodeArchived(epStory);
+        const epPublishItem = !epStory || epArchived
+          ? ''
+          : epLive
+            ? `<div class="menu-item" data-ep-take-offline="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">📴 Take Episode Offline</div>`
+            : `<div class="menu-item" data-ep-go-live="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">🚀 Go Live (This Episode)</div>`;
         const dropdown = document.createElement('div');
         dropdown.className = 'story-dropdown-menu';
         dropdown.style.cssText = `
@@ -886,6 +927,7 @@ function attachOfficialCardListeners(): void {
         dropdown.innerHTML = `
           <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Episode</div>
           <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview</div>
+          ${epPublishItem}
           <div class="menu-item" data-move-up="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">↑ Move Up</div>
           <div class="menu-item" data-move-down="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">↓ Move Down</div>
           <div style="border-top: 1px solid var(--color-border); margin: 4px 0;"></div>
@@ -1024,6 +1066,48 @@ function attachOfficialCardListeners(): void {
                 alert('Delete failed: ' + (err?.message || 'Unknown error'));
               }
               loadAllMetrics();
+            },
+          });
+        } else if (menuItem.dataset.epGoLive) {
+          const storyId = menuItem.dataset.epGoLive;
+          let story = currentOfficialStories.find(s => s.id === storyId);
+          if (!story) story = (await fetchStoryByIdFromDb(storyId)) as any;
+          if (story) {
+            const group = groupEpisodesOf(story);
+            showGoLiveConfirm(story, {
+              extraChecks: [orderRuleCheck(story, group)],
+              episodeLabel: `Episode ${episodeNumberOf(story, group)}`,
+            });
+          }
+        } else if (menuItem.dataset.epTakeOffline) {
+          const storyId = menuItem.dataset.epTakeOffline;
+          const story = currentOfficialStories.find(s => s.id === storyId);
+          if (!story) return;
+          const group = groupEpisodesOf(story);
+          const later = laterLive(story, group);
+          const epName = `Episode ${episodeNumberOf(story, group)}`;
+          const all = [story, ...later];
+          const laterNote = later.length
+            ? `<p style="line-height:1.6;margin-top:10px;"><strong>${listEpisodeNames(later, group)}</strong> ${later.length === 1 ? 'comes' : 'come'} after it and ${later.length === 1 ? 'is' : 'are'} live. ${later.length === 1 ? 'It' : 'They'} will be taken offline too, so readers never skip from one episode over a missing one.</p>`
+            : '';
+          showModal({
+            title: `📴 Take ${epName} Offline?`,
+            content: `<p style="line-height:1.6;">Readers won't be able to open <strong>${escapeHtml(story.title || 'this story')} · ${epName}</strong>. It becomes a draft and you can make it live again later.</p>${laterNote}`,
+            confirmText: all.length > 1 ? `Take ${all.length} Episodes Offline` : 'Take Offline',
+            cancelText: 'Cancel',
+            onConfirm: async () => {
+              try {
+                // Latest first, so there is never a moment with a gap in the live episodes.
+                for (const ep of [...all].reverse()) {
+                  await takeOfficialStoryOffline(ep.id);
+                }
+                setLocalOfficialStatus(all.map(e => e.id), 'draft');
+              } catch (err: any) {
+                console.error('Take offline failed:', err);
+                alert('Take offline failed: ' + (err?.message || 'Unknown error'));
+              }
+              loadAllMetrics();
+              loadTabContent();
             },
           });
         } else if (menuItem.dataset.takeOffline) {

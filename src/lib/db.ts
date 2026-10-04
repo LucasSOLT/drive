@@ -1396,6 +1396,8 @@ export async function goOfficialStoryLive(storyId: string, options?: { isFeature
     .eq('id', storyId);
 
   if (error) throw error;
+  _cachedOfficialStories = null;
+  try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
 }
 
 /** Take an official story OFFLINE (back to draft) */
@@ -1406,6 +1408,8 @@ export async function takeOfficialStoryOffline(storyId: string): Promise<void> {
     .eq('id', storyId);
 
   if (error) throw error;
+  _cachedOfficialStories = null;
+  try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
 }
 
 export async function archiveOfficialStory(storyId: string): Promise<void> {
