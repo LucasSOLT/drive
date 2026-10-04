@@ -149,3 +149,37 @@ export function seriesBadge<T extends PublishableEpisode>(group: T[]): { label: 
   if (liveCount === total) return { label: '🟢 ALL LIVE', live: true };
   return { label: `🟢 LIVE · ${liveCount}/${total} episodes`, live: true };
 }
+
+/** Result of asking to move an episode one step up/down inside its own series. */
+export type EpisodeMovePlan =
+  | { ok: true; a: { id: string; from: number; to: number }; b: { id: string; from: number; to: number } }
+  | { ok: false; reason: string };
+
+/**
+ * Move an episode one place earlier ('up') or later ('down') INSIDE ITS OWN SERIES by swapping episode numbers
+ * with its neighbour. Only offline episodes may move:
+ *  - a live episode's number is already in use by readers, squads and SPARC replies, so it is locked;
+ *  - an offline episode can't jump above a live one (that would change the live episode's number).
+ * Because only offline episodes ever swap, the "live episodes first, then offline" order can never break.
+ * Archived episodes are ignored (they are not part of the reading order).
+ */
+export function planEpisodeMove<T extends PublishableEpisode>(group: T[], id: string, dir: 'up' | 'down'): EpisodeMovePlan {
+  const active = sortEpisodes(group.filter(e => !isEpisodeArchived(e)));
+  const idx = active.findIndex(e => e.id === id);
+  if (idx < 0) return { ok: false, reason: 'This episode is archived, so it is not part of the episode order.' };
+  const ep = active[idx];
+  const other = active[dir === 'up' ? idx - 1 : idx + 1];
+  if (!other) return { ok: false, reason: dir === 'up' ? 'This is already the first episode.' : 'This is already the last episode.' };
+  const nA = episodeNumberOf(ep, group);
+  const nB = episodeNumberOf(other, group);
+  if (isEpisodeLive(ep)) {
+    return { ok: false, reason: `Episode ${nA} is live, so its position is locked (readers and squads rely on it). Take it offline first if you need to move it.` };
+  }
+  if (isEpisodeLive(other)) {
+    return { ok: false, reason: `Episode ${nB} is live, so this episode can't move above it. Live episodes always stay first.` };
+  }
+  if (nA === nB) {
+    return { ok: false, reason: 'Two episodes share the same episode number. Open each one in the editor and fix its number first.' };
+  }
+  return { ok: true, a: { id: ep.id, from: nA, to: nB }, b: { id: other.id, from: nB, to: nA } };
+}

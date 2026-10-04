@@ -1344,6 +1344,38 @@ export async function moveLocalAdminDraftToDeleted(draft: any): Promise<void> {
 }
 
 /** Reorder official stories by updating their sort_order values */
+/**
+ * Swap the episode numbers of two OFFLINE (non-live) episodes. Both updates are guarded with `status <> 'live'`
+ * in the database itself, so a live episode's number can never change even if the screen was out of date.
+ * Returns false (and puts the first number back) if either update did not apply.
+ */
+export async function swapOfficialEpisodeNumbers(
+  a: { id: string; from: number; to: number },
+  b: { id: string; from: number; to: number },
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  const apply = async (id: string, n: number) => {
+    const { data, error } = await supabase
+      .from('official_stories')
+      .update({ episode_number: n, updated_at: now })
+      .eq('id', id)
+      .neq('status', 'live')
+      .select('id');
+    if (error) throw error;
+    return (data || []).length === 1;
+  };
+  const okA = await apply(a.id, a.to);
+  if (!okA) return false;
+  let okB = false;
+  try { okB = await apply(b.id, b.to); } catch { okB = false; }
+  if (!okB) {
+    try { await apply(a.id, a.from); } catch { /* best effort */ }
+    return false;
+  }
+  _cachedOfficialStories = null;
+  try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
+  return true;
+}
 export async function reorderOfficialStories(orderedIds: string[]): Promise<void> {
   const updates = orderedIds.map((id, index) => ({
     id,

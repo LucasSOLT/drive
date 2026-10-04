@@ -6,7 +6,7 @@ import {
   fetchOfficialStories,
   getCachedOfficialStories,
   saveOfficialStory,
-  reorderOfficialStories,
+  swapOfficialEpisodeNumbers,
   approveStoryAdmin,
   denyStoryAdmin,
   revertStoryAdmin,
@@ -33,7 +33,7 @@ import {
   type AdminMetrics,
 } from '../lib/db.ts';
 import { runPreflightChecks, type PreflightCheck } from '../lib/publishing.ts';
-import { isEpisodeArchived, episodeNumberOf, laterLive, listEpisodeNames, orderRuleCheck, planSeriesGoLive, seriesBadge, sortEpisodes } from '../lib/episode-publish.ts';
+import { isEpisodeArchived, episodeNumberOf, laterLive, listEpisodeNames, orderRuleCheck, planSeriesGoLive, planEpisodeMove, seriesBadge, sortEpisodes } from '../lib/episode-publish.ts';
 import { isEpisodeLive } from '../lib/episode-visibility.ts';
 import { showModal, hideModal } from '../components/modal.ts';
 import { navigate } from '../router.ts';
@@ -1262,23 +1262,24 @@ function attachOfficialCardListeners(): void {
             story = (await fetchStoryByIdFromDb(storyId)) as any;
           }
           if (story) showSeriesGoLiveConfirm(groupEpisodesOf(story));
-        } else if (menuItem.dataset.moveUp) {
-          const id = menuItem.dataset.moveUp;
-          const idx = currentOfficialStories.findIndex(s => s.id === id);
-          if (idx > 0) {
-            const ids = currentOfficialStories.map(s => s.id);
-            [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
-            await reorderOfficialStories(ids);
-            loadTabContent();
-          }
-        } else if (menuItem.dataset.moveDown) {
-          const id = menuItem.dataset.moveDown;
-          const idx = currentOfficialStories.findIndex(s => s.id === id);
-          if (idx >= 0 && idx < currentOfficialStories.length - 1) {
-            const ids = currentOfficialStories.map(s => s.id);
-            [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
-            await reorderOfficialStories(ids);
-            loadTabContent();
+        } else if (menuItem.dataset.moveUp || menuItem.dataset.moveDown) {
+          // Moves the episode inside ITS OWN series only (never reshuffles other stories) and only for offline episodes
+          const id = (menuItem.dataset.moveUp || menuItem.dataset.moveDown)!;
+          const dir: 'up' | 'down' = menuItem.dataset.moveUp ? 'up' : 'down';
+          const story = currentOfficialStories.find(s => s.id === id);
+          if (story) {
+            const plan = planEpisodeMove(groupEpisodesOf(story), id, dir);
+            if (!plan.ok) {
+              alert(plan.reason);
+            } else {
+              try {
+                const done = await swapOfficialEpisodeNumbers(plan.a, plan.b);
+                if (!done) alert('Could not move the episode. Reload the page and try again.');
+              } catch (err: any) {
+                alert('Move failed: ' + (err?.message || 'Unknown error'));
+              }
+              loadTabContent();
+            }
           }
         }
       }
