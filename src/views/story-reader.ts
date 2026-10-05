@@ -1,4 +1,5 @@
 import { openSquadGateModal } from '../components/squad-gate-modal.ts';
+import { readAutoplayPref, writeAutoplayPref } from '../lib/autoplay-pref.ts';
 import { trackStoryReading, updateTrackedStoryStatus } from '../lib/reading-tracker.ts';
 import { getRouteParam, navigate } from '../router.ts';
 import { leaveReader } from '../lib/reader-origin.ts';
@@ -30,7 +31,7 @@ import {
 } from '../lib/audio-fade.ts';
 
 /** Per-episode auto-play toggle. OFF by default; reset every time an episode opens. */
-let episodeAutoplay = false;
+let episodeAutoplay = readAutoplayPref(); // remembered globally (see lib/autoplay-pref.ts); re-read on every reader render
 const AUTOPLAY_DELAY_MS = 1000; // wait after a page appears before audio starts (audio then plays at full volume, no fade)
 
 // ─── SVG Icons ───
@@ -339,8 +340,10 @@ export function render(): string {
   preloadAdjacentPages(story.panels || [], story.pageVideos, 0);
 
   // Auto-play audio is OFF by default every time an episode is opened
-  episodeAutoplay = false;
-  releaseAutoplayAudio();
+  // Auto-play is a global, remembered setting: if it is ON, keep the already-unlocked audio element
+  // (so the next episode can start without a new tap); if OFF, drop it.
+  episodeAutoplay = readAutoplayPref();
+  if (!episodeAutoplay) releaseAutoplayAudio();
 
   if (story.format === 'scroll') {
     contentHtml = `
@@ -445,7 +448,7 @@ export function render(): string {
           <button class="reader__action-btn active" id="btn-cc" aria-label="Captions">
             <span class="reader__action-icon reader__cc-icon">CC</span>
           </button>
-          <button class="reader__action-btn" id="btn-autoplay" aria-label="Auto-play audio" aria-pressed="false" title="Auto-play audio: Off">
+          <button class="reader__action-btn${episodeAutoplay ? ' active' : ''}" id="btn-autoplay" aria-label="Auto-play audio" aria-pressed="${episodeAutoplay}" title="Auto-play audio: ${episodeAutoplay ? 'On' : 'Off'}">
             <span class="reader__action-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"></circle><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"></polygon></svg>
             </span>
@@ -843,8 +846,11 @@ export async function init(): Promise<void> {
     autoplayCancel?.();
     if (activeKaraokeCtrl) { activeKaraokeCtrl.destroy(); activeKaraokeCtrl = null; }
     stopSpeaking();
-    episodeAutoplay = false;
-    releaseAutoplayAudio();
+    episodeAutoplay = false; // the saved preference is untouched; the next render re-reads it
+    // Keep the unlocked audio element when auto-play is remembered ON, so the next episode needn't be tapped again
+    if (readAutoplayPref()) stopAutoplayUrl(); else releaseAutoplayAudio();
+    document.removeEventListener('click', unlockAutoplayOnFirstTap, true);
+    document.removeEventListener('touchend', unlockAutoplayOnFirstTap, true);
     window.removeEventListener('keydown', handleKeyNav);
     window.removeEventListener('hashchange', cleanupReader);
     window.removeEventListener('popstate', cleanupReader);
@@ -1467,10 +1473,11 @@ export async function init(): Promise<void> {
     renderCaptionsOverlay(story, currentPage);
   });
 
-  // ─── Auto-play audio toggle (per episode, OFF by default) ───
+  // ─── Auto-play audio toggle (global, remembered on this device; OFF by default) ───
   const autoplayBtn = document.getElementById('btn-autoplay');
   autoplayBtn?.addEventListener('click', () => {
     episodeAutoplay = !episodeAutoplay;
+    writeAutoplayPref(episodeAutoplay); // remembered for every story / episode from now on
     autoplayBtn.classList.toggle('active', episodeAutoplay);
     autoplayBtn.setAttribute('aria-pressed', String(episodeAutoplay));
     autoplayBtn.title = episodeAutoplay ? 'Auto-play audio: On' : 'Auto-play audio: Off';
@@ -1491,6 +1498,25 @@ export async function init(): Promise<void> {
       showActionToast('Auto-play audio off');
     }
   });
+
+  // Auto-play remembered ON but this page load has had no tap yet (fresh launch): browsers only let
+  // audio start after a tap, so arm it on the reader's first tap and start the current page/panel.
+  function unlockAutoplayOnFirstTap() {
+    document.removeEventListener('click', unlockAutoplayOnFirstTap, true);
+    document.removeEventListener('touchend', unlockAutoplayOnFirstTap, true);
+    if (!episodeAutoplay || getAutoplayAudio()) return;
+    ensureAutoplayAudio();
+    if (story?.format === 'book') {
+      const stillPlaying = !!activeKaraokeCtrl && !activeKaraokeCtrl.paused;
+      if (!stillPlaying) scheduleAutoplay(currentPage);
+    } else {
+      autoplayKick?.();
+    }
+  }
+  if (episodeAutoplay && !getAutoplayAudio()) {
+    document.addEventListener('click', unlockAutoplayOnFirstTap, true);
+    document.addEventListener('touchend', unlockAutoplayOnFirstTap, true);
+  }
 
   function escapeHtml(str: string): string {
     if (!str) return '';
