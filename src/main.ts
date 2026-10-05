@@ -11,6 +11,7 @@ import { applyTheme, applyTextSize } from './lib/settings.ts';
 import { MONSTER_AVATARS } from './data/avatars.ts';
 import { getSelectedAvatar, isContentManagementMode, setContentManagementMode, initSlotOverrides } from './state.ts';
 import { initAuth, isAuthenticated, onAuthChange } from './lib/auth.ts';
+import { initPullToRefresh } from './lib/pwa-refresh.ts';
 import { loadUserData, migrateLocalData, clearCache, joinSquadByCode, fetchSquadByCode, getSquadMembers, hasAdminPrivileges } from './lib/db.ts';
 
 // Lazy import views
@@ -57,6 +58,7 @@ async function initApp() {
   // Apply theme immediately before async work
   applyTheme();
   applyTextSize();
+  initPullToRefresh();
 
   // Sync cloud slot overrides so all devices see the same homepage/feed layout
   initSlotOverrides().catch(() => {});
@@ -173,6 +175,15 @@ async function initApp() {
   initReaderOrigin();
   onRouteChange(renderView);
   
+  if (!sessionStorage.getItem('drive_app_started')) {
+    sessionStorage.setItem('drive_app_started', 'true');
+    const hash = window.location.hash;
+    // On fresh launch, force Home screen unless deep linking into a specific flow
+    if (!hash || hash === '#featured' || hash === '#explore' || hash === '#library' || hash === '#profile') {
+      window.location.hash = '#home';
+    }
+  }
+
   const initialRoute = getCurrentRoute() || 'home';
   renderView(initialRoute);
 

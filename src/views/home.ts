@@ -3,8 +3,31 @@ import { isContentManagementMode, getSlotOverride } from '../state.ts';
 import { openTileConfigModal } from '../components/tile-config-modal.ts';
 import { renderStoryCard, renderEmptySlot, initVideoCovers, initBookmarkButtons } from '../components/story-card.ts';
 import { stories, getFeaturedStories, getEditorPicks } from '../data/stories.ts';
-import { fetchFeaturedStories, fetchUnifiedExploreStories } from '../lib/db.ts';
+import { fetchFeaturedStories, fetchUnifiedExploreStories, getCachedOfficialStories } from '../lib/db.ts';
 import type { Story } from '../types.ts';
+
+function renderFeaturedLayout(card1: Story | null, card2: Story | null, card3: Story | null, card4: Story | null): string {
+  return `
+  <!-- Row 1: Big left, Small right -->
+  <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md); margin-bottom:var(--space-md);">
+    <div style="flex:3; position:relative;">
+      ${card1 ? renderStoryCard(card1, 'hero') : renderEmptySlot('home-featured', 0, 'hero')}
+    </div>
+    <div style="flex:2;">
+      ${card2 ? renderStoryCard(card2, 'full') : renderEmptySlot('home-featured', 1, 'full')}
+    </div>
+  </div>
+  <!-- Row 2: Small left, Big right (inverted!) -->
+  <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md);">
+    <div style="flex:2;">
+      ${card3 ? renderStoryCard(card3, 'full') : renderEmptySlot('home-featured', 2, 'full')}
+    </div>
+    <div style="flex:3; position:relative;">
+      ${card4 ? renderStoryCard(card4, 'hero') : renderEmptySlot('home-featured', 3, 'hero')}
+    </div>
+  </div>
+  `;
+}
 
 async function renderFeaturedRows(allCards: Story[]): Promise<string> {
   const getStoryForSlot = async (index: number): Promise<Story | null> => {
@@ -40,35 +63,46 @@ async function renderFeaturedRows(allCards: Story[]): Promise<string> {
     return candidate || null;
   };
 
-  const card1 = await getStoryForSlot(0);
-  const card2 = await getStoryForSlot(1);
-  const card3 = await getStoryForSlot(2);
-  const card4 = await getStoryForSlot(3);
+  const [card1, card2, card3, card4] = await Promise.all([
+    getStoryForSlot(0),
+    getStoryForSlot(1),
+    getStoryForSlot(2),
+    getStoryForSlot(3)
+  ]);
 
-  return `
-  <!-- Row 1: Big left, Small right -->
-  <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md); margin-bottom:var(--space-md);">
-    <div style="flex:3; position:relative;">
-      ${card1 ? renderStoryCard(card1, 'hero') : renderEmptySlot('home-featured', 0, 'hero')}
-    </div>
-    <div style="flex:2;">
-      ${card2 ? renderStoryCard(card2, 'full') : renderEmptySlot('home-featured', 1, 'full')}
-    </div>
-  </div>
-  <!-- Row 2: Small left, Big right (inverted!) -->
-  <div class="featured-row" style="display:flex; gap:var(--space-md); padding:0 var(--space-md);">
-    <div style="flex:2;">
-      ${card3 ? renderStoryCard(card3, 'full') : renderEmptySlot('home-featured', 2, 'full')}
-    </div>
-    <div style="flex:3; position:relative;">
-      ${card4 ? renderStoryCard(card4, 'hero') : renderEmptySlot('home-featured', 3, 'hero')}
-    </div>
-  </div>
-  `;
+  return renderFeaturedLayout(card1, card2, card3, card4);
+}
+
+function renderFeaturedRowsSync(allCards: Story[]): string {
+  const getStoryForSlot = (index: number): Story | null => {
+    const override = getSlotOverride('home-featured', index);
+    if (override === null) return null;
+    if (typeof override === 'string') {
+      let story = allCards.find(s => s.id === override);
+      if (story && !isContentManagementMode()) {
+        const isLive = !story.officialStatus || story.officialStatus === 'live' || (story as any).status === 'live';
+        if (!isLive) return null;
+      }
+      return story || null;
+    }
+    const candidate = allCards[index];
+    if (candidate && !isContentManagementMode()) {
+      const isLive = !candidate.officialStatus || candidate.officialStatus === 'live' || (candidate as any).status === 'live';
+      if (!isLive) return null;
+    }
+    return candidate || null;
+  };
+
+  return renderFeaturedLayout(
+    getStoryForSlot(0),
+    getStoryForSlot(1),
+    getStoryForSlot(2),
+    getStoryForSlot(3)
+  );
 }
 
 function renderBestsellingRow(allBestselling: Story[]): string {
-  const count = Math.max(allBestselling.length, isContentManagementMode() ? 5 : allBestselling.length);
+  const count = Math.max(allBestselling.length, isContentManagementMode() ? 5 : 4);
   const cards: string[] = [];
 
   for (let i = 0; i < count; i++) {
@@ -98,6 +132,17 @@ function renderBestsellingRow(allBestselling: Story[]): string {
 }
 
 export function render(): string {
+  const isLiveStory = (s: Story) => {
+    if (isContentManagementMode()) return true;
+    const status = (s as any).officialStatus || (s as any).status;
+    return !status || status === 'live';
+  };
+  const cachedStories = getCachedOfficialStories() || [];
+  const editorPicks = getEditorPicks().filter(isLiveStory);
+  const staticFeatured = getFeaturedStories().filter(isLiveStory);
+  const allCardsSync = [...new Map([...cachedStories, ...editorPicks, ...staticFeatured].map(s => [s.id, s])).values()].filter(isLiveStory);
+  const allBestsellingSync = [...new Map([...cachedStories].map(s => [s.id, s])).values()].filter(isLiveStory).sort((a, b) => b.readCount - a.readCount);
+
   return `
     <div class="view-home fade-in" id="home-container">
 
@@ -164,7 +209,7 @@ export function render(): string {
           <a href="#featured" class="section__see-all" data-link="featured">See all</a>
         </div>
         <div id="home-featured-grid">
-          <div style="display:flex;justify-content:center;padding:40px;color:var(--color-text-muted);">Loading featured stories...</div>
+          ${renderFeaturedRowsSync(allCardsSync)}
         </div>
       </section>
 
@@ -176,7 +221,7 @@ export function render(): string {
         </div>
         <div class="bestselling-carousel-wrapper" style="margin: 0 var(--space-md); overflow: hidden;">
           <div class="scroll-row no-scrollbar" id="home-bestselling-grid" style="padding: 0 0 var(--space-sm) 0; margin: 0;">
-            ${renderBestsellingRow([])}
+            ${renderBestsellingRow(allBestsellingSync)}
           </div>
         </div>
       </section>
