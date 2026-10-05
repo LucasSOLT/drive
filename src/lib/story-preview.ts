@@ -13,6 +13,7 @@
 
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import type { Story, DialogueLine, StoryCharacter } from '../types.ts';
+import { isNarrationLine, narrationColorFor } from './cast-voices.ts';
 
 function escapeHtml(str: string): string {
   if (!str) return '';
@@ -38,12 +39,10 @@ export function buildDialogueHtml(
 
   if (dialogueLines.length > 0) {
     return dialogueLines.map((line, idx) => {
-      const isNarrator = line.characterId === 'narrator' || !line.characterId ||
-        /^narrator$/i.test(line.characterName || '') ||
-        (line.characterName && line.characterName.toLowerCase().includes('narrator'));
+      const isNarrator = isNarrationLine(line);
       const matchedChar = isNarrator ? null :
         characters.find(c => c.id === line.characterId || c.name?.toLowerCase() === line.characterName?.toLowerCase());
-      const charColor = isNarrator ? narratorColor : (matchedChar?.color || '#3b82f6');
+      const charColor = isNarrator ? narrationColorFor(line, { characters, narratorHighlightColor: narratorColor }) : (matchedChar?.color || '#3b82f6');
       const wordsHtml = wrapWords(line.text, idx, charColor);
 
       if (isNarrator) {
@@ -93,7 +92,7 @@ export function renderStoryPagePreview(opts: PreviewOptions): { destroy: () => v
   const isVideo = isVideoMedia(media) || !!(story.pageVideos?.[pageIdx]);
   const focalPos = story.pageFocalPositions?.[pageIdx];
   const objPos = focalPos && focalPos !== 'center' ? `object-position:center ${focalPos};` : '';
-  const narratorColor = story.narratorHighlightColor || '#7C6FFA';
+  const narratorColor = narrationColorFor(null, story);
 
   const dialogueLines = story.pageDialogue?.[pageIdx] || [];
   const scriptText = story.pageScripts?.[pageIdx] || '';

@@ -371,7 +371,7 @@ export function init(): void {
               navigate('add-friend?code=' + pendingFriendSignup);
               return;
             }
-            navigate('path-select');
+            navigate('home');
           } else {
             // No session = email confirmation required
             // Show waiting UI and poll for verification
@@ -424,7 +424,7 @@ export function init(): void {
                     } catch { /* ignore invalid JSON */ }
                     localStorage.removeItem('drive_pending_squad_join');
                   }
-                  navigate('path-select');
+                  navigate('home');
                 }
                 // If error, email isn't verified yet — keep polling
               } catch {

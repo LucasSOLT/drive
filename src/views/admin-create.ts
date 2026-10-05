@@ -13,7 +13,8 @@ import { uploadAudioData } from '../lib/storage.ts';
 import { VOICE_OPTIONS } from '../lib/settings.ts';
 import { addUserStory } from '../state.ts';
 import { renderStoryPagePreview } from '../lib/story-preview.ts';
-import { auditionVoice, clearAuditionCache } from '../lib/voice-lab.ts';
+import { auditionVoice, clearAuditionCache, primeAuditionAudio } from '../lib/voice-lab.ts';
+import { PLAIN_TEXT_ID, PLAIN_TEXT_NAME, isNarrationLine, packCast, readReservedVoices, realCharacters } from '../lib/cast-voices.ts';
 import { runPreflightChecks, getStatusLabel, getStatusColor, type PreflightResult, type PreflightCheck } from '../lib/publishing.ts';
 
 type CreatePhase = 'canvas' | 'details';
@@ -217,7 +218,7 @@ let bookPages: BookPage[] = [
 
 // Story Characters for multi-voice dialogue
 const CHAR_COLORS = ['#8a63d2','#3b82f6','#ef4444','#22c55e','#f59e0b','#06B6D4','#06b6d4','#f97316','#0D9488','#14b8a6'];
-const CHARACTER_PALETTE = ['#10B981', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#f97316', '#ef4444', '#06B6D4'];
+const CHARACTER_PALETTE = ['#3b82f6', '#ef4444', '#f59e0b', '#ec4899', '#8b5cf6', '#22c55e', '#f97316', '#06b6d4', '#eab308', '#10B981'];
 let storyCharacters: StoryCharacter[] = [];
 let currentPage = 0;
 let activeDraftId: string | null = null;
@@ -232,6 +233,37 @@ let episodeParentTitle: string | null = null;    // Parent story title for conte
 let storyAudioMode: StoryAudioMode = 'make_audio';
 let storyNarratorVoiceId: string = '21m00Tcm4TlvDq8ikWAM'; // Rachel (default narrator)
 let storyNarratorHighlightColor: string = '#7C6FFA'; // Default narrator highlight accent
+/** Voice + color for plain story text (not a character, not "NARRATOR:"). Empty = same as narrator. */
+let storyPlainTextVoiceId: string = '';
+let storyPlainTextColor: string = '';
+
+/** Cast list as saved: real characters + permanent Narrator and Story Text entries. */
+function getPackedCast(): StoryCharacter[] {
+  return packCast(storyCharacters, {
+    narratorVoiceId: storyNarratorVoiceId,
+    narratorColor: storyNarratorHighlightColor,
+    plainTextVoiceId: storyPlainTextVoiceId || storyNarratorVoiceId,
+    plainTextColor: storyPlainTextColor || storyNarratorHighlightColor,
+  });
+}
+
+/** Load a saved cast list: split out the permanent voices, keep only real characters. */
+function applySavedCast(list: StoryCharacter[] | undefined, fallback: { narratorVoiceId?: string; narratorHighlightColor?: string } = {}): void {
+  const hasPlain = (list || []).some(c => c?.id === PLAIN_TEXT_ID);
+  const v = readReservedVoices(list, fallback);
+  storyCharacters = realCharacters(list).map(c => ({ ...c }));
+  // The narrator_voice_id column stays the source of truth for the narrator voice
+  storyNarratorVoiceId = fallback.narratorVoiceId || v.narratorVoiceId;
+  storyNarratorHighlightColor = v.narratorColor;
+  storyPlainTextVoiceId = hasPlain ? v.plainTextVoiceId : '';
+  storyPlainTextColor = hasPlain ? v.plainTextColor : '';
+}
+
+/** First palette color no character is using yet. */
+function nextFreeCharacterColor(): string {
+  const used = new Set(storyCharacters.map(c => (c.color || '').toLowerCase()));
+  return CHARACTER_PALETTE.find(c => !used.has(c.toLowerCase())) || CHARACTER_PALETTE[storyCharacters.length % CHARACTER_PALETTE.length];
+}
 let updateView: () => void;
 // â”€â”€â”€ SVG Icons â”€â”€â”€
 const ICON = {
@@ -321,6 +353,7 @@ interface DraftEntry {
   coverThumbnail?: string | null;
   editStoryId?: string | null;
   storyCharacters?: StoryCharacter[];
+  castVoices?: { narratorVoiceId: string; narratorColor: string; plainTextVoiceId: string; plainTextColor: string };
   soloEpisodeCount?: 1 | 2 | 3;
   sparcPromptText?: string;
   sparcPromptMediaUrls?: string[];
@@ -362,6 +395,7 @@ function saveDraft() {
     coverThumbnail: _coverThumbnail,
     editStoryId,
     storyCharacters,
+    castVoices: { narratorVoiceId: storyNarratorVoiceId, narratorColor: storyNarratorHighlightColor, plainTextVoiceId: storyPlainTextVoiceId, plainTextColor: storyPlainTextColor },
     soloEpisodeCount,
     sparcPromptText,
     sparcPromptMediaUrls,
@@ -444,7 +478,7 @@ function loadDraft(draft: DraftEntry) {
     if (!p.focalPosition) p.focalPosition = 'center';
     if (!p.text && p.dialogueLines.length > 0) {
       p.text = p.dialogueLines.map(l => {
-        if (l.characterId === 'narrator') return l.text;
+        if (isNarrationLine(l)) return l.text;
         return `${l.characterName.toUpperCase()}: "${l.text}"`;
       }).join('\n\n');
     }
@@ -452,7 +486,13 @@ function loadDraft(draft: DraftEntry) {
   currentPage = draft.currentPage || 0;
   _coverThumbnail = draft.coverThumbnail || null;
   editStoryId = draft.editStoryId || null;
-  storyCharacters = draft.storyCharacters || [];
+  storyCharacters = realCharacters(draft.storyCharacters);
+  if (draft.castVoices) {
+    storyNarratorVoiceId = draft.castVoices.narratorVoiceId || storyNarratorVoiceId;
+    storyNarratorHighlightColor = draft.castVoices.narratorColor || storyNarratorHighlightColor;
+    storyPlainTextVoiceId = draft.castVoices.plainTextVoiceId || '';
+    storyPlainTextColor = draft.castVoices.plainTextColor || '';
+  }
   soloEpisodeCount = draft.soloEpisodeCount || 1;
   sparcPromptText = draft.sparcPromptText || '';
   sparcPromptMediaUrls = draft.sparcPromptMediaUrls || [];
@@ -564,7 +604,7 @@ function buildStory(status: 'draft' | 'live'): Story {
     officialStatus: status,
     storyGroupId: episodeStoryGroupId || storyId,
     episodeNumber: episodeNumber,
-    characters: storyCharacters.length > 0 ? storyCharacters : undefined,
+    characters: getPackedCast(),
     pageDialogue: Object.keys(pageDialogue).length > 0 ? pageDialogue : undefined,
     audioMode: storyAudioMode,
     narratorVoiceId: storyNarratorVoiceId,
@@ -773,6 +813,93 @@ function wireEpisodeNav(ids: string[]): void {
   void refreshEpisodeNeighbors();
 }
 
+/** Colors offered for the Narrator / Story Text cards (narrator default first). */
+const FIXED_VOICE_PALETTE = ['#7C6FFA', ...CHARACTER_PALETTE];
+
+/** Recolor a cast card right away: border/glow, avatar badge and the selected dot. */
+function paintCastCard(card: HTMLElement | null, color: string, activeDot?: HTMLElement): void {
+  if (!card) return;
+  card.style.setProperty('--char-color', color);
+  const badge = card.querySelector('.ss-char-card__badge') as HTMLElement | null;
+  if (badge) {
+    badge.style.backgroundColor = color;
+    badge.style.boxShadow = `0 3px 12px ${color}40`;
+  }
+  card.querySelectorAll('.ss-char-color-dot').forEach(d => d.classList.remove('ss-char-color-dot--active'));
+  activeDot?.classList.add('ss-char-color-dot--active');
+}
+
+let _auditionBtn: HTMLButtonElement | null = null;
+function resetAuditionBtn(b: HTMLButtonElement | null): void {
+  if (!b) return;
+  b.textContent = '🔊 Audition';
+  b.disabled = false;
+  b.classList.remove('ss-char-audition-btn--playing');
+}
+
+/** Audition button: unlocks phone audio inside the tap, shows the real reason if it fails. */
+function runAuditionButton(btn: HTMLButtonElement, voiceId: string, name: string): void {
+  primeAuditionAudio(); // must run synchronously inside the tap (iPhone)
+  if (_auditionBtn && _auditionBtn !== btn) resetAuditionBtn(_auditionBtn);
+  _auditionBtn = btn;
+  btn.textContent = '⏳ Loading...';
+  btn.disabled = true;
+  btn.classList.add('ss-char-audition-btn--playing');
+  auditionVoice(voiceId, name)
+    .then(audio => {
+      if (!audio) { resetAuditionBtn(btn); return; }
+      btn.textContent = '🔊 Playing...';
+      const done = () => { if (_auditionBtn === btn) _auditionBtn = null; resetAuditionBtn(btn); };
+      audio.addEventListener('ended', done, { once: true });
+      audio.addEventListener('pause', done, { once: true });
+      audio.addEventListener('error', done, { once: true });
+    })
+    .catch((err: any) => {
+      resetAuditionBtn(btn);
+      if (_auditionBtn === btn) _auditionBtn = null;
+      showModal({ title: 'Audition Failed', content: `<p>${escapeHtml(err?.message || 'Could not play this voice.')}</p>`, confirmText: 'OK' });
+    });
+}
+
+/** Permanent cast card: Narrator (NARRATOR: "...") or Story Text (untagged text read aloud). */
+function renderFixedVoiceCard(kind: 'narrator' | 'plain_text'): string {
+  const isNarrator = kind === 'narrator';
+  const voiceId = isNarrator ? storyNarratorVoiceId : (storyPlainTextVoiceId || storyNarratorVoiceId);
+  const color = isNarrator ? storyNarratorHighlightColor : (storyPlainTextColor || storyNarratorHighlightColor);
+  const title = isNarrator ? 'Narrator' : PLAIN_TEXT_NAME;
+  const desc = isNarrator
+    ? 'Reads lines written as NARRATOR: "..."'
+    : 'Reads normal text that isn\'t tagged to a character or the Narrator.';
+  return `
+    <div class="ss-char-card ss-char-card--fixed" data-fixed-card="${kind}" style="--char-color:${color};">
+      <div class="ss-char-card__top">
+        <div class="ss-char-card__badge" style="background-color:${color}; box-shadow:0 3px 12px ${color}40;">${isNarrator ? '🎙️' : '📖'}</div>
+        <div class="ss-char-card__name-wrap">
+          <span class="ss-char-card__name-label">Always in your cast</span>
+          <div style="font-family:var(--font-heading); font-weight:700; font-size:0.98rem; color:var(--color-text-primary);">${title}</div>
+          <div style="font-size:0.72rem; color:var(--color-text-muted); line-height:1.35;">${escapeHtml(desc)}</div>
+        </div>
+      </div>
+      <div class="ss-char-card__palette-wrap">
+        <span class="ss-char-card__palette-label">Theme:</span>
+        <div class="ss-char-color-dots">
+          ${FIXED_VOICE_PALETTE.map(c => `
+            <button type="button" class="ss-char-color-dot ${color.toLowerCase() === c.toLowerCase() ? 'ss-char-color-dot--active' : ''}" data-fixed-color-dot="${c}" data-fixed-kind="${kind}" style="background-color:${c};" title="Select color"></button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="ss-char-card__voice-wrap">
+        <span class="ss-char-card__voice-label">Voice Actor</span>
+        <div class="ss-char-card__voice-row">
+          <select class="ss-char-voice-select" ${isNarrator ? 'id="ss-narrator-voice"' : 'id="ss-plain-text-voice"'} data-fixed-voice="${kind}">
+            ${renderGroupedVoiceOptions(voiceId)}
+          </select>
+          <button class="ss-char-audition-btn" data-fixed-audition="${kind}" type="button">🔊 Audition</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function openStorySettings(options?: { preserveScroll?: boolean }): void {
   const wizard = document.getElementById('admin-admin-create-wizard');
   if (!wizard) return;
@@ -951,31 +1078,11 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
           </div>
 
           <div class="ss-section" id="ss-narrator-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
-            <div class="ss-section__label">🎙️ Narrator Voice</div>
-            <div class="ss-narrator-card">
-              <div class="ss-narrator-header">
-                <div class="ss-narrator-badge">
-                  <span>🎙️</span> Official Story Narrator
-                </div>
-                <span class="ss-narrator-tag">Master Narration</span>
-              </div>
-              <p style="font-size:0.76rem; color:var(--color-text-secondary); margin:0; line-height:1.4;">
-                This voice narrates story text and dialogue lines assigned to <strong>"🎙️ Narrator"</strong> across every episode.
-              </p>
-              <div class="ss-field" style="display:flex; gap:8px; align-items:center; margin-bottom:0;">
-                <select id="ss-narrator-voice" class="ss-field__select" style="flex:1;">
-                  ${renderGroupedVoiceOptions(storyNarratorVoiceId)}
-                </select>
-                <button type="button" id="ss-narrator-audition" class="ss-char-audition-btn" style="white-space:nowrap;">🔊 Audition</button>
-              </div>
-              <div style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
-                <span style="font-size:0.75rem; color:var(--color-text-secondary); font-weight:600;">Text Highlight Color:</span>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <input type="color" id="ss-narrator-color-input" value="${storyNarratorHighlightColor || '#7C6FFA'}" style="width:28px; height:28px; padding:0; border:none; border-radius:6px; cursor:pointer; background:none;">
-                  <span style="font-size:0.72rem; color:var(--color-text-muted);">Default: #7C6FFA</span>
-                </div>
-              </div>
-            </div>
+            <div class="ss-section__label">🎙️ Voices</div>
+            <p style="font-size:0.78rem; color:var(--color-text-secondary); margin:0 0 10px; line-height:1.45;">
+              The <strong>Narrator</strong>, <strong>Story Text</strong> and character voices are all set in the <strong>Cast</strong> tab.
+            </p>
+            <button type="button" class="btn btn--sm btn--secondary" data-goto-ss-tab="characters" style="font-size:0.78rem;">🎭 Open Cast &amp; Voices</button>
           </div>
         </div>
 
@@ -1003,6 +1110,13 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
               </div>
             ` : ''}
 
+            <div class="ss-char-container" style="margin-bottom:18px;">
+              ${renderFixedVoiceCard('narrator')}
+              ${renderFixedVoiceCard('plain_text')}
+            </div>
+
+            <div class="ss-section__label" style="margin:4px 0 8px;">Characters</div>
+
             ${storyCharacters.length === 0 ? `
               <div class="ss-char-empty">
                 <div class="ss-char-empty__icon">👥</div>
@@ -1020,7 +1134,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
                   const voiceOptionsHtml = renderGroupedVoiceOptions(ch.voiceId);
                   const charColor = ch.color || CHARACTER_PALETTE[ci % CHARACTER_PALETTE.length];
                   return `
-                  <div class="ss-char-card" data-char-idx="${ci}">
+                  <div class="ss-char-card" data-char-idx="${ci}" style="--char-color:${charColor};">
                     <!-- Card Top: Avatar, Name, Delete -->
                     <div class="ss-char-card__top">
                       <div class="ss-char-card__badge" style="background-color:${charColor}; box-shadow:0 3px 12px ${charColor}40;">
@@ -1242,41 +1356,43 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   });
 
-  // ── Narrator Voice ──
-  document.getElementById('ss-narrator-voice')?.addEventListener('change', (e) => {
-    const oldVoiceId = storyNarratorVoiceId;
-    storyNarratorVoiceId = (e.target as HTMLSelectElement).value;
-    clearAuditionCache(oldVoiceId);
-    saveDraft();
+  // ── Permanent voices: Narrator + Story Text ──
+  wizard.querySelectorAll('[data-goto-ss-tab]').forEach(b => {
+    b.addEventListener('click', () => {
+      const tab = (b as HTMLElement).getAttribute('data-goto-ss-tab') || 'characters';
+      (wizard.querySelector(`.ss-tab-btn[data-tab="${tab}"]`) as HTMLElement | null)?.click();
+    });
   });
-  document.getElementById('ss-narrator-color-input')?.addEventListener('input', (e) => {
-    storyNarratorHighlightColor = (e.target as HTMLInputElement).value;
-    saveDraft();
-  });
-  document.getElementById('ss-narrator-audition')?.addEventListener('click', async () => {
-    const btn = document.getElementById('ss-narrator-audition') as HTMLButtonElement;
-    if (!btn) return;
-    btn.textContent = '🔊 Playing...';
-    btn.disabled = true;
-    btn.classList.add('ss-char-audition-btn--playing');
-    try {
-      const audio = await auditionVoice(storyNarratorVoiceId, 'Narrator');
-      if (audio) {
-        audio.addEventListener('ended', () => {
-          btn.textContent = '🔊 Audition';
-          btn.disabled = false;
-          btn.classList.remove('ss-char-audition-btn--playing');
-        }, { once: true });
+  wizard.querySelectorAll('[data-fixed-voice]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const kind = (sel as HTMLElement).getAttribute('data-fixed-voice');
+      const val = (sel as HTMLSelectElement).value;
+      if (kind === 'narrator') {
+        clearAuditionCache(storyNarratorVoiceId);
+        storyNarratorVoiceId = val;
       } else {
-        btn.textContent = '🔊 Audition';
-        btn.disabled = false;
-        btn.classList.remove('ss-char-audition-btn--playing');
+        clearAuditionCache(storyPlainTextVoiceId || storyNarratorVoiceId);
+        storyPlainTextVoiceId = val;
       }
-    } catch {
-      btn.textContent = '🔊 Audition';
-      btn.disabled = false;
-      btn.classList.remove('ss-char-audition-btn--playing');
-    }
+      saveDraft();
+    });
+  });
+  wizard.querySelectorAll('[data-fixed-color-dot]').forEach(dot => {
+    dot.addEventListener('click', () => {
+      const kind = (dot as HTMLElement).getAttribute('data-fixed-kind');
+      const color = (dot as HTMLElement).getAttribute('data-fixed-color-dot') || '#7C6FFA';
+      if (kind === 'narrator') storyNarratorHighlightColor = color;
+      else storyPlainTextColor = color;
+      paintCastCard((dot as HTMLElement).closest('.ss-char-card') as HTMLElement | null, color, dot as HTMLElement);
+      saveDraft();
+    });
+  });
+  wizard.querySelectorAll('[data-fixed-audition]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const kind = (btn as HTMLElement).getAttribute('data-fixed-audition');
+      const voiceId = kind === 'narrator' ? storyNarratorVoiceId : (storyPlainTextVoiceId || storyNarratorVoiceId);
+      runAuditionButton(btn as HTMLButtonElement, voiceId, kind === 'narrator' ? 'the Narrator' : 'the Story Text voice');
+    });
   });
 
   // ── Character Cast Management ──
@@ -1307,17 +1423,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       const color = (dot as HTMLElement).getAttribute('data-char-color-dot') || '#10B981';
       if (!storyCharacters[idx]) return;
       storyCharacters[idx].color = color;
-      
-      const card = (dot as HTMLElement).closest('.ss-char-card');
-      const badge = card?.querySelector('.ss-char-card__badge') as HTMLElement | null;
-      if (badge) {
-        badge.style.backgroundColor = color;
-        badge.style.boxShadow = `0 3px 12px ${color}40`;
-      }
-
-      card?.querySelectorAll('.ss-char-color-dot').forEach(d => d.classList.remove('ss-char-color-dot--active'));
-      dot.classList.add('ss-char-color-dot--active');
-
+      paintCastCard((dot as HTMLElement).closest('.ss-char-card') as HTMLElement | null, color, dot as HTMLElement);
       saveDraft();
     });
   });
@@ -1336,32 +1442,14 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
 
   // Audition
   wizard.querySelectorAll('[data-char-audition]').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const idx = parseInt((btn as HTMLElement).getAttribute('data-char-audition') || '0');
       const ch = storyCharacters[idx];
       if (!ch) return;
-      const b = btn as HTMLButtonElement;
-      b.textContent = '🔊 Playing...';
-      b.disabled = true;
-      b.classList.add('ss-char-audition-btn--playing');
-      try {
-        const audio = await auditionVoice(ch.voiceId, ch.name);
-        if (audio) {
-          audio.addEventListener('ended', () => {
-            b.textContent = '🔊 Audition';
-            b.disabled = false;
-            b.classList.remove('ss-char-audition-btn--playing');
-          }, { once: true });
-        } else {
-          b.textContent = '🔊 Audition';
-          b.disabled = false;
-          b.classList.remove('ss-char-audition-btn--playing');
-        }
-      } catch {
-        b.textContent = '🔊 Audition';
-        b.disabled = false;
-        b.classList.remove('ss-char-audition-btn--playing');
-      }
+      // Read the dropdown directly so the voice just picked is the one auditioned
+      const sel = wizard.querySelector(`[data-char-voice="${idx}"]`) as HTMLSelectElement | null;
+      if (sel && sel.value && sel.value !== ch.voiceId) { ch.voiceId = sel.value; saveDraft(); }
+      runAuditionButton(btn as HTMLButtonElement, ch.voiceId, ch.name || 'your character');
     });
   });
 
@@ -1419,7 +1507,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     const appScrollY = appContent?.scrollTop || 0;
     const newId = 'char_' + Date.now();
     const defaultVoice = VOICE_OPTIONS[storyCharacters.length % VOICE_OPTIONS.length];
-    const defaultColor = CHARACTER_PALETTE[storyCharacters.length % CHARACTER_PALETTE.length];
+    const defaultColor = nextFreeCharacterColor();
     storyCharacters.push({
       id: newId,
       name: 'Character ' + (storyCharacters.length + 1),
@@ -1990,11 +2078,13 @@ function parseScreenplayToDialogueLines(text: string, existingLines?: DialogueLi
   const flushNarrator = () => {
     const combined = currentNarratorBuffer.join(' ').trim();
     if (combined) {
-      const existing = existingLines?.find(el => el.characterId === 'narrator' && el.text === combined);
+      // Untagged text = "Story Text" (its own voice), not the Narrator.
+      // Older saves stored it as 'narrator', so match those too to keep existing audio.
+      const existing = existingLines?.find(el => (el.characterId === PLAIN_TEXT_ID || el.characterId === 'narrator') && el.text === combined);
       result.push({
         id: existing?.id || 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        characterId: 'narrator',
-        characterName: '🎙️ Narrator',
+        characterId: PLAIN_TEXT_ID,
+        characterName: '📖 ' + PLAIN_TEXT_NAME,
         text: combined,
         audioUrl: existing?.audioUrl || null,
       });
@@ -2159,12 +2249,13 @@ function renderScreenplayEditor(pageIdx: number, prefix: string): string {
         <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
           ${lines.map((line, li) => {
             const isNarrator = line.characterId === 'narrator';
-            const charColor = isNarrator ? '#34D399' : (storyCharacters.find(c => c.id === line.characterId)?.color || '#60a5fa');
+            const isPlain = line.characterId === PLAIN_TEXT_ID;
+            const charColor = isNarrator ? storyNarratorHighlightColor : isPlain ? (storyPlainTextColor || storyNarratorHighlightColor) : (storyCharacters.find(c => c.id === line.characterId)?.color || '#60a5fa');
             const hasAudio = !!line.audioUrl;
             return `
               <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; padding:4px 8px; background:rgba(0,0,0,0.25); border-radius:6px; font-size:0.74rem;">
                 <div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;">
-                  <span style="color:${charColor}; font-weight:700; white-space:nowrap;">${isNarrator ? '🎙️ Narrator' : line.characterName}:</span>
+                  <span style="color:${charColor}; font-weight:700; white-space:nowrap;">${isNarrator ? '🎙️ Narrator' : isPlain ? '📖 ' + PLAIN_TEXT_NAME : escapeHtml(line.characterName)}:</span>
                   <span style="color:var(--color-text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${escapeHtml(line.text)}"</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
@@ -2191,12 +2282,14 @@ function renderDialogueLines(pageIdx: number, lines: DialogueLine[], prefix: str
 
   const linesHtml = lines.map((line, li) => {
     const isNarrator = line.characterId === 'narrator';
-    const charColor = isNarrator ? '#f59e0b' : (storyCharacters.find(c => c.id === line.characterId)?.color || CHAR_COLORS[li % CHAR_COLORS.length]);
+    const isPlain = line.characterId === PLAIN_TEXT_ID;
+    const charColor = isNarrator ? storyNarratorHighlightColor : isPlain ? (storyPlainTextColor || storyNarratorHighlightColor) : (storyCharacters.find(c => c.id === line.characterId)?.color || CHAR_COLORS[li % CHAR_COLORS.length]);
     const hasAudio = !!line.audioUrl;
     return `
     <div class="sb-dialog-line" data-${prefix}-line="${pageIdx}-${li}">
       <div class="sb-dialog-line__top">
         <select class="sb-dialog-line__char-select" data-${prefix}-line-char="${pageIdx}-${li}" style="border-left: 3px solid ${charColor};">
+          <option value="${PLAIN_TEXT_ID}" ${isPlain ? 'selected' : ''}>📖 ${PLAIN_TEXT_NAME}</option>
           <option value="narrator" ${isNarrator ? 'selected' : ''}>🎙️ Narrator</option>
           ${storyCharacters.map(ch =>
             `<option value="${ch.id}" ${ch.id === line.characterId ? 'selected' : ''}>${ch.name}</option>`
@@ -2305,7 +2398,7 @@ function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => voi
     if (!name) return;
 
     const voiceId = voiceSelect?.value || VOICE_OPTIONS[0]?.voiceId || '';
-    const color = CHAR_COLORS[storyCharacters.length % CHAR_COLORS.length];
+    const color = nextFreeCharacterColor();
     const ch: StoryCharacter = { id: 'char_' + Date.now(), name, voiceId, color };
     storyCharacters.push(ch);
     saveDraft();
@@ -2430,10 +2523,10 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         });
         return;
       }
-      if (val === 'narrator') {
+      if (val === 'narrator' || val === PLAIN_TEXT_ID) {
         if (bookPages[pageIdx].dialogueLines?.[lineIdx]) {
-          bookPages[pageIdx].dialogueLines![lineIdx].characterId = 'narrator';
-          bookPages[pageIdx].dialogueLines![lineIdx].characterName = '🎙️ Narrator';
+          bookPages[pageIdx].dialogueLines![lineIdx].characterId = val;
+          bookPages[pageIdx].dialogueLines![lineIdx].characterName = val === 'narrator' ? '🎙️ Narrator' : '📖 ' + PLAIN_TEXT_NAME;
           syncDialogText(pageIdx);
           saveDraft();
           refreshView();
@@ -2461,8 +2554,9 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         return;
       }
       const isNarrator = line.characterId === 'narrator';
-      const ch = isNarrator ? null : storyCharacters.find(c => c.id === line.characterId);
-      const voiceId = isNarrator ? storyNarratorVoiceId : ch?.voiceId;
+      const isPlain = line.characterId === PLAIN_TEXT_ID;
+      const ch = (isNarrator || isPlain) ? null : storyCharacters.find(c => c.id === line.characterId);
+      const voiceId = isNarrator ? storyNarratorVoiceId : isPlain ? (storyPlainTextVoiceId || storyNarratorVoiceId) : ch?.voiceId;
       const b = btn as HTMLButtonElement;
       b.disabled = true;
       b.textContent = '⏳ Recording...';
@@ -2525,7 +2619,7 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         const result = await preRecordPageAudio(
           lines,
           storyNarratorVoiceId,
-          storyCharacters,
+          getPackedCast(),
           (current, total) => {
             b.textContent = `🎙️ Pre-recording ${current}/${total}...`;
           }
@@ -3265,7 +3359,7 @@ function openBatchPreRecordModal(): void {
     const summary = await batchPreRecordStory(
       batchPages,
       storyNarratorVoiceId,
-      storyCharacters,
+      getPackedCast(),
       {
         signal: abortController.signal,
         skipExisting,
@@ -4329,9 +4423,8 @@ export function init(): void {
         episodeStoryGroupId = storyToEdit.storyGroupId || storyToEdit.id;
         episodeNumber = storyToEdit.episodeNumber || 1;
         // Load characters and audio mode
-        storyCharacters = storyToEdit.characters || [];
         storyAudioMode = storyToEdit.audioMode || 'make_audio';
-        storyNarratorVoiceId = storyToEdit.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM';
+        applySavedCast(storyToEdit.characters, { narratorVoiceId: storyToEdit.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM', narratorHighlightColor: storyToEdit.narratorHighlightColor });
         soloEpisodeCount = storyToEdit.soloEpisodeCount || 1;
         storyThemeColor = storyToEdit.themeColor || '#141424';
         if (storyToEdit.sparcPrompt) {
@@ -4402,7 +4495,11 @@ export function init(): void {
         const groupStories = await fetchOfficialStories();
         const ep1 = groupStories.find(s => (s.storyGroupId || s.id) === episodeStoryGroupId && (s.episodeNumber || 1) === 1);
         if (ep1) {
-          if (ep1.characters && ep1.characters.length > 0) storyCharacters = [...ep1.characters];
+          if (ep1.characters && ep1.characters.length > 0) {
+            const keepNarrator = storyNarratorVoiceId;
+            applySavedCast(ep1.characters, { narratorVoiceId: ep1.narratorVoiceId });
+            if (voiceIdParam) storyNarratorVoiceId = keepNarrator;
+          }
           // Inherit genre/rating/etc from episode 1 if not already set via URL params
           if (!genreParam && ep1.genre) storyGenre = ep1.genre;
           if (!ratingParam && ep1.contentRating) storyContentRating = ep1.contentRating;
@@ -4447,6 +4544,8 @@ export function init(): void {
         storySynopsis = '';
         currentPage = 0;
         storyCharacters = [];
+        storyPlainTextVoiceId = '';
+        storyPlainTextColor = '';
         if (selectedFormat === 'book') {
           bookPages = Array.from({ length: 5 }, () => defaultBookPage());
         } else {

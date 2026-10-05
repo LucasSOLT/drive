@@ -1,3 +1,4 @@
+import { friendlyVoiceError } from './voice-errors.ts';
 /**
  * Text-to-Speech module using ElevenLabs API.
  * Voice selection is pulled from app settings.
@@ -99,6 +100,32 @@ export function isSpeaking(): boolean {
   const isAudioSpeaking = currentAudio !== null && !currentAudio.paused;
   const isSynthSpeaking = 'speechSynthesis' in window && window.speechSynthesis.speaking;
   return isAudioSpeaking || isSynthSpeaking;
+}
+
+/**
+ * Get a readable error out of an elevenlabs-proxy call. Works for both the
+ * "200 + { error }" shape and non-2xx responses (reads the response body).
+ * Returns null when the call succeeded.
+ */
+export { friendlyVoiceError };
+
+export async function readProxyError(data: any, error: any): Promise<string | null> {
+  let raw: any = null;
+  if (error) {
+    raw = error.message || 'Voice service error';
+    try {
+      const ctx = (error as any).context;
+      if (ctx && typeof ctx.json === 'function') {
+        const body = await ctx.clone().json();
+        raw = body?.error ?? body?.detail ?? body;
+      }
+    } catch { /* keep error.message */ }
+  } else if (data?.error || data?.detail) {
+    raw = data.error ?? data.detail;
+  } else {
+    return null;
+  }
+  return friendlyVoiceError(raw);
 }
 
 /** Speak the given text via ElevenLabs API using the user's selected voice. */
@@ -242,21 +269,10 @@ async function synthesizeSingleSegment(
     }
   });
 
-  if (error) {
-    console.error('[TTS] Segment synthesis error:', error);
-    let msg = error.message;
-    try {
-      if ('context' in error && (error as any).context) {
-        const body = await (error as any).context.json();
-        msg = body?.error || body?.detail?.message || body?.detail || JSON.stringify(body);
-      }
-    } catch {}
-    throw new Error(msg || 'TTS synthesis failed');
-  }
-
-  if (data?.error) {
-    const msg = typeof data.error === 'string' ? data.error : (data.error.message || data.error.detail?.message || JSON.stringify(data.error));
-    throw new Error(msg);
+  const proxyErr = await readProxyError(data, error);
+  if (proxyErr) {
+    console.error('[TTS] Segment synthesis error:', error || data?.error);
+    throw new Error(proxyErr);
   }
 
   if (data?.detail) {
@@ -650,9 +666,9 @@ export async function preRecordPageAudio(
       }
     });
 
-    if (error || data?.error || !data?.audio_base64) {
-      const msg = error?.message || data?.error?.message || data?.detail || 'TTS failed';
-      throw new Error(`Line ${i + 1} ("${line.text.substring(0, 30)}..."): ${msg}`);
+    const proxyErr = await readProxyError(data, error);
+    if (proxyErr || !data?.audio_base64) {
+      throw new Error(`Line ${i + 1} ("${line.text.substring(0, 30)}..."): ${proxyErr || 'No audio came back from the voice service.'}`);
     }
 
     const contentType = data.content_type || 'audio/mpeg';

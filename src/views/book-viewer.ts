@@ -5,6 +5,7 @@ import { speakText, stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence } 
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import type { DialogueLine } from '../types.ts';
+import { isNarrationLine } from '../lib/cast-voices.ts';
 
 // ─── Types ───
 interface StoryPage {
@@ -145,7 +146,7 @@ function renderPageContent(page: StoryPage, pageIndex: number, totalPages: numbe
       // Check if dialogue lines or manual captions exist
       if (dialogueLines.length > 0) {
         const captionLines = dialogueLines.map((line: DialogueLine) => {
-          const isNarrator = line.characterId === 'narrator';
+          const isNarrator = isNarrationLine(line);
           const speakerName = isNarrator ? '🎙️ Narrator' : (line.characterName || 'Speaker');
           return `<div class="bv-caption-line">
             <span class="bv-caption-speaker">${speakerName}</span>

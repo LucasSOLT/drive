@@ -12,7 +12,7 @@
  */
 
 import { supabase } from './supabase.ts';
-import { stopSpeaking } from './tts.ts';
+import { stopSpeaking, readProxyError } from './tts.ts';
 import type { StoryCharacter } from '../types.ts';
 
 const DEFAULT_NARRATOR_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
@@ -20,6 +20,29 @@ const DEFAULT_NARRATOR_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
 // ─── Audition Cache ───
 // Key: voiceId, Value: object URL for the audition audio blob
 const auditionCache = new Map<string, string>();
+
+// iPhone rule: sound can only start from an <audio> element that was started during the tap.
+// The audition clip arrives after a network wait, so the tap handler calls primeAuditionAudio()
+// first (plays a 44-byte silent clip), and the real clip later reuses that unlocked element.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+let auditionEl: HTMLAudioElement | null = null;
+
+/** Call synchronously at the very start of an Audition tap, before any await. */
+export function primeAuditionAudio(): void {
+  if (!auditionEl) auditionEl = new Audio();
+  const a = auditionEl;
+  try {
+    a.src = SILENT_WAV;
+    a.play().then(() => { if (a.src === SILENT_WAV) a.pause(); }).catch(() => {});
+  } catch { /* ignore */ }
+}
+
+function getAuditionEl(src: string): HTMLAudioElement {
+  if (!auditionEl) auditionEl = new Audio();
+  auditionEl.pause();
+  auditionEl.src = src;
+  return auditionEl;
+}
 
 // Customizable audition lines per character name slot
 const AUDITION_TEMPLATES = [
@@ -54,49 +77,57 @@ export async function auditionVoice(
   // Check cache first
   if (!forceRefresh && auditionCache.has(voiceId)) {
     const cachedUrl = auditionCache.get(voiceId)!;
-    const audio = new Audio(cachedUrl);
-    audio.play().catch(() => {});
+    const audio = getAuditionEl(cachedUrl);
+    await startPlayback(audio);
     return audio;
   }
 
   // Synthesize a fresh audition clip
   const sampleText = getAuditionText(characterName);
 
-  try {
-    const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
+  const { data, error } = await supabase.functions.invoke('elevenlabs-proxy', {
+    body: {
+      endpoint: `/v1/text-to-speech/${voiceId}`,
+      method: 'POST',
       body: {
-        endpoint: `/v1/text-to-speech/${voiceId}`,
-        method: 'POST',
-        body: {
-          text: sampleText,
-          model_id: 'eleven_multilingual_v2',
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-        }
+        text: sampleText,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
       }
-    });
-
-    if (error || data?.error || !data?.audio_base64) {
-      console.warn('[VoiceLab] Audition synthesis failed:', error?.message || data?.error);
-      return null;
     }
+  });
 
-    // Decode base64 → blob → object URL
-    const binaryStr = atob(data.audio_base64);
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-    const blob = new Blob([bytes], { type: data.content_type || 'audio/mpeg' });
-    const objectUrl = URL.createObjectURL(blob);
+  const proxyErr = await readProxyError(data, error);
+  if (proxyErr || !data?.audio_base64) {
+    console.warn('[VoiceLab] Audition synthesis failed:', proxyErr);
+    throw new Error(proxyErr || 'No audio came back from the voice service.');
+  }
 
-    // Cache it
-    auditionCache.set(voiceId, objectUrl);
+  // Decode base64 → blob → object URL
+  const binaryStr = atob(data.audio_base64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+  const blob = new Blob([bytes], { type: data.content_type || 'audio/mpeg' });
+  const objectUrl = URL.createObjectURL(blob);
 
-    // Play
-    const audio = new Audio(objectUrl);
-    audio.play().catch(() => {});
-    return audio;
-  } catch (err) {
-    console.warn('[VoiceLab] Audition error:', err);
-    return null;
+  // Cache it
+  auditionCache.set(voiceId, objectUrl);
+
+  // Play
+  const audio = getAuditionEl(objectUrl);
+  await startPlayback(audio);
+  return audio;
+}
+
+/** Play, turning a blocked/failed play() into a readable error. */
+async function startPlayback(audio: HTMLAudioElement): Promise<void> {
+  try {
+    await audio.play();
+  } catch (err: any) {
+    if (err?.name === 'NotAllowedError') {
+      throw new Error('Your phone blocked the sound. Turn off silent mode and tap Audition again.');
+    }
+    throw new Error('The audition clip could not be played on this device.');
   }
 }
 

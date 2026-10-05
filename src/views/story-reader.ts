@@ -15,6 +15,7 @@ import {
 import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAlignment, setWordHighlightCallback } from '../lib/tts.ts';
 import { KaraokeController, type WordTimestamp } from '../lib/karaoke.ts';
 import { getSettings } from '../lib/settings.ts';
+import { isNarrationLine, narrationColorFor } from '../lib/cast-voices.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { getSoloEpisodeCount, getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
 import { getSquadSession } from '../lib/db.ts';
@@ -1707,7 +1708,7 @@ export async function init(): Promise<void> {
 
     const dialogueLines = captionsOpen ? (story.pageDialogue?.[pageIdx] || []) : [];
     const scriptText = captionsOpen ? (story.pageScripts?.[pageIdx] || '') : '';
-    const narratorColor = story.narratorHighlightColor || '#7C6FFA';
+    const narratorColor = narrationColorFor(null, story);
 
     let content = '';
     let globalWordIdx = 0;
@@ -1722,9 +1723,9 @@ export async function init(): Promise<void> {
 
     if (dialogueLines.length > 0) {
       content = dialogueLines.map((line: any, idx: number) => {
-        const isNarrator = line.characterId === 'narrator' || !line.characterId || /^narrator$/i.test(line.characterName || '') || (line.characterName && line.characterName.toLowerCase().includes('narrator'));
+        const isNarrator = isNarrationLine(line);
         const matchedChar = isNarrator ? null : (story.characters || []).find((c: any) => c.id === line.characterId || c.name?.toLowerCase() === line.characterName?.toLowerCase());
-        const charColor = isNarrator ? narratorColor : (matchedChar?.color || '#3b82f6');
+        const charColor = isNarrator ? narrationColorFor(line, story) : (matchedChar?.color || '#3b82f6');
         const wordsHtml = wrapWords(line.text, idx, charColor);
 
         if (isNarrator) {

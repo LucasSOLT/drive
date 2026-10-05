@@ -12,6 +12,7 @@
  */
 
 import type { UserStory, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
+import { realCharacters } from './cast-voices.ts';
 
 // ─── Pre-flight Check Types ───
 
@@ -168,7 +169,7 @@ export function runPreflightChecks(story: {
   });
 
   // ── Advisory: Character Voices ──
-  const characters = story.characters || [];
+  const characters = realCharacters(story.characters);
   const totalDialogueLines = Object.values(pageDialogue).flat().length;
   if (totalDialogueLines > 0 && characters.length > 0) {
     const charsWithoutVoice = characters.filter(c => !c.voiceId);

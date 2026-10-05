@@ -13462,6 +13462,21 @@ body.content-management-mode .story-card:hover {
   box-shadow: 0 4px 16px rgba(16, 185, 129, 0.08);
 }
 
+/* Each cast card takes its character's color (set inline as --char-color) */
+.ss-char-card[style*="--char-color"],
+.ss-char-card[style*="--char-color"]:hover {
+  border: 1.5px solid color-mix(in srgb, var(--char-color) 70%, transparent);
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--char-color) 22%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--char-color) 10%, var(--color-surface)) 0%, var(--color-surface) 55%);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.ss-char-card[style*="--char-color"] .ss-char-color-dot--active {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--char-color);
+}
+.ss-char-card--fixed .ss-char-card__badge {
+  font-size: 1.3rem;
+}
+
 .ss-char-card__top {
   display: flex;
   align-items: center;
