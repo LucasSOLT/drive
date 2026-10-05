@@ -29,6 +29,53 @@ serve(async (req) => {
       );
     }
 
+    // --- INTERCEPT FREE GOOGLE TTS ---
+    if (endpoint.startsWith("/v1/text-to-speech/free-google-")) {
+      const isWithTimestamps = endpoint.endsWith("/with-timestamps");
+      const voiceMatch = endpoint.match(/free-google-([a-z\-A-Z0-9]+)/);
+      const rawLang = voiceMatch ? voiceMatch[1] : 'en-US';
+      const tl = rawLang.replace('-with', '').replace('-timestamps', '');
+      
+      const text = body?.text || "No text provided";
+      
+      // Fetch from Google Translate TTS
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${tl}&q=${encodeURIComponent(text)}`;
+      const res = await fetch(url);
+      
+      if (!res.ok) {
+        return new Response(JSON.stringify({ error: `Google TTS failed: ${res.status}` }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200
+        });
+      }
+      
+      const audioData = await res.arrayBuffer();
+      const uint8 = new Uint8Array(audioData);
+      
+      let binary = '';
+      for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i]);
+      }
+      const base64 = btoa(binary);
+
+      // Return ElevenLabs-compatible payload
+      return new Response(
+        JSON.stringify({ 
+          audio_base64: base64, 
+          content_type: res.headers.get("content-type") || "audio/mpeg",
+          alignment: isWithTimestamps ? {
+            characters: text.split(''),
+            character_start_times_seconds: text.split('').map((_, i) => i * 0.05),
+            character_end_times_seconds: text.split('').map((_, i) => (i * 0.05) + 0.05)
+          } : undefined
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
+    // --- END INTERCEPT ---
+
     const url = `${ELEVENLABS_BASE}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
     const headers: Record<string, string> = {

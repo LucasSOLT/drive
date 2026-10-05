@@ -40,6 +40,12 @@ export const VOICE_OPTIONS: VoiceOption[] = [
   { id: 'freya', name: 'Freya', description: 'Young spirited female', voiceId: 'jsCqWAovK2LkecY7zXl4' },
   // ── Neutral / Narrator ──
   { id: 'river', name: 'River', description: 'Relaxed & neutral narrator', voiceId: 'SAz9YHcvj6GT2YYXdXww' },
+  // ── Free Built-in TTS ──
+  { id: 'free-us', name: 'Google (US)', description: 'Free Google TTS (English US)', voiceId: 'free-google-en-US' },
+  { id: 'free-uk', name: 'Google (UK)', description: 'Free Google TTS (English UK)', voiceId: 'free-google-en-GB' },
+  { id: 'free-au', name: 'Google (AU)', description: 'Free Google TTS (English AU)', voiceId: 'free-google-en-AU' },
+  { id: 'free-in', name: 'Google (IN)', description: 'Free Google TTS (English IN)', voiceId: 'free-google-en-IN' },
+  { id: 'free-fr', name: 'Google (FR)', description: 'Free Google TTS (French)', voiceId: 'free-google-fr-FR' },
 ];
 
 export interface AppSettings {

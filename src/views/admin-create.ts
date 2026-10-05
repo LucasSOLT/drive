@@ -46,22 +46,25 @@ function renderGroupedVoiceOptions(selectedVoiceId: string): string {
   const femaleIds = new Set(['sarah', 'rachel', 'domi', 'elli', 'charlotte', 'alice', 'lily', 'matilda', 'grace']);
   const maleIds = new Set(['roger', 'liam', 'george', 'adam', 'antoni', 'josh', 'sam', 'arnold', 'daniel', 'james', 'callum']);
   const youthIds = new Set(['fin', 'freya']);
+  const freeIds = new Set(['free-us', 'free-uk', 'free-au', 'free-in', 'free-fr']);
 
   const femaleVoices = VOICE_OPTIONS.filter(v => femaleIds.has(v.id));
   const maleVoices = VOICE_OPTIONS.filter(v => maleIds.has(v.id));
   const youthVoices = VOICE_OPTIONS.filter(v => youthIds.has(v.id));
-  const characterVoices = VOICE_OPTIONS.filter(v => !femaleIds.has(v.id) && !maleIds.has(v.id) && !youthIds.has(v.id));
+  const freeVoices = VOICE_OPTIONS.filter(v => freeIds.has(v.id));
+  const characterVoices = VOICE_OPTIONS.filter(v => !femaleIds.has(v.id) && !maleIds.has(v.id) && !youthIds.has(v.id) && !freeIds.has(v.id));
 
   const renderGroup = (label: string, list: typeof VOICE_OPTIONS) => `
     <optgroup label="${label}">
-      ${list.map(v => `<option value="${v.voiceId}" ${v.voiceId === selectedVoiceId ? 'selected' : ''}>${v.name} — ${v.description}</option>`).join('')}
+      ${list.map(v => `<option value="${v.voiceId}" ${v.voiceId === selectedVoiceId ? 'selected' : ''}>${v.name} – ${v.description}</option>`).join('')}
     </optgroup>
   `;
 
   return renderGroup('Female Voices', femaleVoices) +
          renderGroup('Male Voices', maleVoices) +
          renderGroup('Youth Voices', youthVoices) +
-         renderGroup('Character & Dynamic Voices', characterVoices);
+         renderGroup('Character & Dynamic Voices', characterVoices) +
+         renderGroup('Free TTS Models', freeVoices);
 }
 
 // Squad Gate & SPARC Checkpoint State
