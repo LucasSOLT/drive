@@ -1,3 +1,9 @@
+/*
+ * LOCKED -- verified by the owner on 2026-10-05: karaoke highlight timing works perfectly.
+ * Do NOT change the timing logic without a reported bug. This covers: the smoothed clock,
+ * DEFAULT_LEAD_S (0.04), LINE_GAP_SECONDS (0.15, shared with tts.ts), estimateWordTimes
+ * and buildMultiLineWordMap. Regression test: tests/karaoke.test.ts (npm run test:karaoke).
+ */
 /**
  * KaraokeController — State machine for synchronized word-by-word audio highlighting.
  *
