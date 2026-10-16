@@ -1,113 +1,267 @@
-import type { StoryFormat, Genre, Story, UserStory, StoryCharacter, DialogueLine, StoryAudioMode, StoryPageAudioSource } from '../types.ts';
-import { genres, registerStory } from '../data/stories.ts';
-import { navigate, getCurrentRoute, getRouteParam } from '../router.ts';
-import { showModal, hideModal } from '../components/modal.ts';
-import { stopSpeaking, isSpeaking, preRecordAudio, preRecordPageAudio, batchPreRecordStory, type BatchPreRecordPage, type BatchPreRecordSummary, playAudioUrl, previewVoice, playAudioSequence, extractAudioFromMediaFile, getCurrentAudio, seekAudio, formatTime } from '../lib/tts.ts';
+import type {
+  StoryFormat,
+  Genre,
+  Story,
+  UserStory,
+  StoryCharacter,
+  DialogueLine,
+  StoryAudioMode,
+  StoryPageAudioSource,
+} from "../types.ts";
+import { genres, registerStory } from "../data/stories.ts";
+import { navigate, getCurrentRoute, getRouteParam } from "../router.ts";
+import { showModal, hideModal } from "../components/modal.ts";
+import {
+  stopSpeaking,
+  isSpeaking,
+  preRecordAudio,
+  preRecordPageAudio,
+  batchPreRecordStory,
+  type BatchPreRecordPage,
+  type BatchPreRecordSummary,
+  playAudioUrl,
+  previewVoice,
+  playAudioSequence,
+  extractAudioFromMediaFile,
+  getCurrentAudio,
+  seekAudio,
+  formatTime,
+} from "../lib/tts.ts";
 
-import { saveOfficialStory, fetchOfficialStories, getCachedOfficialStories, updateSharedStorySettings, fetchStoryByIdFromDb } from '../lib/db.ts';
-import { findEpisodeNeighbors, episodeNavLabel, NO_NEIGHBORS, type EpisodeNeighbors } from '../lib/episode-nav.ts';
-import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
-import { uploadMedia } from '../lib/storage.ts';
-import { makeMissingStills } from '../lib/media-still.ts';
-import { uploadAudioData } from '../lib/storage.ts';
-import { VOICE_OPTIONS } from '../lib/settings.ts';
-import { addUserStory } from '../state.ts';
-import { renderStoryPagePreview } from '../lib/story-preview.ts';
-import { auditionVoice, clearAuditionCache, primeAuditionAudio } from '../lib/voice-lab.ts';
-import { PLAIN_TEXT_ID, PLAIN_TEXT_NAME, isNarrationLine, packCast, readReservedVoices, realCharacters } from '../lib/cast-voices.ts';
-import { runPreflightChecks, getStatusLabel, getStatusColor, type PreflightResult, type PreflightCheck } from '../lib/publishing.ts';
+import {
+  saveOfficialStory,
+  fetchOfficialStories,
+  getCachedOfficialStories,
+  updateSharedStorySettings,
+  fetchStoryByIdFromDb,
+} from "../lib/db.ts";
+import {
+  findEpisodeNeighbors,
+  episodeNavLabel,
+  NO_NEIGHBORS,
+  type EpisodeNeighbors,
+} from "../lib/episode-nav.ts";
+import { isVideoMedia, ensureVideoPlayback } from "../lib/media.ts";
+import { uploadMedia } from "../lib/storage.ts";
+import { makeMissingStills } from "../lib/media-still.ts";
+import { uploadAudioData } from "../lib/storage.ts";
+import { VOICE_OPTIONS } from "../lib/settings.ts";
+import { addUserStory } from "../state.ts";
+import { renderStoryPagePreview } from "../lib/story-preview.ts";
+import {
+  auditionVoice,
+  clearAuditionCache,
+  primeAuditionAudio,
+} from "../lib/voice-lab.ts";
+import {
+  PLAIN_TEXT_ID,
+  PLAIN_TEXT_NAME,
+  isNarrationLine,
+  isLineMuted,
+  packCast,
+  readReservedVoices,
+  realCharacters,
+} from "../lib/cast-voices.ts";
+import {
+  runPreflightChecks,
+  getStatusLabel,
+  getStatusColor,
+  type PreflightResult,
+  type PreflightCheck,
+} from "../lib/publishing.ts";
+import {
+  parseScreenplayToDialogueLines as parseScreenplayLines,
+  highlightScreenplayHtml,
+  resolveSpeakerColor,
+} from "../lib/screenplay.ts";
 
-type CreatePhase = 'canvas' | 'details';
+type CreatePhase = "canvas" | "details";
 
-let phase: CreatePhase = 'canvas';
-let selectedFormat: StoryFormat = 'book';
-let storyTitle = '';
-let storyGenre: Genre = 'Fantasy';
-let storySynopsis = '';
-let storyAuthorName = 'DRiVE Studios';
-let storyContentRating: 'All Ages' | 'PG-13' | 'Mature' = 'All Ages';
-let storyCoverVideo = '';
-let storyCustomGenre = '';
-let storyThemeColor: string = '#141424';
-let currentStoryStatus: 'draft' | 'under-review' | 'published' | 'denied' = 'draft';
+let phase: CreatePhase = "canvas";
+let selectedFormat: StoryFormat = "book";
+let storyTitle = "";
+let storyGenre: Genre = "Fantasy";
+let storySynopsis = "";
+let storyAuthorName = "DRiVE Studios";
+let storyContentRating: "All Ages" | "PG-13" | "Mature" = "All Ages";
+let storyCoverVideo = "";
+let storyCustomGenre = "";
+let storyThemeColor: string = "#141424";
+let currentStoryStatus: "draft" | "under-review" | "published" | "denied" =
+  "draft";
 let currentRejectionReason: string | undefined = undefined;
-let activeStorySettingsTab: 'general' | 'theme' | 'audio' | 'characters' | 'squad' = 'general';
+let activeStorySettingsTab:
+  "general" | "theme" | "audio" | "characters" | "squad" = "general";
 
 const THEME_COLOR_PRESETS = [
-  { id: 'drive-purple', name: 'DRiVE Signature', hex: '#141424', desc: 'Default deep indigo aesthetic' },
-  { id: 'oled-black', name: 'OLED Black', hex: '#000000', desc: 'Ultra-dark pure black canvas' },
-  { id: 'midnight-navy', name: 'Midnight Navy', hex: '#0a0e1a', desc: 'Cool starry oceanic tone' },
-  { id: 'charcoal-slate', name: 'Charcoal Slate', hex: '#18181b', desc: 'Modern neutral dark slate' },
-  { id: 'warm-sepia', name: 'Warm Sepia', hex: '#1c1815', desc: 'Cozy antique novel warmth' },
-  { id: 'dark-crimson', name: 'Dark Crimson', hex: '#18080c', desc: 'Moody dramatic dark velvet' },
+  {
+    id: "drive-purple",
+    name: "DRiVE Signature",
+    hex: "#141424",
+    desc: "Default deep indigo aesthetic",
+  },
+  {
+    id: "oled-black",
+    name: "OLED Black",
+    hex: "#000000",
+    desc: "Ultra-dark pure black canvas",
+  },
+  {
+    id: "midnight-navy",
+    name: "Midnight Navy",
+    hex: "#0a0e1a",
+    desc: "Cool starry oceanic tone",
+  },
+  {
+    id: "charcoal-slate",
+    name: "Charcoal Slate",
+    hex: "#18181b",
+    desc: "Modern neutral dark slate",
+  },
+  {
+    id: "warm-sepia",
+    name: "Warm Sepia",
+    hex: "#1c1815",
+    desc: "Cozy antique novel warmth",
+  },
+  {
+    id: "dark-crimson",
+    name: "Dark Crimson",
+    hex: "#18080c",
+    desc: "Moody dramatic dark velvet",
+  },
 ];
 
-function renderGroupedVoiceOptions(selectedVoiceId: string): string {
-  const femaleIds = new Set(['sarah', 'rachel', 'domi', 'elli', 'charlotte', 'alice', 'lily', 'matilda', 'grace']);
-  const maleIds = new Set(['roger', 'liam', 'george', 'adam', 'antoni', 'josh', 'sam', 'arnold', 'daniel', 'james', 'callum']);
-  const youthIds = new Set(['fin', 'freya']);
-  const freeIds = new Set(['free-us', 'free-uk', 'free-au', 'free-in', 'free-fr']);
+export function renderGroupedVoiceOptions(selectedVoiceId: string): string {
+  const femaleIds = new Set([
+    "sarah",
+    "rachel",
+    "domi",
+    "elli",
+    "charlotte",
+    "alice",
+    "lily",
+    "matilda",
+    "grace",
+  ]);
+  const maleIds = new Set([
+    "roger",
+    "liam",
+    "george",
+    "adam",
+    "antoni",
+    "josh",
+    "sam",
+    "arnold",
+    "daniel",
+    "james",
+    "callum",
+  ]);
+  const youthIds = new Set(["fin", "freya"]);
+  const freeIds = new Set([
+    "free-us",
+    "free-uk",
+    "free-au",
+    "free-in",
+    "free-fr",
+  ]);
 
-  const femaleVoices = VOICE_OPTIONS.filter(v => femaleIds.has(v.id));
-  const maleVoices = VOICE_OPTIONS.filter(v => maleIds.has(v.id));
-  const youthVoices = VOICE_OPTIONS.filter(v => youthIds.has(v.id));
-  const freeVoices = VOICE_OPTIONS.filter(v => freeIds.has(v.id));
-  const characterVoices = VOICE_OPTIONS.filter(v => !femaleIds.has(v.id) && !maleIds.has(v.id) && !youthIds.has(v.id) && !freeIds.has(v.id));
+  const femaleVoices = VOICE_OPTIONS.filter((v) => femaleIds.has(v.id));
+  const maleVoices = VOICE_OPTIONS.filter((v) => maleIds.has(v.id));
+  const youthVoices = VOICE_OPTIONS.filter((v) => youthIds.has(v.id));
+  const freeVoices = VOICE_OPTIONS.filter((v) => freeIds.has(v.id));
+  const characterVoices = VOICE_OPTIONS.filter(
+    (v) =>
+      !femaleIds.has(v.id) &&
+      !maleIds.has(v.id) &&
+      !youthIds.has(v.id) &&
+      !freeIds.has(v.id),
+  );
 
   const renderGroup = (label: string, list: typeof VOICE_OPTIONS) => `
     <optgroup label="${label}">
-      ${list.map(v => `<option value="${v.voiceId}" ${v.voiceId === selectedVoiceId ? 'selected' : ''}>${v.name} – ${v.description}</option>`).join('')}
+      ${list.map((v) => `<option value="${v.voiceId}" ${v.voiceId === selectedVoiceId ? "selected" : ""}>${v.name} – ${v.description}</option>`).join("")}
     </optgroup>
   `;
 
-  return renderGroup('Female Voices', femaleVoices) +
-         renderGroup('Male Voices', maleVoices) +
-         renderGroup('Youth Voices', youthVoices) +
-         renderGroup('Character & Dynamic Voices', characterVoices) +
-         renderGroup('Free TTS Models', freeVoices);
+  return (
+    renderGroup("Female Voices", femaleVoices) +
+    renderGroup("Male Voices", maleVoices) +
+    renderGroup("Youth Voices", youthVoices) +
+    renderGroup("Character & Dynamic Voices", characterVoices) +
+    renderGroup("Free TTS Models", freeVoices)
+  );
 }
 
 // Squad Gate & SPARC Checkpoint State
-const isUserMode = () => window.location.hash.includes('mode=user');
+const isUserMode = () => window.location.hash.includes("mode=user");
 let soloEpisodeCount: 1 | 2 | 3 = 1;
-let sparcPromptText = '';
+let sparcPromptText = "";
 let sparcPromptMediaUrls: string[] = [];
 
 /** Fill in the auto-made stills (video first page -> still picture) on the story being saved. Never throws. */
 async function applyAutoStills(story: Story): Promise<void> {
   try {
-    const rec = currentOfficialRecord && currentOfficialRecord.id === story.id ? currentOfficialRecord : null;
-    const stills = await makeMissingStills({
-      panels: story.panels,
-      coverImage: story.coverImage,
-      coverVideo: story.coverVideo,
-      episodeThumbnail: story.episodeThumbnail || rec?.episodeThumbnail,
-      seriesCoverImage: story.seriesCoverImage || rec?.seriesCoverImage,
-    }, (story.episodeNumber || 1) === 1);
-    if (stills.episodeThumbnail) { story.episodeThumbnail = stills.episodeThumbnail; _autoEpisodeThumbnail = stills.episodeThumbnail; }
-    if (stills.seriesCoverImage) { story.seriesCoverImage = stills.seriesCoverImage; _autoSeriesCover = stills.seriesCoverImage; }
+    const rec =
+      currentOfficialRecord && currentOfficialRecord.id === story.id
+        ? currentOfficialRecord
+        : null;
+    const stills = await makeMissingStills(
+      {
+        panels: story.panels,
+        coverImage: story.coverImage,
+        coverVideo: story.coverVideo,
+        episodeThumbnail: story.episodeThumbnail || rec?.episodeThumbnail,
+        seriesCoverImage: story.seriesCoverImage || rec?.seriesCoverImage,
+      },
+      (story.episodeNumber ?? 1) === 1,
+    );
+    if (stills.episodeThumbnail) {
+      story.episodeThumbnail = stills.episodeThumbnail;
+      _autoEpisodeThumbnail = stills.episodeThumbnail;
+    }
+    if (stills.seriesCoverImage) {
+      story.seriesCoverImage = stills.seriesCoverImage;
+      _autoSeriesCover = stills.seriesCoverImage;
+    }
   } catch (err) {
-    console.warn('[AdminCreate] Auto still failed (save continues):', err);
+    console.warn("[AdminCreate] Auto still failed (save continues):", err);
   }
 }
 
 /** Save story using the correct function based on user/admin mode */
-async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-review' = 'draft'): Promise<void> {
+async function saveStoryForMode(
+  story: Story,
+  targetStatus: "draft" | "under-review" = "draft",
+): Promise<void> {
+  const isCurrentEpisodeLive =
+    String(currentStoryStatus) === "published" ||
+    String(currentStoryStatus) === "live" ||
+    (!isUserMode() &&
+      currentOfficialRecord &&
+      currentOfficialRecord.id === story.id &&
+      (String(currentOfficialRecord.officialStatus) === "live" ||
+        String(currentOfficialRecord.officialStatus) === "published"));
+  if (isCurrentEpisodeLive) {
+    console.warn("[AdminCreate] Refusing to overwrite a live episode from editor.");
+    return;
+  }
+
   if (isUserMode()) {
     // Convert Story → UserStory for regular users (saves to user_stories table)
     const userStory: UserStory = {
       id: story.id,
-      title: story.title || 'Untitled',
-      genre: story.genre as any || 'Drama',
-      format: story.format || 'book',
-      synopsis: story.synopsis || '',
+      title: story.title || "Untitled",
+      genre: (story.genre as any) || "Drama",
+      format: story.format || "book",
+      synopsis: story.synopsis || "",
       status: targetStatus,
       createdAt: new Date().toISOString(),
       coverImage: story.coverImage,
       coverVideo: story.coverVideo,
       pages: (story.panels || []).map((img, i) => ({
         image: img || null,
-        text: story.pageScripts?.[i] || '',
+        text: story.pageScripts?.[i] || "",
       })),
       page_audio: story.pageAudio,
       contentRating: story.contentRating,
@@ -122,8 +276,8 @@ async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-rev
     };
     await addUserStory(userStory);
   } else {
-    if (targetStatus === 'under-review') {
-      story.officialStatus = 'draft';
+    if (targetStatus === "under-review") {
+      story.officialStatus = "draft";
     }
     // Make a still picture for the episode thumbnail / series cover when the first page is a video.
     // Best effort: never blocks or fails the save.
@@ -132,24 +286,48 @@ async function saveStoryForMode(story: Story, targetStatus: 'draft' | 'under-rev
   }
 
   // If this episode is part of a story group, automatically sync shared settings across all episodes
+  // ONLY when no episode in the group is live yet (once an episode is live, shared story settings are locked in the episode editor).
   const groupId = story.storyGroupId || episodeStoryGroupId;
-  if (groupId) {
-    updateSharedStorySettings(groupId, {
-      title: story.title,
-      author: story.author,
-      genre: story.genre,
-      synopsis: story.synopsis,
-      contentRating: story.contentRating,
-      coverImage: story.coverImage,
-      coverVideo: story.coverVideo,
-      characters: story.characters,
-      narratorVoiceId: story.narratorVoiceId,
-      audioMode: story.audioMode,
-      soloEpisodeCount: story.soloEpisodeCount,
-      themeColor: story.themeColor,
-      // The series cover is made from Episode 1 and shared with every episode
-      seriesCoverImage: (!isUserMode() && (story.episodeNumber || 1) === 1) ? story.seriesCoverImage : undefined,
-    }, isUserMode()).catch(err => console.warn('[AdminCreate] Failed to sync shared settings:', err));
+  const groupHasLiveEpisodes = (() => {
+    if (!groupId || isUserMode()) return false;
+    const all = getCachedOfficialStories();
+    return Boolean(
+      all?.some(
+        (s) =>
+          (s.storyGroupId || s.id) === groupId &&
+          (String(s.officialStatus) === "live" ||
+            String(s.officialStatus) === "published" ||
+            String((s as any).status) === "live" ||
+            String((s as any).status) === "published"),
+      ),
+    );
+  })();
+  if (groupId && !groupHasLiveEpisodes) {
+    updateSharedStorySettings(
+      groupId,
+      {
+        title: story.title,
+        author: story.author,
+        genre: story.genre,
+        synopsis: story.synopsis,
+        contentRating: story.contentRating,
+        coverImage: story.coverImage,
+        coverVideo: story.coverVideo,
+        characters: story.characters,
+        narratorVoiceId: story.narratorVoiceId,
+        audioMode: story.audioMode,
+        soloEpisodeCount: story.soloEpisodeCount,
+        themeColor: story.themeColor,
+        // The series cover is made from Episode 1 and shared with every episode
+        seriesCoverImage:
+          !isUserMode() && (story.episodeNumber ?? 1) === 1
+            ? story.seriesCoverImage
+            : undefined,
+      },
+      isUserMode(),
+    ).catch((err) =>
+      console.warn("[AdminCreate] Failed to sync shared settings:", err),
+    );
   }
 }
 
@@ -173,11 +351,46 @@ interface ScrollPanel {
   audioUrl: string | null;
 }
 let scrollPanels: ScrollPanel[] = [
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
-  { image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null },
+  {
+    image: null,
+    notes: "",
+    layout: "single",
+    tiles: [null],
+    textOverlays: [[]],
+    audioUrl: null,
+  },
+  {
+    image: null,
+    notes: "",
+    layout: "single",
+    tiles: [null],
+    textOverlays: [[]],
+    audioUrl: null,
+  },
+  {
+    image: null,
+    notes: "",
+    layout: "single",
+    tiles: [null],
+    textOverlays: [[]],
+    audioUrl: null,
+  },
+  {
+    image: null,
+    notes: "",
+    layout: "single",
+    tiles: [null],
+    textOverlays: [[]],
+    audioUrl: null,
+  },
+  {
+    image: null,
+    notes: "",
+    layout: "single",
+    tiles: [null],
+    textOverlays: [[]],
+    audioUrl: null,
+  },
 ];
 // Character Sheet Studio state
 interface StudioCharacter {
@@ -186,16 +399,16 @@ interface StudioCharacter {
   description: string;
 }
 let characters: StudioCharacter[] = [
-  { name: 'A', image: null, description: '' },
-  { name: 'B', image: null, description: '' },
-  { name: 'C', image: null, description: '' },
+  { name: "A", image: null, description: "" },
+  { name: "B", image: null, description: "" },
+  { name: "C", image: null, description: "" },
 ];
 let studioOpen = false;
 let isGeneratingScript = false;
-let scriptText = '';
-let scriptPdfName = '';
+let scriptText = "";
+let scriptPdfName = "";
 let activeCharPopup: number | null = null;
-let selectedLayout: string = 'single';
+let selectedLayout: string = "single";
 let layoutPickerOpen = false;
 let panelLayoutOverlay: number | null = null;
 
@@ -210,35 +423,77 @@ interface BookPage {
   dialogText: string;
   dialogAudioUrl: string | null;
   dialogueLines?: DialogueLine[];
-  focalPosition?: 'top' | 'center' | 'bottom';
-  audioSource?: 'native' | 'upload' | 'ai' | 'silent';
+  focalPosition?: "top" | "center" | "bottom";
+  audioSource?: "native" | "upload" | "ai" | "silent";
 }
-const defaultBookPage = (): BookPage => ({ image: null, text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, audioFileName: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [], focalPosition: 'center' });
+const defaultBookPage = (): BookPage => ({
+  image: null,
+  text: "",
+  stability: 0.5,
+  deeperDiveContent: "",
+  audioUrl: null,
+  audioFileName: null,
+  dialogText: "",
+  dialogAudioUrl: null,
+  dialogueLines: [],
+  focalPosition: "center",
+});
 let bookPages: BookPage[] = [
-  defaultBookPage(), defaultBookPage(), defaultBookPage(),
-  defaultBookPage(), defaultBookPage(),
+  defaultBookPage(),
+  defaultBookPage(),
+  defaultBookPage(),
+  defaultBookPage(),
+  defaultBookPage(),
 ];
 
 // Story Characters for multi-voice dialogue
-const CHAR_COLORS = ['#8a63d2','#3b82f6','#ef4444','#22c55e','#f59e0b','#06B6D4','#06b6d4','#f97316','#0D9488','#14b8a6'];
-const CHARACTER_PALETTE = ['#3b82f6', '#ef4444', '#f59e0b', '#ec4899', '#8b5cf6', '#22c55e', '#f97316', '#06b6d4', '#eab308', '#10B981'];
+const CHAR_COLORS = [
+  "#8a63d2",
+  "#3b82f6",
+  "#ef4444",
+  "#22c55e",
+  "#f59e0b",
+  "#06B6D4",
+  "#06b6d4",
+  "#f97316",
+  "#0D9488",
+  "#14b8a6",
+];
+export const CHARACTER_PALETTE = [
+  "#3b82f6",
+  "#ef4444",
+  "#f59e0b",
+  "#ec4899",
+  "#8b5cf6",
+  "#22c55e",
+  "#f97316",
+  "#06b6d4",
+  "#eab308",
+  "#10B981",
+];
 let storyCharacters: StoryCharacter[] = [];
 let currentPage = 0;
 let activeDraftId: string | null = null;
 let _coverThumbnail: string | null = null;
 /** Auto-made still pictures for the episode being edited (kept so a normal save never loses them). */
-let _autoEpisodeThumbnail = '';
-let _autoSeriesCover = '';
+let _autoEpisodeThumbnail = "";
+let _autoSeriesCover = "";
 let editStoryId: string | null = null;
-let episodeStoryGroupId: string | null = null;  // Links this episode to a story group
-let episodeNumber: number = 1;                  // Which episode number in the group
-let episodeParentTitle: string | null = null;    // Parent story title for context display
-let storyAudioMode: StoryAudioMode = 'make_audio';
-let storyNarratorVoiceId: string = '21m00Tcm4TlvDq8ikWAM'; // Rachel (default narrator)
-let storyNarratorHighlightColor: string = '#7C6FFA'; // Default narrator highlight accent
+let episodeStoryGroupId: string | null = null; // Links this episode to a story group
+let episodeNumber: number = 1; // Which episode number in the group
+let episodeTitle: string = ""; // Custom episode title
+let episodeParentTitle: string | null = null; // Parent story title for context display
+let storyAudioMode: StoryAudioMode = "make_audio";
+let storyNarratorVoiceId: string = "21m00Tcm4TlvDq8ikWAM"; // Rachel (default narrator)
+let storyNarratorHighlightColor: string = "#7C6FFA"; // Default narrator highlight accent
 /** Voice + color for plain story text (not a character, not "NARRATOR:"). Empty = same as narrator. */
-let storyPlainTextVoiceId: string = '';
-let storyPlainTextColor: string = '';
+let storyPlainTextVoiceId: string = "";
+let storyPlainTextColor: string = "";
+/** Mute flags for the permanent Narrator / Story Text (edited in Admin > Story Settings). */
+let storyNarratorMuted = false;
+let storyPlainTextMuted = false;
+/** Manual episode numbering flag for the story (edited in Admin > Story Settings). */
+let storyManualNumbering = false;
 
 /** Cast list as saved: real characters + permanent Narrator and Story Text entries. */
 function getPackedCast(): StoryCharacter[] {
@@ -247,27 +502,64 @@ function getPackedCast(): StoryCharacter[] {
     narratorColor: storyNarratorHighlightColor,
     plainTextVoiceId: storyPlainTextVoiceId || storyNarratorVoiceId,
     plainTextColor: storyPlainTextColor || storyNarratorHighlightColor,
+    narratorMuted: storyNarratorMuted,
+    plainTextMuted: storyPlainTextMuted,
+    ...(storyManualNumbering ? { manualNumbering: true } : {}),
   });
 }
 
 /** Load a saved cast list: split out the permanent voices, keep only real characters. */
-function applySavedCast(list: StoryCharacter[] | undefined, fallback: { narratorVoiceId?: string; narratorHighlightColor?: string } = {}): void {
-  const hasPlain = (list || []).some(c => c?.id === PLAIN_TEXT_ID);
+function applySavedCast(
+  list: StoryCharacter[] | undefined,
+  fallback: {
+    narratorVoiceId?: string;
+    narratorHighlightColor?: string;
+    manualNumbering?: boolean;
+  } = {},
+): void {
+  const hasPlain = (list || []).some((c) => c?.id === PLAIN_TEXT_ID);
   const v = readReservedVoices(list, fallback);
-  storyCharacters = realCharacters(list).map(c => ({ ...c }));
+  storyCharacters = realCharacters(list).map((c) => ({ ...c }));
   // The narrator_voice_id column stays the source of truth for the narrator voice
   storyNarratorVoiceId = fallback.narratorVoiceId || v.narratorVoiceId;
   storyNarratorHighlightColor = v.narratorColor;
-  storyPlainTextVoiceId = hasPlain ? v.plainTextVoiceId : '';
-  storyPlainTextColor = hasPlain ? v.plainTextColor : '';
+  storyPlainTextVoiceId = hasPlain ? v.plainTextVoiceId : "";
+  storyPlainTextColor = hasPlain ? v.plainTextColor : "";
+  storyNarratorMuted = !!v.narratorMuted;
+  storyPlainTextMuted = !!v.plainTextMuted;
+  storyManualNumbering = Boolean(fallback.manualNumbering ?? v.manualNumbering);
+  reparseAllBookPages();
 }
 
 /** First palette color no character is using yet. */
 function nextFreeCharacterColor(): string {
-  const used = new Set(storyCharacters.map(c => (c.color || '').toLowerCase()));
-  return CHARACTER_PALETTE.find(c => !used.has(c.toLowerCase())) || CHARACTER_PALETTE[storyCharacters.length % CHARACTER_PALETTE.length];
+  const used = new Set(
+    storyCharacters.map((c) => (c.color || "").toLowerCase()),
+  );
+  return (
+    CHARACTER_PALETTE.find((c) => !used.has(c.toLowerCase())) ||
+    CHARACTER_PALETTE[storyCharacters.length % CHARACTER_PALETTE.length]
+  );
 }
 let updateView: () => void;
+
+function autoGrow(ta: HTMLTextAreaElement) {
+  if (ta.scrollHeight === 0) return;
+  ta.style.height = "auto";
+  const borderHeight = ta.offsetHeight - ta.clientHeight;
+  ta.style.height = ta.scrollHeight + borderHeight + "px";
+}
+
+document.addEventListener("input", (e) => {
+  if (
+    e.target instanceof HTMLTextAreaElement &&
+    e.target.closest("#admin-create-container, .storyboard-overlay")
+  ) {
+    if (e.target.id !== "script-text-input" && e.target.id !== "char-popup-desc") {
+      autoGrow(e.target);
+    }
+  }
+});
 // â”€â”€â”€ SVG Icons â”€â”€â”€
 const ICON = {
   scroll: `<svg width="40" height="40" viewBox="0 0 48 48" fill="none"><rect x="12" y="4" width="24" height="40" rx="4" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="14" x2="30" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="20" x2="28" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="26" x2="26" y2="26" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="32" x2="30" y2="32" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M24 38v4M24 0v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.4"/></svg>`,
@@ -289,9 +581,8 @@ const ICON = {
   dots: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>`,
 };
 
-
 function escapeHtml(str: string): string {
-  const div = document.createElement('div');
+  const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
 }
@@ -304,12 +595,15 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(file);
-  }).then(url => compressImage(url as string));
+  }).then((url) => compressImage(url as string));
 }
 
-async function compressImage(dataUrl: string, maxWidth = 1024): Promise<string> {
+async function compressImage(
+  dataUrl: string,
+  maxWidth = 1024,
+): Promise<string> {
   return new Promise((resolve) => {
-    if (!dataUrl.startsWith('data:image/')) return resolve(dataUrl);
+    if (!dataUrl.startsWith("data:image/")) return resolve(dataUrl);
     const img = new Image();
     img.onload = () => {
       let width = img.width;
@@ -318,13 +612,13 @@ async function compressImage(dataUrl: string, maxWidth = 1024): Promise<string> 
         height = Math.round((height * maxWidth) / width);
         width = maxWidth;
       }
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.75));
+        resolve(canvas.toDataURL("image/jpeg", 0.75));
       } else {
         resolve(dataUrl);
       }
@@ -333,7 +627,6 @@ async function compressImage(dataUrl: string, maxWidth = 1024): Promise<string> 
     img.src = dataUrl;
   });
 }
-
 
 // â”€â”€â”€ DRAFT PERSISTENCE â”€â”€â”€
 interface DraftEntry {
@@ -345,7 +638,7 @@ interface DraftEntry {
   storySynopsis: string;
   storyAuthorName?: string;
   storyCoverVideo?: string;
-  storyContentRating?: 'All Ages' | 'PG-13' | 'Mature';
+  storyContentRating?: "All Ages" | "PG-13" | "Mature";
   scrollPanels: { image: string | null; notes: string }[];
   characters?: StudioCharacter[];
   scriptText?: string;
@@ -356,20 +649,30 @@ interface DraftEntry {
   coverThumbnail?: string | null;
   editStoryId?: string | null;
   storyCharacters?: StoryCharacter[];
-  castVoices?: { narratorVoiceId: string; narratorColor: string; plainTextVoiceId: string; plainTextColor: string };
+  castVoices?: {
+    narratorVoiceId: string;
+    narratorColor: string;
+    plainTextVoiceId: string;
+    plainTextColor: string;
+    narratorMuted?: boolean;
+    plainTextMuted?: boolean;
+    manualNumbering?: boolean;
+  };
   soloEpisodeCount?: 1 | 2 | 3;
   sparcPromptText?: string;
   sparcPromptMediaUrls?: string[];
   episodeStoryGroupId?: string | null;
   episodeNumber?: number;
+  episodeTitle?: string;
+  manualNumbering?: boolean;
   storyThemeColor?: string;
-  currentStoryStatus?: 'draft' | 'under-review' | 'published' | 'denied';
+  currentStoryStatus?: "draft" | "under-review" | "published" | "denied";
   currentRejectionReason?: string;
 }
 
 function getDraft(): DraftEntry | null {
   try {
-    const data = localStorage.getItem('drive_admin_create_draft');
+    const data = localStorage.getItem("drive_admin_create_draft");
     if (!data) return null;
     return JSON.parse(data) as DraftEntry;
   } catch {
@@ -379,7 +682,7 @@ function getDraft(): DraftEntry | null {
 
 function saveDraft() {
   const entry: DraftEntry = {
-    id: activeDraftId || 'draft-' + Date.now(),
+    id: activeDraftId || "draft-" + Date.now(),
     phase,
     selectedFormat,
     storyTitle,
@@ -398,36 +701,55 @@ function saveDraft() {
     coverThumbnail: _coverThumbnail,
     editStoryId,
     storyCharacters,
-    castVoices: { narratorVoiceId: storyNarratorVoiceId, narratorColor: storyNarratorHighlightColor, plainTextVoiceId: storyPlainTextVoiceId, plainTextColor: storyPlainTextColor },
+    castVoices: {
+      narratorVoiceId: storyNarratorVoiceId,
+      narratorColor: storyNarratorHighlightColor,
+      plainTextVoiceId: storyPlainTextVoiceId,
+      plainTextColor: storyPlainTextColor,
+      narratorMuted: storyNarratorMuted,
+      plainTextMuted: storyPlainTextMuted,
+      manualNumbering: storyManualNumbering,
+    },
     soloEpisodeCount,
     sparcPromptText,
     sparcPromptMediaUrls,
     episodeStoryGroupId,
     episodeNumber,
+    episodeTitle,
+    manualNumbering: storyManualNumbering,
     storyThemeColor,
     currentStoryStatus,
     currentRejectionReason,
   };
-  
+
   // Pre-check: strip base64 data URLs to keep under localStorage limit
   const stripped = stripBase64FromDraft(entry);
-  
+
   try {
-    localStorage.setItem('drive_admin_create_draft', JSON.stringify(stripped));
+    localStorage.setItem("drive_admin_create_draft", JSON.stringify(stripped));
   } catch {
     // If still too large, strip ALL images
     try {
       const aggressive = {
         ...stripped,
-        coverThumbnail: (stripped.coverThumbnail && stripped.coverThumbnail.startsWith('data:')) ? '' : stripped.coverThumbnail,
-        bookPages: stripped.bookPages.map(p => ({
+        coverThumbnail:
+          stripped.coverThumbnail && stripped.coverThumbnail.startsWith("data:")
+            ? ""
+            : stripped.coverThumbnail,
+        bookPages: stripped.bookPages.map((p) => ({
           ...p,
-          image: (p.image && p.image.startsWith('data:')) ? '' : p.image,
+          image: p.image && p.image.startsWith("data:") ? "" : p.image,
         })),
       };
-      localStorage.setItem('drive_admin_create_draft', JSON.stringify(aggressive));
+      localStorage.setItem(
+        "drive_admin_create_draft",
+        JSON.stringify(aggressive),
+      );
     } catch (e) {
-      console.warn('Failed to save admin draft to localStorage (quota exceeded)', e);
+      console.warn(
+        "Failed to save admin draft to localStorage (quota exceeded)",
+        e,
+      );
     }
   }
 }
@@ -435,110 +757,180 @@ function saveDraft() {
 function stripBase64FromDraft(entry: DraftEntry): DraftEntry {
   return {
     ...entry,
-    coverThumbnail: (entry.coverThumbnail && entry.coverThumbnail.startsWith('data:') && entry.coverThumbnail.length > 100000) ? '' : entry.coverThumbnail,
-    bookPages: entry.bookPages.map(p => ({
+    coverThumbnail:
+      entry.coverThumbnail &&
+      entry.coverThumbnail.startsWith("data:") &&
+      entry.coverThumbnail.length > 100000
+        ? ""
+        : entry.coverThumbnail,
+    bookPages: entry.bookPages.map((p) => ({
       ...p,
-      image: (p.image && p.image.startsWith('data:') && p.image.length > 100000) ? '' : p.image,
+      image:
+        p.image && p.image.startsWith("data:") && p.image.length > 100000
+          ? ""
+          : p.image,
     })),
-    scrollPanels: entry.scrollPanels.map(p => ({
+    scrollPanels: entry.scrollPanels.map((p) => ({
       ...p,
-      image: (p.image && p.image.startsWith('data:') && p.image.length > 100000) ? '' : p.image,
+      image:
+        p.image && p.image.startsWith("data:") && p.image.length > 100000
+          ? ""
+          : p.image,
     })),
   };
 }
 
-
 function loadDraft(draft: DraftEntry) {
   activeDraftId = draft.id;
   phase = draft.phase;
-  selectedFormat = draft.selectedFormat || 'book';
-  storyTitle = draft.storyTitle || '';
-  storyGenre = draft.storyGenre || 'Fantasy';
-  storySynopsis = draft.storySynopsis || '';
-  storyAuthorName = draft.storyAuthorName || 'DRiVE Studios';
-  storyCoverVideo = draft.storyCoverVideo || '';
-  storyContentRating = draft.storyContentRating || 'All Ages';
-  
-  scrollPanels = (draft.scrollPanels || Array.from({ length: 5 }, () => ({ image: null, notes: '' }))).map((p: any) => ({
+  selectedFormat = draft.selectedFormat || "book";
+  storyTitle = draft.storyTitle || "";
+  storyGenre = draft.storyGenre || "Fantasy";
+  storySynopsis = draft.storySynopsis || "";
+  storyAuthorName = draft.storyAuthorName || "DRiVE Studios";
+  storyCoverVideo = draft.storyCoverVideo || "";
+  storyContentRating = draft.storyContentRating || "All Ages";
+
+  scrollPanels = (
+    draft.scrollPanels ||
+    Array.from({ length: 5 }, () => ({ image: null, notes: "" }))
+  ).map((p: any) => ({
     image: p.image || null,
-    notes: p.notes || '',
-    layout: p.layout || 'single',
+    notes: p.notes || "",
+    layout: p.layout || "single",
     tiles: p.tiles || [p.image || null],
     textOverlays: p.textOverlays || [[]],
     audioUrl: p.audioUrl || null,
   }));
   characters = draft.characters || [
-    { name: 'A', image: null, description: '' },
-    { name: 'B', image: null, description: '' },
-    { name: 'C', image: null, description: '' },
+    { name: "A", image: null, description: "" },
+    { name: "B", image: null, description: "" },
+    { name: "C", image: null, description: "" },
   ];
-  scriptText = draft.scriptText || '';
+  scriptText = draft.scriptText || "";
   studioOpen = draft.studioOpen || false;
-  bookPages = draft.bookPages || Array.from({ length: 5 }, () => defaultBookPage());
-  // Ensure dialogueLines and focalPosition exist on each page (backward compat)
-  bookPages.forEach(p => {
-    if (!p.dialogueLines) p.dialogueLines = [];
-    if (!p.focalPosition) p.focalPosition = 'center';
-    if (!p.text && p.dialogueLines.length > 0) {
-      p.text = p.dialogueLines.map(l => {
-        if (isNarrationLine(l)) return l.text;
-        return `${l.characterName.toUpperCase()}: "${l.text}"`;
-      }).join('\n\n');
-    }
-  });
   currentPage = draft.currentPage || 0;
   _coverThumbnail = draft.coverThumbnail || null;
   editStoryId = draft.editStoryId || null;
   storyCharacters = realCharacters(draft.storyCharacters);
   if (draft.castVoices) {
-    storyNarratorVoiceId = draft.castVoices.narratorVoiceId || storyNarratorVoiceId;
-    storyNarratorHighlightColor = draft.castVoices.narratorColor || storyNarratorHighlightColor;
-    storyPlainTextVoiceId = draft.castVoices.plainTextVoiceId || '';
-    storyPlainTextColor = draft.castVoices.plainTextColor || '';
+    storyNarratorVoiceId =
+      draft.castVoices.narratorVoiceId || storyNarratorVoiceId;
+    storyNarratorHighlightColor =
+      draft.castVoices.narratorColor || storyNarratorHighlightColor;
+    storyPlainTextVoiceId = draft.castVoices.plainTextVoiceId || "";
+    storyPlainTextColor = draft.castVoices.plainTextColor || "";
+    storyNarratorMuted = !!draft.castVoices.narratorMuted;
+    storyPlainTextMuted = !!draft.castVoices.plainTextMuted;
+    storyManualNumbering = !!(draft.manualNumbering ?? draft.castVoices.manualNumbering);
+  } else {
+    storyManualNumbering = !!draft.manualNumbering;
   }
+  bookPages =
+    draft.bookPages || Array.from({ length: 5 }, () => defaultBookPage());
+  // Ensure dialogueLines and focalPosition exist on each page (backward compat)
+  bookPages.forEach((p) => {
+    if (!p.dialogueLines) p.dialogueLines = [];
+    if (!p.focalPosition) p.focalPosition = "center";
+    if (!p.text && p.dialogueLines.length > 0) {
+      p.text = p.dialogueLines
+        .map((l) => {
+          if (l.characterId === PLAIN_TEXT_ID) return l.text;
+          if (isNarrationLine(l)) return `NARRATOR: "${l.text}"`;
+          return `${l.characterName.toUpperCase()}: "${l.text}"`;
+        })
+        .join("\n\n");
+    }
+  });
+  reparseAllBookPages();
   soloEpisodeCount = draft.soloEpisodeCount || 1;
-  sparcPromptText = draft.sparcPromptText || '';
+  sparcPromptText = draft.sparcPromptText || "";
   sparcPromptMediaUrls = draft.sparcPromptMediaUrls || [];
   episodeStoryGroupId = draft.episodeStoryGroupId || null;
-  episodeNumber = draft.episodeNumber || 1;
-  storyThemeColor = draft.storyThemeColor || '#141424';
-  currentStoryStatus = draft.currentStoryStatus || 'draft';
+  episodeNumber = draft.episodeNumber ?? 1;
+  episodeTitle = draft.episodeTitle || "";
+  storyThemeColor = draft.storyThemeColor || "#141424";
+  currentStoryStatus = draft.currentStoryStatus || "draft";
   currentRejectionReason = draft.currentRejectionReason;
 }
 
 function clearDraft() {
-  localStorage.removeItem('drive_admin_create_draft');
+  localStorage.removeItem("drive_admin_create_draft");
   activeDraftId = null;
   editStoryId = null;
   soloEpisodeCount = 1;
-  sparcPromptText = '';
+  sparcPromptText = "";
   sparcPromptMediaUrls = [];
-  currentStoryStatus = 'draft';
+  episodeTitle = "";
+  storyManualNumbering = false;
+  currentStoryStatus = "draft";
   currentRejectionReason = undefined;
 }
 
 function getFormData(): void {
-  const ssTitle = (document.getElementById('ss-title') as HTMLInputElement)?.value;
-  const page0Title = (document.getElementById('page0-title') as HTMLInputElement)?.value;
-  storyTitle = ssTitle || page0Title || storyTitle || '';
-  storyAuthorName = (document.getElementById('ss-author') as HTMLInputElement)?.value || storyAuthorName || 'DRiVE Studios';
-  storyGenre = (((document.getElementById('ss-genre') as HTMLSelectElement)?.value || storyGenre || 'Fantasy')) as Genre;
-  storySynopsis = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || storySynopsis || '';
-  storyContentRating = (((document.getElementById('ss-rating') as HTMLSelectElement)?.value || storyContentRating || 'All Ages')) as any;
-  const customColorVal = (document.getElementById('ss-theme-color-custom') as HTMLInputElement)?.value;
+  const ssTitle = (document.getElementById("ss-title") as HTMLInputElement)
+    ?.value;
+  const page0Title = (
+    document.getElementById("page0-title") as HTMLInputElement
+  )?.value;
+  storyTitle = ssTitle || page0Title || storyTitle || "";
+
+  const epNumInput = document.getElementById("ed-episode-number") as HTMLInputElement | null;
+  if (epNumInput) {
+    const val = parseFloat(epNumInput.value);
+    if (!isNaN(val) && val > 0) episodeNumber = val;
+  }
+
+  const epTitleInput = document.getElementById("ed-episode-title") as HTMLInputElement | null;
+  if (epTitleInput) {
+    episodeTitle = epTitleInput.value;
+  }
+
+  storyAuthorName =
+    (document.getElementById("ss-author") as HTMLInputElement)?.value ||
+    storyAuthorName ||
+    "DRiVE Studios";
+  storyGenre = ((document.getElementById("ss-genre") as HTMLSelectElement)
+    ?.value ||
+    storyGenre ||
+    "Fantasy") as Genre;
+  storySynopsis =
+    (document.getElementById("ss-synopsis") as HTMLTextAreaElement)?.value ||
+    storySynopsis ||
+    "";
+  storyContentRating = ((
+    document.getElementById("ss-rating") as HTMLSelectElement
+  )?.value ||
+    storyContentRating ||
+    "All Ages") as any;
+  const customColorVal = (
+    document.getElementById("ss-theme-color-custom") as HTMLInputElement
+  )?.value;
   if (customColorVal) storyThemeColor = customColorVal;
-  const narratorVoiceVal = (document.getElementById('ss-narrator-voice') as HTMLSelectElement)?.value;
+  const narratorVoiceVal = (
+    document.getElementById("ss-narrator-voice") as HTMLSelectElement
+  )?.value;
   if (narratorVoiceVal) storyNarratorVoiceId = narratorVoiceVal;
 }
 
-function buildStory(status: 'draft' | 'live'): Story {
+function buildStory(status: "draft" | "live"): Story {
   getFormData();
-  const pages = selectedFormat === 'book'
-    ? bookPages.map(p => ({ image: p.image, text: p.text, stability: p.stability, deeperDiveContent: p.deeperDiveContent, dialogText: p.dialogText }))
-    : scrollPanels.map(p => ({ image: p.image, text: p.notes }));
+  const pages =
+    selectedFormat === "book"
+      ? bookPages.map((p) => ({
+          image: p.image,
+          text: p.text,
+          stability: p.stability,
+          deeperDiveContent: p.deeperDiveContent,
+          dialogText: p.dialogText,
+        }))
+      : scrollPanels.map((p) => ({ image: p.image, text: p.notes }));
   const storyId = editStoryId || crypto.randomUUID();
 
-  const allMedia = selectedFormat === 'book' ? pages.map(p => p.image || '') : scrollPanels.map(p => p.image || '');
+  const allMedia =
+    selectedFormat === "book"
+      ? pages.map((p) => p.image || "")
+      : scrollPanels.map((p) => p.image || "");
   const pageVideos: Record<number, string> = {};
   allMedia.forEach((media, i) => {
     if (isVideoMedia(media)) {
@@ -546,18 +938,20 @@ function buildStory(status: 'draft' | 'live'): Story {
     }
   });
 
-  const page0 = allMedia[0] || '';
-  const coverVideo = storyCoverVideo
-    || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined)
-    || (isVideoMedia(page0) ? page0 : undefined);
+  const page0 = allMedia[0] || "";
+  const coverVideo =
+    storyCoverVideo ||
+    (isVideoMedia(_coverThumbnail) ? _coverThumbnail || "" : undefined) ||
+    (isVideoMedia(page0) ? page0 : undefined);
 
-  const coverImage = (!isVideoMedia(_coverThumbnail) && _coverThumbnail)
-    || (!isVideoMedia(page0) && page0)
-    || '';
+  const coverImage =
+    (!isVideoMedia(_coverThumbnail) && _coverThumbnail) ||
+    (!isVideoMedia(page0) && page0) ||
+    "";
 
   // Build pageAudio from bookPages (pre-recorded audio per page)
   const pageAudio: Record<number, string> = {};
-  if (selectedFormat === 'book') {
+  if (selectedFormat === "book") {
     bookPages.forEach((bp, i) => {
       if (bp.audioUrl) pageAudio[i] = bp.audioUrl;
     });
@@ -565,7 +959,7 @@ function buildStory(status: 'draft' | 'live'): Story {
 
   // Build pageDialogue from bookPages dialogueLines
   const pageDialogue: Record<number, DialogueLine[]> = {};
-  if (selectedFormat === 'book') {
+  if (selectedFormat === "book") {
     bookPages.forEach((bp, i) => {
       if ((!bp.dialogueLines || bp.dialogueLines.length === 0) && bp.text) {
         bp.dialogueLines = parseScreenplayToDialogueLines(bp.text);
@@ -579,10 +973,12 @@ function buildStory(status: 'draft' | 'live'): Story {
   // Build pageFocalPositions from bookPages
   const pageFocalPositions: Record<number, string> = {};
   const pageAudioSource: Record<number, StoryPageAudioSource> = {};
-  if (selectedFormat === 'book') {
+  if (selectedFormat === "book") {
     bookPages.forEach((bp, i) => {
-      if (bp.focalPosition && bp.focalPosition !== 'center') pageFocalPositions[i] = bp.focalPosition;
-      if (bp.audioSource && bp.audioSource !== 'native') pageAudioSource[i] = bp.audioSource;
+      if (bp.focalPosition && bp.focalPosition !== "center")
+        pageFocalPositions[i] = bp.focalPosition;
+      if (bp.audioSource && bp.audioSource !== "native")
+        pageAudioSource[i] = bp.audioSource;
     });
   }
 
@@ -600,37 +996,53 @@ function buildStory(status: 'draft' | 'live'): Story {
     isEditorPick: false,
     panels: allMedia,
     pageVideos,
-    pageScripts: selectedFormat === 'book' ? Object.fromEntries(pages.map((p, i) => [i, p.text])) : Object.fromEntries(scrollPanels.map((p, i) => [i, p.notes])),
+    pageScripts:
+      selectedFormat === "book"
+        ? Object.fromEntries(pages.map((p, i) => [i, p.text]))
+        : Object.fromEntries(scrollPanels.map((p, i) => [i, p.notes])),
     pageAudio,
     contentRating: storyContentRating,
     isOfficial: true,
     officialStatus: status,
     storyGroupId: episodeStoryGroupId || storyId,
     episodeNumber: episodeNumber,
+    episodeTitle: episodeTitle.trim(),
+    manualNumbering: storyManualNumbering || undefined,
     characters: getPackedCast(),
-    pageDialogue: Object.keys(pageDialogue).length > 0 ? pageDialogue : undefined,
+    pageDialogue:
+      Object.keys(pageDialogue).length > 0 ? pageDialogue : undefined,
     audioMode: storyAudioMode,
     narratorVoiceId: storyNarratorVoiceId,
     narratorHighlightColor: storyNarratorHighlightColor,
-    pageFocalPositions: Object.keys(pageFocalPositions).length > 0 ? pageFocalPositions : undefined,
-    pageAudioSource: Object.keys(pageAudioSource).length > 0 ? pageAudioSource : undefined,
+    pageFocalPositions:
+      Object.keys(pageFocalPositions).length > 0
+        ? pageFocalPositions
+        : undefined,
+    pageAudioSource:
+      Object.keys(pageAudioSource).length > 0 ? pageAudioSource : undefined,
     soloEpisodeCount,
     themeColor: storyThemeColor,
     episodeThumbnail: _autoEpisodeThumbnail || undefined,
     seriesCoverImage: _autoSeriesCover || undefined,
-    sparcPrompt: (sparcPromptText.trim() || sparcPromptMediaUrls.length > 0) ? {
-      text: sparcPromptText.trim(),
-      mediaUrls: sparcPromptMediaUrls.length > 0 ? sparcPromptMediaUrls : undefined,
-    } : undefined,
+    sparcPrompt:
+      sparcPromptText.trim() || sparcPromptMediaUrls.length > 0
+        ? {
+            text: sparcPromptText.trim(),
+            mediaUrls:
+              sparcPromptMediaUrls.length > 0
+                ? sparcPromptMediaUrls
+                : undefined,
+          }
+        : undefined,
   };
 }
 
 async function preUploadBase64Images() {
-  if (_coverThumbnail && _coverThumbnail.startsWith('data:')) {
+  if (_coverThumbnail && _coverThumbnail.startsWith("data:")) {
     try {
-      const blob = await fetch(_coverThumbnail).then(r => r.blob());
-      const file = new File([blob], `cover.jpg`, { type: 'image/jpeg' });
-      const res = await uploadMedia(file, 'stories');
+      const blob = await fetch(_coverThumbnail).then((r) => r.blob());
+      const file = new File([blob], `cover.jpg`, { type: "image/jpeg" });
+      const res = await uploadMedia(file, "stories");
       _coverThumbnail = res.url;
     } catch (err) {
       console.warn(`[AdminCreate] Failed to pre-upload cover thumbnail:`, err);
@@ -638,27 +1050,33 @@ async function preUploadBase64Images() {
   }
 
   for (let i = 0; i < bookPages.length; i++) {
-    if (bookPages[i].image && bookPages[i].image!.startsWith('data:')) {
+    if (bookPages[i].image && bookPages[i].image!.startsWith("data:")) {
       try {
-        const blob = await fetch(bookPages[i].image!).then(r => r.blob());
-        const file = new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' });
-        const res = await uploadMedia(file, 'stories');
+        const blob = await fetch(bookPages[i].image!).then((r) => r.blob());
+        const file = new File([blob], `page-${i}.jpg`, { type: "image/jpeg" });
+        const res = await uploadMedia(file, "stories");
         bookPages[i].image = res.url;
       } catch (err) {
-        console.warn(`[AdminCreate] Failed to pre-upload page ${i} image:`, err);
+        console.warn(
+          `[AdminCreate] Failed to pre-upload page ${i} image:`,
+          err,
+        );
       }
     }
   }
 
   for (let i = 0; i < scrollPanels.length; i++) {
-    if (scrollPanels[i].image && scrollPanels[i].image!.startsWith('data:')) {
+    if (scrollPanels[i].image && scrollPanels[i].image!.startsWith("data:")) {
       try {
-        const blob = await fetch(scrollPanels[i].image!).then(r => r.blob());
-        const file = new File([blob], `panel-${i}.jpg`, { type: 'image/jpeg' });
-        const res = await uploadMedia(file, 'stories');
+        const blob = await fetch(scrollPanels[i].image!).then((r) => r.blob());
+        const file = new File([blob], `panel-${i}.jpg`, { type: "image/jpeg" });
+        const res = await uploadMedia(file, "stories");
         scrollPanels[i].image = res.url;
       } catch (err) {
-        console.warn(`[AdminCreate] Failed to pre-upload panel ${i} image:`, err);
+        console.warn(
+          `[AdminCreate] Failed to pre-upload panel ${i} image:`,
+          err,
+        );
       }
     }
   }
@@ -670,59 +1088,66 @@ async function preUploadBase64Images() {
 // nothing the author typed is lost and nothing is overwritten by the switch.
 
 let episodeNeighbors: EpisodeNeighbors = NO_NEIGHBORS;
-let episodeNeighborsKey = '';
+let episodeNeighborsKey = "";
 let episodeNeighborsFetchedAt = 0;
 let episodeNavBusy = false;
 /** DB copy of the episode being edited (so a save can keep fields the editor doesn't own). */
 let currentOfficialRecord: Story | null = null;
 
-const EP_ARROW_PREV = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
-const EP_ARROW_NEXT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+const EP_ARROW_PREV =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+const EP_ARROW_NEXT =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
 
 /** Toolbar-menu buttons. Greyed out (disabled) when there is no such episode. */
 function episodeNavItemsHtml(): string {
-  const item = (id: string, kind: 'prev' | 'next') => {
+  const item = (id: string, kind: "prev" | "next") => {
     const ref = episodeNeighbors[kind];
     return `
-          <button class="canvas-toolbar__dd-item" id="${id}" data-nav-ep="${ref ? ref.id : ''}" ${ref ? '' : 'disabled'}>
-            ${kind === 'prev' ? EP_ARROW_PREV : EP_ARROW_NEXT}
+          <button class="canvas-toolbar__dd-item" id="${id}" data-nav-ep="${ref ? ref.id : ""}" ${ref ? "" : "disabled"}>
+            ${kind === "prev" ? EP_ARROW_PREV : EP_ARROW_NEXT}
             <span class="dd-ep-label">${episodeNavLabel(kind, ref)}</span>
           </button>`;
   };
-  return item('btn-dd-prev-episode', 'prev') + item('btn-dd-next-episode', 'next');
+  return (
+    item("btn-dd-prev-episode", "prev") + item("btn-dd-next-episode", "next")
+  );
 }
 
 /** Desktop storyboard top-bar buttons (the toolbar menu is hidden behind the storyboard). */
 function episodeNavSbHtml(): string {
-  const btn = (id: string, kind: 'prev' | 'next', text: string) => {
+  const btn = (id: string, kind: "prev" | "next", text: string) => {
     const ref = episodeNeighbors[kind];
-    return `<button class="sb-topbar__btn-action" id="${id}" type="button" data-nav-ep="${ref ? ref.id : ''}" ${ref ? '' : 'disabled'} title="${episodeNavLabel(kind, ref)}">${text}</button>`;
+    return `<button class="sb-topbar__btn-action" id="${id}" type="button" data-nav-ep="${ref ? ref.id : ""}" ${ref ? "" : "disabled"} title="${episodeNavLabel(kind, ref)}">${text}</button>`;
   };
-  return btn('sb-prev-episode', 'prev', '&#9664; Prev Ep') + btn('sb-next-episode', 'next', 'Next Ep &#9654;');
+  return (
+    btn("sb-prev-episode", "prev", "&#9664; Prev Ep") +
+    btn("sb-next-episode", "next", "Next Ep &#9654;")
+  );
 }
 
 /** Push the current neighbors into any episode buttons that are on screen. */
 function applyEpisodeNeighborsToDom(): void {
-  const set = (id: string, kind: 'prev' | 'next') => {
+  const set = (id: string, kind: "prev" | "next") => {
     const el = document.getElementById(id) as HTMLButtonElement | null;
     if (!el) return;
     const ref = episodeNeighbors[kind];
     el.disabled = !ref || episodeNavBusy;
-    el.dataset.navEp = ref ? ref.id : '';
+    el.dataset.navEp = ref ? ref.id : "";
     el.title = episodeNavLabel(kind, ref);
-    const label = el.querySelector('.dd-ep-label');
+    const label = el.querySelector(".dd-ep-label");
     if (label) label.textContent = episodeNavLabel(kind, ref);
   };
-  set('btn-dd-prev-episode', 'prev');
-  set('btn-dd-next-episode', 'next');
-  set('sb-prev-episode', 'prev');
-  set('sb-next-episode', 'next');
+  set("btn-dd-prev-episode", "prev");
+  set("btn-dd-next-episode", "next");
+  set("sb-prev-episode", "prev");
+  set("sb-next-episode", "next");
 }
 
 /** Work out the previous/next episode. Cheap to call often: it only hits the network when the episode changed or data is 20s old. */
 async function refreshEpisodeNeighbors(): Promise<void> {
   const groupId = episodeStoryGroupId || editStoryId;
-  const key = `${isUserMode() ? 'u' : 'a'}|${groupId || ''}|${episodeNumber}|${editStoryId || ''}`;
+  const key = `${isUserMode() ? "u" : "a"}|${groupId || ""}|${episodeNumber}|${editStoryId || ""}`;
   const keyChanged = key !== episodeNeighborsKey;
   if (!keyChanged && Date.now() - episodeNeighborsFetchedAt < 20000) return;
   episodeNeighborsKey = key;
@@ -738,7 +1163,9 @@ async function refreshEpisodeNeighbors(): Promise<void> {
   if (keyChanged) {
     // Show something right away from cache, then correct it from the database.
     const cached = getCachedOfficialStories();
-    episodeNeighbors = cached ? findEpisodeNeighbors(cached, groupId, episodeNumber, editStoryId) : NO_NEIGHBORS;
+    episodeNeighbors = cached
+      ? findEpisodeNeighbors(cached, groupId, episodeNumber, editStoryId)
+      : NO_NEIGHBORS;
     applyEpisodeNeighborsToDom();
   }
 
@@ -746,24 +1173,37 @@ async function refreshEpisodeNeighbors(): Promise<void> {
   try {
     const all = await fetchOfficialStories();
     if (key !== episodeNeighborsKey) return; // the author already moved on
-    episodeNeighbors = findEpisodeNeighbors(all, groupId, episodeNumber, editStoryId);
-    currentOfficialRecord = editStoryId ? (all.find(s => s.id === editStoryId) || null) : null;
+    episodeNeighbors = findEpisodeNeighbors(
+      all,
+      groupId,
+      episodeNumber,
+      editStoryId,
+    );
+    currentOfficialRecord = editStoryId
+      ? all.find((s) => s.id === editStoryId) || null
+      : null;
     applyEpisodeNeighborsToDom();
   } catch (err) {
-    console.warn('[AdminCreate] Could not load sibling episodes:', err);
+    console.warn("[AdminCreate] Could not load sibling episodes:", err);
   }
 }
 
 /** Build the story for an automatic save without unpublishing a Live episode or wiping fields the editor doesn't own. */
 function buildStoryKeepingLiveState(): Story {
-  const story = buildStory(String(currentStoryStatus) === 'live' ? 'live' : 'draft');
-  const rec = !isUserMode() && currentOfficialRecord && currentOfficialRecord.id === story.id ? currentOfficialRecord : null;
+  const story = buildStory(
+    String(currentStoryStatus) === "live" ? "live" : "draft",
+  );
+  const rec =
+    !isUserMode() &&
+    currentOfficialRecord &&
+    currentOfficialRecord.id === story.id
+      ? currentOfficialRecord
+      : null;
   if (rec) {
     story.sortOrder = rec.sortOrder;
     story.isFeatured = rec.isFeatured;
     story.isEditorPick = rec.isEditorPick;
     story.episodeThumbnail = story.episodeThumbnail || rec.episodeThumbnail;
-    story.episodeTitle = rec.episodeTitle;
     story.seriesCoverImage = story.seriesCoverImage || rec.seriesCoverImage;
   }
   return story;
@@ -774,38 +1214,51 @@ async function goToSiblingEpisode(targetId: string): Promise<void> {
   if (episodeNavBusy || !targetId) return;
   episodeNavBusy = true;
   applyEpisodeNeighborsToDom();
-  const labels = ['btn-dd-prev-episode', 'btn-dd-next-episode']
-    .map(id => document.getElementById(id)?.querySelector('.dd-ep-label') as HTMLElement | null);
-  labels.forEach(l => { if (l) l.textContent = 'Saving...'; });
+  const labels = ["btn-dd-prev-episode", "btn-dd-next-episode"].map(
+    (id) =>
+      document
+        .getElementById(id)
+        ?.querySelector(".dd-ep-label") as HTMLElement | null,
+  );
+  labels.forEach((l) => {
+    if (l) l.textContent = "Saving...";
+  });
 
   try {
-    if (!storyTitle.trim()) storyTitle = 'Untitled';
+    if (!storyTitle.trim()) storyTitle = "Untitled";
     getFormData();
     saveDraft(); // instant local backup
-    try { await preUploadBase64Images(); } catch (e) { console.warn('[AdminCreate] Pre-upload before episode switch failed:', e); }
+    try {
+      await preUploadBase64Images();
+    } catch (e) {
+      console.warn("[AdminCreate] Pre-upload before episode switch failed:", e);
+    }
     const story = buildStoryKeepingLiveState();
     registerStory(story);
     await saveStoryForMode(story); // throws if the cloud save fails
     editStoryId = story.id;
     saveDraft();
   } catch (err: any) {
-    console.error('[AdminCreate] Save before episode switch failed:', err);
+    console.error("[AdminCreate] Save before episode switch failed:", err);
     episodeNavBusy = false;
     applyEpisodeNeighborsToDom();
-    alert('Could not save this episode, so you were NOT moved to another one. Your work is still here. ' + (err?.message || ''));
+    alert(
+      "Could not save this episode, so you were NOT moved to another one. Your work is still here. " +
+        (err?.message || ""),
+    );
     return;
   }
 
   // Leave the desktop storyboard overlay (it is re-opened for the next episode)
-  document.querySelector('.storyboard-overlay')?.remove();
+  document.querySelector(".storyboard-overlay")?.remove();
   currentPage = 0;
   episodeNavBusy = false;
-  navigate('admin-create/' + targetId);
+  navigate("admin-create/" + targetId);
 }
 
 function wireEpisodeNav(ids: string[]): void {
   for (const id of ids) {
-    document.getElementById(id)?.addEventListener('click', (e) => {
+    document.getElementById(id)?.addEventListener("click", (e) => {
       e.stopPropagation();
       const btn = e.currentTarget as HTMLButtonElement;
       if (btn.disabled) return;
@@ -817,66 +1270,92 @@ function wireEpisodeNav(ids: string[]): void {
 }
 
 /** Colors offered for the Narrator / Story Text cards (narrator default first). */
-const FIXED_VOICE_PALETTE = ['#7C6FFA', ...CHARACTER_PALETTE];
+const FIXED_VOICE_PALETTE = ["#7C6FFA", ...CHARACTER_PALETTE];
 
 /** Recolor a cast card right away: border/glow, avatar badge and the selected dot. */
-function paintCastCard(card: HTMLElement | null, color: string, activeDot?: HTMLElement): void {
+function paintCastCard(
+  card: HTMLElement | null,
+  color: string,
+  activeDot?: HTMLElement,
+): void {
   if (!card) return;
-  card.style.setProperty('--char-color', color);
-  const badge = card.querySelector('.ss-char-card__badge') as HTMLElement | null;
+  card.style.setProperty("--char-color", color);
+  const badge = card.querySelector(
+    ".ss-char-card__badge",
+  ) as HTMLElement | null;
   if (badge) {
     badge.style.backgroundColor = color;
     badge.style.boxShadow = `0 3px 12px ${color}40`;
   }
-  card.querySelectorAll('.ss-char-color-dot').forEach(d => d.classList.remove('ss-char-color-dot--active'));
-  activeDot?.classList.add('ss-char-color-dot--active');
+  card
+    .querySelectorAll(".ss-char-color-dot")
+    .forEach((d) => d.classList.remove("ss-char-color-dot--active"));
+  activeDot?.classList.add("ss-char-color-dot--active");
 }
 
 let _auditionBtn: HTMLButtonElement | null = null;
 function resetAuditionBtn(b: HTMLButtonElement | null): void {
   if (!b) return;
-  b.textContent = '🔊 Audition';
+  b.textContent = "🔊 Audition";
   b.disabled = false;
-  b.classList.remove('ss-char-audition-btn--playing');
+  b.classList.remove("ss-char-audition-btn--playing");
 }
 
 /** Audition button: unlocks phone audio inside the tap, shows the real reason if it fails. */
-function runAuditionButton(btn: HTMLButtonElement, voiceId: string, name: string): void {
+function runAuditionButton(
+  btn: HTMLButtonElement,
+  voiceId: string,
+  name: string,
+): void {
   primeAuditionAudio(); // must run synchronously inside the tap (iPhone)
   if (_auditionBtn && _auditionBtn !== btn) resetAuditionBtn(_auditionBtn);
   _auditionBtn = btn;
-  btn.textContent = '⏳ Loading...';
+  btn.textContent = "⏳ Loading...";
   btn.disabled = true;
-  btn.classList.add('ss-char-audition-btn--playing');
+  btn.classList.add("ss-char-audition-btn--playing");
   auditionVoice(voiceId, name)
-    .then(audio => {
-      if (!audio) { resetAuditionBtn(btn); return; }
-      btn.textContent = '🔊 Playing...';
-      const done = () => { if (_auditionBtn === btn) _auditionBtn = null; resetAuditionBtn(btn); };
-      audio.addEventListener('ended', done, { once: true });
-      audio.addEventListener('pause', done, { once: true });
-      audio.addEventListener('error', done, { once: true });
+    .then((audio) => {
+      if (!audio) {
+        resetAuditionBtn(btn);
+        return;
+      }
+      btn.textContent = "🔊 Playing...";
+      const done = () => {
+        if (_auditionBtn === btn) _auditionBtn = null;
+        resetAuditionBtn(btn);
+      };
+      audio.addEventListener("ended", done, { once: true });
+      audio.addEventListener("pause", done, { once: true });
+      audio.addEventListener("error", done, { once: true });
     })
     .catch((err: any) => {
       resetAuditionBtn(btn);
       if (_auditionBtn === btn) _auditionBtn = null;
-      showModal({ title: 'Audition Failed', content: `<p>${escapeHtml(err?.message || 'Could not play this voice.')}</p>`, confirmText: 'OK' });
+      showModal({
+        title: "Audition Failed",
+        content: `<p>${escapeHtml(err?.message || "Could not play this voice.")}</p>`,
+        confirmText: "OK",
+      });
     });
 }
 
 /** Permanent cast card: Narrator (NARRATOR: "...") or Story Text (untagged text read aloud). */
-function renderFixedVoiceCard(kind: 'narrator' | 'plain_text'): string {
-  const isNarrator = kind === 'narrator';
-  const voiceId = isNarrator ? storyNarratorVoiceId : (storyPlainTextVoiceId || storyNarratorVoiceId);
-  const color = isNarrator ? storyNarratorHighlightColor : (storyPlainTextColor || storyNarratorHighlightColor);
-  const title = isNarrator ? 'Narrator' : PLAIN_TEXT_NAME;
+function renderFixedVoiceCard(kind: "narrator" | "plain_text"): string {
+  const isNarrator = kind === "narrator";
+  const voiceId = isNarrator
+    ? storyNarratorVoiceId
+    : storyPlainTextVoiceId || storyNarratorVoiceId;
+  const color = isNarrator
+    ? storyNarratorHighlightColor
+    : storyPlainTextColor || storyNarratorHighlightColor;
+  const title = isNarrator ? "Narrator" : PLAIN_TEXT_NAME;
   const desc = isNarrator
     ? 'Reads lines written as NARRATOR: "..."'
-    : 'Reads normal text that isn\'t tagged to a character or the Narrator.';
+    : "Reads normal text that isn't tagged to a character or the Narrator.";
   return `
     <div class="ss-char-card ss-char-card--fixed" data-fixed-card="${kind}" style="--char-color:${color};">
       <div class="ss-char-card__top">
-        <div class="ss-char-card__badge" style="background-color:${color}; box-shadow:0 3px 12px ${color}40;">${isNarrator ? '🎙️' : '📖'}</div>
+        <div class="ss-char-card__badge" style="background-color:${color}; box-shadow:0 3px 12px ${color}40;">${isNarrator ? "🎙️" : "📖"}</div>
         <div class="ss-char-card__name-wrap">
           <span class="ss-char-card__name-label">Always in your cast</span>
           <div style="font-family:var(--font-heading); font-weight:700; font-size:0.98rem; color:var(--color-text-primary);">${title}</div>
@@ -886,9 +1365,11 @@ function renderFixedVoiceCard(kind: 'narrator' | 'plain_text'): string {
       <div class="ss-char-card__palette-wrap">
         <span class="ss-char-card__palette-label">Theme:</span>
         <div class="ss-char-color-dots">
-          ${FIXED_VOICE_PALETTE.map(c => `
-            <button type="button" class="ss-char-color-dot ${color.toLowerCase() === c.toLowerCase() ? 'ss-char-color-dot--active' : ''}" data-fixed-color-dot="${c}" data-fixed-kind="${kind}" style="background-color:${c};" title="Select color"></button>
-          `).join('')}
+          ${FIXED_VOICE_PALETTE.map(
+            (c) => `
+            <button type="button" class="ss-char-color-dot ${color.toLowerCase() === c.toLowerCase() ? "ss-char-color-dot--active" : ""}" data-fixed-color-dot="${c}" data-fixed-kind="${kind}" style="background-color:${c};" title="Select color"></button>
+          `,
+          ).join("")}
         </div>
       </div>
       <div class="ss-char-card__voice-wrap">
@@ -903,23 +1384,106 @@ function renderFixedVoiceCard(kind: 'narrator' | 'plain_text'): string {
     </div>`;
 }
 
+/**
+ * Cast / voices / mute are edited in Admin > Story Settings (it is exempt from the live lock).
+ * Saves the draft first, then opens that modal for this story group; closing it returns here.
+ * Calls `onNoStory` when there is no saved story group yet (brand-new story) or in user mode.
+ */
+function openCastManager(onNoStory: () => void): void {
+  getFormData();
+  const groupId = isUserMode() ? "" : episodeStoryGroupId || editStoryId || "";
+  if (!groupId) {
+    onNoStory();
+    return;
+  }
+  saveDraft();
+  const back = window.location.hash.replace(/^#/, "");
+  navigate(
+    "admin?edit_settings=" +
+      encodeURIComponent(groupId) +
+      (back.startsWith("admin-create")
+        ? "&return=" + encodeURIComponent(back)
+        : ""),
+  );
+}
+
 function openStorySettings(options?: { preserveScroll?: boolean }): void {
-  const wizard = document.getElementById('admin-admin-create-wizard');
+  const wizard = document.getElementById("admin-admin-create-wizard");
   if (!wizard) return;
 
   if (!options?.preserveScroll) {
-    window.scrollTo({ top: 0, behavior: 'instant' });
-    document.getElementById('app-content')?.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo({ top: 0, behavior: "instant" });
+    document
+      .getElementById("app-content")
+      ?.scrollTo({ top: 0, behavior: "instant" });
   }
 
-  const formatLabels: Record<string, string> = {
-    'scroll': 'Waterfall Storyboard',
-    'book': 'Illustrated Book',
-  };
-  const formatLabel = formatLabels[selectedFormat || 'scroll'] || selectedFormat || 'Unknown';
+  const isCurrentEpisodeLive =
+    String(currentStoryStatus) === "published" ||
+    String(currentStoryStatus) === "live";
 
-  const allGenres = ['Fantasy','Sci-Fi','Romance','Horror','Comedy','Drama','Mystery','Slice of Life','Action','Adventure','Thriller','Historical','Superhero','Sports','Psychological','Supernatural','Mecha','Musical','Custom'];
-  
+  const storyHasPublishedEpisodes = (() => {
+    if (isUserMode()) return isCurrentEpisodeLive;
+    const groupId = episodeStoryGroupId || editStoryId;
+    if (!groupId) return isCurrentEpisodeLive;
+    const all = getCachedOfficialStories();
+    if (all) {
+      return all.some(
+        (s) =>
+          (s.storyGroupId || s.id) === groupId &&
+          (String(s.officialStatus) === "published" ||
+            String(s.officialStatus) === "live" ||
+            String((s as any).status) === "published" ||
+            String((s as any).status) === "live"),
+      );
+    }
+    return isCurrentEpisodeLive;
+  })();
+
+  const _allStories = getCachedOfficialStories();
+  const _groupEpisodes =
+    _allStories?.filter(
+      (s) => (s.storyGroupId || s.id) === (episodeStoryGroupId || editStoryId),
+    ) || [];
+  const parentHasManualNumbering =
+    storyManualNumbering ||
+    currentOfficialRecord?.manualNumbering === true ||
+    readReservedVoices(currentOfficialRecord?.characters).manualNumbering === true ||
+    _groupEpisodes.some(
+      (s) =>
+        s.manualNumbering === true ||
+        readReservedVoices(s.characters).manualNumbering === true,
+    );
+
+  const formatLabels: Record<string, string> = {
+    scroll: "Waterfall Storyboard",
+    book: "Illustrated Book",
+  };
+  const formatLabel =
+    formatLabels[selectedFormat || "scroll"] || selectedFormat || "Unknown";
+
+  const allGenres = [
+    "Fantasy",
+    "Sci-Fi",
+    "Romance",
+    "Horror",
+    "Comedy",
+    "Drama",
+    "Mystery",
+    "Slice of Life",
+    "Action",
+    "Adventure",
+    "Thriller",
+    "Historical",
+    "Superhero",
+    "Sports",
+    "Psychological",
+    "Supernatural",
+    "Mecha",
+    "Musical",
+    "Custom",
+  ];
+
   wizard.innerHTML = `
     <div class="story-settings-fs">
       <div class="story-settings-fs__header">
@@ -931,6 +1495,26 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
       </div>
 
       <div class="story-settings-fs__body">
+        ${
+          storyHasPublishedEpisodes
+            ? `
+          <div style="background: rgba(239,68,68,0.1); border: 1px solid var(--color-red); padding: 12px; border-radius: 8px; margin-bottom: 16px; color: var(--color-red);">
+            <strong>🔒 ${isCurrentEpisodeLive ? "Episode &amp; Story Settings Locked" : "Shared Story Settings Locked"}</strong><br>
+            ${
+              isCurrentEpisodeLive
+                ? "This episode is live. Episode and shared story settings are locked to protect the reader experience."
+                : "This story has published episodes. Shared story settings are locked, but you can still edit this draft episode's settings below."
+            }
+          </div>
+          <style>
+            .ss-theme-card, .ss-char-color-dot${isCurrentEpisodeLive ? ", #modal-cover-thumb-zone" : ""} {
+              pointer-events: none;
+              opacity: 0.6;
+            }
+          </style>
+        `
+            : ""
+        }
         <!-- Shared Settings Banner -->
         <div class="ss-shared-banner">
           <div class="ss-shared-banner__icon">🌐</div>
@@ -942,27 +1526,60 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
 
         <!-- Tabbed Navigation -->
         <div class="ss-tabs-nav" id="ss-tabs-nav">
-          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'general' ? 'ss-tab-btn--active' : ''}" data-tab="general">
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === "general" ? "ss-tab-btn--active" : ""}" data-tab="general">
             <span>📝</span> General
           </button>
-          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'theme' ? 'ss-tab-btn--active' : ''}" data-tab="theme">
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === "theme" ? "ss-tab-btn--active" : ""}" data-tab="theme">
             <span>🎨</span> Visual & Theme
           </button>
-          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'audio' ? 'ss-tab-btn--active' : ''}" data-tab="audio">
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === "audio" ? "ss-tab-btn--active" : ""}" data-tab="audio">
             <span>🎙️</span> Audio & Narrator
           </button>
-          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'characters' ? 'ss-tab-btn--active' : ''}" data-tab="characters">
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === "characters" ? "ss-tab-btn--active" : ""}" data-tab="characters">
             <span>👥</span> Characters (${storyCharacters.length})
           </button>
-          ${isUserMode() ? '' : `
-          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === 'squad' ? 'ss-tab-btn--active' : ''}" data-tab="squad">
+          ${
+            isUserMode()
+              ? ""
+              : `
+          <button type="button" class="ss-tab-btn ${activeStorySettingsTab === "squad" ? "ss-tab-btn--active" : ""}" data-tab="squad">
             <span>🛡️</span> Squad Gate
           </button>
-          `}
+          `
+          }
         </div>
 
+        ${
+          isUserMode()
+            ? ""
+            : `
+        <div id="ss-manage-cast-wrap" style="display:${activeStorySettingsTab === "characters" ? "block" : "none"}; margin-bottom:14px;">
+          <button type="button" id="ss-manage-cast-btn" class="btn btn--primary" style="width:100%; padding:12px; font-size:0.9rem; font-weight:700;">
+            🎭 Manage Cast, Voices &amp; Mute in Story Settings
+          </button>
+          <p style="font-size:0.72rem; color:var(--color-text-muted); margin:6px 2px 0; line-height:1.4;">
+            Add or edit characters, set the Narrator / Story Text voices, and mute any voice. This opens Admin &rarr; Story Settings and works even when episodes are live.
+          </p>
+        </div>
+        `
+        }
         <!-- ── TAB 1: GENERAL ── -->
-        <div class="ss-tab-pane ${activeStorySettingsTab === 'general' ? 'ss-tab-pane--active' : ''}" id="ss-pane-general">
+        <div class="ss-tab-pane ${activeStorySettingsTab === "general" ? "ss-tab-pane--active" : ""}" id="ss-pane-general">
+          <div class="ss-section">
+            <div class="ss-section__label">Episode Settings (Episode ${episodeNumber})</div>
+            <div class="ss-field">
+              <label class="ss-field__label" for="ed-episode-title">Episode Title</label>
+              <input type="text" id="ed-episode-title" class="ss-field__input" value="${escapeHtml(episodeTitle)}" placeholder="Episode ${episodeNumber}" maxlength="80" ${isCurrentEpisodeLive ? "disabled" : ""} />
+            </div>
+            ${parentHasManualNumbering ? `
+            <div class="ss-field">
+              <label class="ss-field__label" for="ed-episode-number">Episode Number</label>
+              <input type="number" step="0.1" id="ed-episode-number" class="ss-field__input" value="${episodeNumber}" ${isCurrentEpisodeLive ? "disabled" : ""} />
+            </div>
+            ` : ""}
+          </div>
+
+          <fieldset style="border: none; padding: 0; margin: 0; min-width: 0;" ${storyHasPublishedEpisodes ? "disabled" : ""}>
           <div class="ss-section">
             <div class="ss-section__label">Story Information</div>
             <div class="ss-field">
@@ -985,64 +1602,68 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
             <div class="ss-field">
               <label class="ss-field__label" for="ss-genre">Genre</label>
               <select id="ss-genre" class="ss-field__select">
-                ${allGenres.map(g => `<option value="${g}" ${storyGenre === g ? 'selected' : ''}>${g}</option>`).join('')}
+                ${allGenres.map((g) => `<option value="${g}" ${storyGenre === g ? "selected" : ""}>${g}</option>`).join("")}
               </select>
             </div>
             <div class="ss-field">
               <label class="ss-field__label" for="ss-rating">Content Rating</label>
               <select id="ss-rating" class="ss-field__select">
-                <option value="All Ages" ${storyContentRating === 'All Ages' ? 'selected' : ''}>All Ages</option>
-                <option value="PG-13" ${storyContentRating === 'PG-13' ? 'selected' : ''}>PG-13</option>
-                <option value="Mature" ${storyContentRating === 'Mature' ? 'selected' : ''}>Mature</option>
+                <option value="All Ages" ${storyContentRating === "All Ages" ? "selected" : ""}>All Ages</option>
+                <option value="PG-13" ${storyContentRating === "PG-13" ? "selected" : ""}>PG-13</option>
+                <option value="Mature" ${storyContentRating === "Mature" ? "selected" : ""}>Mature</option>
               </select>
             </div>
           </div>
+          </fieldset>
         </div>
 
         <!-- ── TAB 2: VISUAL & THEME ── -->
-        <div class="ss-tab-pane ${activeStorySettingsTab === 'theme' ? 'ss-tab-pane--active' : ''}" id="ss-pane-theme">
+        <div class="ss-tab-pane ${activeStorySettingsTab === "theme" ? "ss-tab-pane--active" : ""}" id="ss-pane-theme">
           <div class="ss-section">
             <div class="ss-section__label">Thumbnail Cover Media</div>
             <div class="ss-field">
               <div id="modal-cover-thumb-zone" style="width: 100%; height: 180px; border-radius: 16px; border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: var(--color-surface);">
-                <div id="modal-cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${(_coverThumbnail || storyCoverVideo) ? 'display: none;' : ''}">
+                <div id="modal-cover-thumb-placeholder" style="text-align: center; color: var(--color-text-muted); ${_coverThumbnail || storyCoverVideo ? "display: none;" : ""}">
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                   <p style="font-size: 0.75rem; margin-top: 6px;">Tap to upload thumbnail image or video</p>
                 </div>
-                <img id="modal-cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${(_coverThumbnail && !isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ''} />
-                <video id="modal-cover-video-preview" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover; ${(storyCoverVideo || isVideoMedia(_coverThumbnail, storyCoverVideo)) ? 'display: block;' : 'display: none;'}" ${(storyCoverVideo || _coverThumbnail) ? `src="${storyCoverVideo || _coverThumbnail}"` : ''}></video>
+                <img id="modal-cover-thumb-preview" style="width: 100%; height: 100%; object-fit: cover; ${_coverThumbnail && !isVideoMedia(_coverThumbnail, storyCoverVideo) ? "display: block;" : "display: none;"}" ${_coverThumbnail ? `src="${_coverThumbnail}"` : ""} />
+                <video id="modal-cover-video-preview" autoplay loop muted playsinline style="width: 100%; height: 100%; object-fit: cover; ${storyCoverVideo || isVideoMedia(_coverThumbnail, storyCoverVideo) ? "display: block;" : "display: none;"}" ${storyCoverVideo || _coverThumbnail ? `src="${storyCoverVideo || _coverThumbnail}"` : ""}></video>
               </div>
-              <input type="file" id="modal-cover-thumb-input" accept="image/*,video/*" style="display: none;" />
+              <input type="file" id="modal-cover-thumb-input" accept="image/*,video/*" style="display: none;" ${isCurrentEpisodeLive ? "disabled" : ""} />
             </div>
           </div>
 
+          <fieldset style="border: none; padding: 0; margin: 0; min-width: 0;" ${storyHasPublishedEpisodes ? "disabled" : ""}>
           <div class="ss-section">
             <div class="ss-section__label">Story Canvas & Background Theme</div>
             <p style="font-size:0.78rem; color:var(--color-text-muted); margin:0 0 12px;">Choose the backdrop theme for reader mode and the creator canvas behind story panels.</p>
             
             <div class="ss-theme-grid" id="ss-theme-preset-grid">
-              ${THEME_COLOR_PRESETS.map(p => `
-                <div class="ss-theme-card ${(storyThemeColor || '#141424').toLowerCase() === p.hex.toLowerCase() ? 'ss-theme-card--active' : ''}" data-theme-hex="${p.hex}">
+              ${THEME_COLOR_PRESETS.map(
+                (p) => `
+                <div class="ss-theme-card ${(storyThemeColor || "#141424").toLowerCase() === p.hex.toLowerCase() ? "ss-theme-card--active" : ""}" data-theme-hex="${p.hex}">
                   <div class="ss-theme-preview" style="background:${p.hex};">
                     <span style="color:rgba(255,255,255,0.7); font-size:0.7rem;">Aa</span>
                   </div>
                   <span class="ss-theme-name">${p.name}</span>
                   <span class="ss-theme-desc">${p.desc}</span>
                 </div>
-              `).join('')}
+              `,
+              ).join("")}
             </div>
 
             <div class="ss-custom-color-row">
-              <input type="color" id="ss-theme-color-custom" class="ss-color-picker-input" value="${storyThemeColor || '#141424'}" title="Pick custom color" />
+              <input type="color" id="ss-theme-color-custom" class="ss-color-picker-input" value="${storyThemeColor || "#141424"}" title="Pick custom color" />
               <div style="flex:1;">
                 <div style="font-size:0.8rem; font-weight:600; color:var(--color-text-primary);">Custom Hex Color</div>
                 <div style="font-size:0.7rem; color:var(--color-text-muted);">Pick any color across the full color spectrum</div>
               </div>
-              <input type="text" id="ss-theme-color-hex" class="ss-color-hex-input" value="${storyThemeColor || '#141424'}" maxlength="7" />
+              <input type="text" id="ss-theme-color-hex" class="ss-color-hex-input" value="${storyThemeColor || "#141424"}" maxlength="7" />
             </div>
 
             <!-- Live Preview Box -->
-            <div class="ss-live-preview-box" id="ss-live-preview-box" style="background-color:${storyThemeColor || '#141424'};">
+            <div class="ss-live-preview-box" id="ss-live-preview-box" style="background-color:${storyThemeColor || "#141424"};">
               <div class="ss-live-preview-label">Live Canvas & Reader Preview</div>
               <div class="ss-live-preview-canvas">
                 <div class="ss-mock-panel">
@@ -1060,19 +1681,21 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
               </div>
             </div>
           </div>
+          </fieldset>
         </div>
 
+        <fieldset style="border: none; padding: 0; margin: 0; min-width: 0;" ${storyHasPublishedEpisodes ? "disabled" : ""}>
         <!-- ── TAB 3: AUDIO & NARRATOR ── -->
-        <div class="ss-tab-pane ${activeStorySettingsTab === 'audio' ? 'ss-tab-pane--active' : ''}" id="ss-pane-audio">
+        <div class="ss-tab-pane ${activeStorySettingsTab === "audio" ? "ss-tab-pane--active" : ""}" id="ss-pane-audio">
           <div class="ss-section">
             <div class="ss-section__label">Audio Experience Mode</div>
             <div class="ss-audio-mode-selector" id="ss-audio-mode-selector">
-              <button class="ss-audio-mode-btn ${storyAudioMode === 'make_audio' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="make_audio" type="button">
+              <button class="ss-audio-mode-btn ${storyAudioMode === "make_audio" ? "ss-audio-mode-btn--active" : ""}" data-audio-mode="make_audio" type="button">
                 <span class="ss-audio-mode-icon">🎙️</span>
                 <span class="ss-audio-mode-title">Make audio as you go</span>
                 <span class="ss-audio-mode-desc">Multi-character AI voice dialogue & narration with punctuation expression</span>
               </button>
-              <button class="ss-audio-mode-btn ${storyAudioMode === 'simple_upload' ? 'ss-audio-mode-btn--active' : ''}" data-audio-mode="simple_upload" type="button">
+              <button class="ss-audio-mode-btn ${storyAudioMode === "simple_upload" ? "ss-audio-mode-btn--active" : ""}" data-audio-mode="simple_upload" type="button">
                 <span class="ss-audio-mode-icon">📁</span>
                 <span class="ss-audio-mode-title">Simple audio upload</span>
                 <span class="ss-audio-mode-desc">Upload your own audio files per page with optional manual captions</span>
@@ -1080,7 +1703,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
             </div>
           </div>
 
-          <div class="ss-section" id="ss-narrator-section" style="${storyAudioMode === 'make_audio' ? '' : 'display:none;'}">
+          <div class="ss-section" id="ss-narrator-section" style="${storyAudioMode === "make_audio" ? "" : "display:none;"}">
             <div class="ss-section__label">🎙️ Voices</div>
             <p style="font-size:0.78rem; color:var(--color-text-secondary); margin:0 0 10px; line-height:1.45;">
               The <strong>Narrator</strong>, <strong>Story Text</strong> and character voices are all set in the <strong>Cast</strong> tab.
@@ -1090,7 +1713,7 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
         </div>
 
         <!-- ── TAB 4: CHARACTERS ── -->
-        <div class="ss-tab-pane ${activeStorySettingsTab === 'characters' ? 'ss-tab-pane--active' : ''}" id="ss-pane-characters">
+        <div class="ss-tab-pane ${activeStorySettingsTab === "characters" ? "ss-tab-pane--active" : ""}" id="ss-pane-characters">
           <div class="ss-section" id="ss-characters-section">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
               <div>
@@ -1100,190 +1723,179 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
                 </p>
               </div>
               <span class="ss-narrator-tag" style="font-size:0.75rem; padding:4px 10px;">
-                ${storyCharacters.length} Character${storyCharacters.length === 1 ? '' : 's'}
+                ${storyCharacters.length} Character${storyCharacters.length === 1 ? "" : "s"}
               </span>
             </div>
 
-            ${storyAudioMode !== 'make_audio' ? `
-              <div style="background:rgba(234, 179, 8, 0.1); border:1px solid rgba(234, 179, 8, 0.3); border-radius:12px; padding:12px 14px; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
-                <div style="font-size:0.78rem; color:var(--color-text-primary); line-height:1.4;">
-                  ℹ️ Character voices activate when <strong>Audio Experience Mode</strong> is set to <strong>"Make audio as you go"</strong>.
+            <div class="ss-section__label" style="margin:4px 0 8px;">Characters (read-only here)</div>
+
+            <div class="ss-char-container">
+              <div class="ss-char-card" style="--char-color:${storyNarratorHighlightColor}; padding: 12px; display: flex; align-items: center; gap: 12px; pointer-events: none; margin-bottom: 8px;">
+                <div class="ss-char-card__badge" style="background-color:${storyNarratorHighlightColor}; box-shadow:0 3px 12px ${storyNarratorHighlightColor}40;">🎙️</div>
+                <div class="ss-char-card__name-wrap" style="flex: 1;">
+                  <div style="font-weight: 700; color: var(--color-text-primary); font-size: 0.95rem;">Narrator</div>
+                  <div style="font-size: 0.75rem; color: var(--color-text-muted);">Voice: ${escapeHtml(VOICE_OPTIONS.find(v => v.voiceId === storyNarratorVoiceId)?.name || 'Unassigned')}${storyNarratorMuted ? ' · 🔇 Muted' : ''}</div>
                 </div>
-                <button type="button" id="ss-enable-audio-mode-btn" class="btn btn--sm btn--primary" style="white-space:nowrap; font-size:0.74rem;">Enable AI Audio</button>
               </div>
-            ` : ''}
-
-            <div class="ss-char-container" style="margin-bottom:18px;">
-              ${renderFixedVoiceCard('narrator')}
-              ${renderFixedVoiceCard('plain_text')}
-            </div>
-
-            <div class="ss-section__label" style="margin:4px 0 8px;">Characters</div>
-
-            ${storyCharacters.length === 0 ? `
-              <div class="ss-char-empty">
-                <div class="ss-char-empty__icon">👥</div>
-                <div class="ss-char-empty__title">No Characters Created Yet</div>
-                <div class="ss-char-empty__desc">
-                  Characters give dialogue lines their own actor voice and a custom color badge in your story panels.
+              <div class="ss-char-card" style="--char-color:${storyPlainTextColor || storyNarratorHighlightColor}; padding: 12px; display: flex; align-items: center; gap: 12px; pointer-events: none; margin-bottom: 8px;">
+                <div class="ss-char-card__badge" style="background-color:${storyPlainTextColor || storyNarratorHighlightColor}; box-shadow:0 3px 12px ${storyPlainTextColor || storyNarratorHighlightColor}40;">📖</div>
+                <div class="ss-char-card__name-wrap" style="flex: 1;">
+                  <div style="font-weight: 700; color: var(--color-text-primary); font-size: 0.95rem;">Story Text</div>
+                  <div style="font-size: 0.75rem; color: var(--color-text-muted);">Voice: ${escapeHtml(VOICE_OPTIONS.find(v => v.voiceId === (storyPlainTextVoiceId || storyNarratorVoiceId))?.name || 'Unassigned')}${storyPlainTextMuted ? ' · 🔇 Muted' : ''}</div>
                 </div>
-                <button type="button" class="btn btn--primary" id="ss-empty-add-char-btn" style="padding:10px 20px; font-size:0.84rem; font-weight:700;">
-                  + Add Your First Character
-                </button>
               </div>
-            ` : `
-              <div class="ss-char-container">
+              ${storyCharacters.length > 0 ? `
+                <div style="height: 1px; background: var(--color-border); margin: 8px 0 16px;"></div>
                 ${storyCharacters.map((ch, ci) => {
-                  const voiceOptionsHtml = renderGroupedVoiceOptions(ch.voiceId);
                   const charColor = ch.color || CHARACTER_PALETTE[ci % CHARACTER_PALETTE.length];
-                  return `
-                  <div class="ss-char-card" data-char-idx="${ci}" style="--char-color:${charColor};">
-                    <!-- Card Top: Avatar, Name, Delete -->
-                    <div class="ss-char-card__top">
-                      <div class="ss-char-card__badge" style="background-color:${charColor}; box-shadow:0 3px 12px ${charColor}40;">
-                        ${(ch.name.trim().charAt(0) || '?').toUpperCase()}
-                      </div>
-                      <div class="ss-char-card__name-wrap">
-                        <span class="ss-char-card__name-label">Character Name</span>
-                        <input class="ss-char-card__name-input" data-char-name="${ci}" value="${ch.name}" placeholder="e.g. Elena, Shadow, Commander Jax" maxlength="30" />
-                      </div>
-                      <button class="ss-char-card__delete-btn" data-char-delete="${ci}" type="button" title="Delete character">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-                      </button>
-                    </div>
-
-                    <!-- Card Middle: Color Dot Palette -->
-                    <div class="ss-char-card__palette-wrap">
-                      <span class="ss-char-card__palette-label">Theme:</span>
-                      <div class="ss-char-color-dots">
-                        ${CHARACTER_PALETTE.map(c => `
-                          <button type="button" class="ss-char-color-dot ${charColor.toLowerCase() === c.toLowerCase() ? 'ss-char-color-dot--active' : ''}" data-char-idx="${ci}" data-char-color-dot="${c}" style="background-color:${c};" title="Select color"></button>
-                        `).join('')}
-                      </div>
-                    </div>
-
-                    <!-- Card Bottom: Voice Selector & Audition -->
-                    <div class="ss-char-card__voice-wrap">
-                      <span class="ss-char-card__voice-label">Voice Actor</span>
-                      <div class="ss-char-card__voice-row">
-                        <select class="ss-char-voice-select" data-char-voice="${ci}">
-                          ${voiceOptionsHtml}
-                        </select>
-                        <button class="ss-char-audition-btn" data-char-audition="${ci}" type="button">
-                          🔊 Audition
-                        </button>
-                      </div>
-                    </div>
-                  </div>`;
-                }).join('')}
-
-                <button class="ss-char-add-card" id="ss-add-char-btn" type="button">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  + Add Another Character
-                </button>
-              </div>
-            `}
+                  const voiceInfo = VOICE_OPTIONS.find((v) => v.voiceId === ch.voiceId);
+                  const voiceName = voiceInfo ? voiceInfo.name : "Unassigned";
+                  return '<div class="ss-char-card" style="--char-color:' + charColor + '; padding: 12px; display: flex; align-items: center; gap: 12px; pointer-events: none; margin-bottom: 8px;">' +
+                         '<div class="ss-char-card__badge" style="background-color:' + charColor + '; box-shadow:0 3px 12px ' + charColor + '40;">' +
+                         (ch.name.trim().charAt(0) || "?").toUpperCase() +
+                         '</div>' +
+                         '<div class="ss-char-card__name-wrap" style="flex: 1;">' +
+                         '<div style="font-weight: 700; color: var(--color-text-primary); font-size: 0.95rem;">' + escapeHtml(ch.name) + '</div>' +
+                          '<div style="font-size: 0.75rem; color: var(--color-text-muted);">Voice: ' + escapeHtml(voiceName) + (ch.muted ? ' · 🔇 Muted' : '') + '</div>' +
+                         '</div>' +
+                         '</div>';
+                }).join("")}
+              ` : ''}
+            </div>
           </div>
         </div>
 
         <!-- ── TAB 5: SQUAD GATE ── -->
-        ${isUserMode() ? '' : `
-        <div class="ss-tab-pane ${activeStorySettingsTab === 'squad' ? 'ss-tab-pane--active' : ''}" id="ss-pane-squad">
-          ${(episodeNumber > 1 || (episodeStoryGroupId && episodeNumber > 1)) ? `
+        ${
+          isUserMode()
+            ? ""
+            : `
+        <div class="ss-tab-pane ${activeStorySettingsTab === "squad" ? "ss-tab-pane--active" : ""}" id="ss-pane-squad">
+          ${
+            episodeNumber > 1 || (episodeStoryGroupId && episodeNumber > 1)
+              ? `
             <div class="ss-section">
               <div class="ss-section__label">🚨 Squad Gate Configuration</div>
               <p style="font-size:0.82rem; color:var(--color-text-muted); margin:4px 0 8px;">Episodes Playable Solo BEFORE Squad Gate Hits</p>
               <div style="display:flex; gap:8px;">
-                <div style="padding:10px 20px; border-radius:var(--radius-md); background:var(--color-purple); color:white; font-weight:700; font-size:0.88rem;">${soloEpisodeCount} Episode${soloEpisodeCount > 1 ? 's' : ''}</div>
+                <div style="padding:10px 20px; border-radius:var(--radius-md); background:var(--color-purple); color:white; font-weight:700; font-size:0.88rem;">${soloEpisodeCount} Episode${soloEpisodeCount > 1 ? "s" : ""}</div>
               </div>
               <p style="font-size:0.72rem; color:var(--color-text-muted); margin:8px 0 0;">ℹ️ Squad gate is configured on Episode 1. Edit Episode 1's settings to change this.</p>
             </div>
-          ` : `
+          `
+              : `
             <div class="ss-section" id="ss-squad-gate-section">
               <div class="ss-section__label">🛡️ Squad Gate Configuration</div>
               <div class="ss-field">
                 <label class="ss-field__label">Episodes Playable Solo BEFORE Squad Gate Hits</label>
                 <div class="ss-gate-selector" id="ss-gate-selector" style="display: flex; gap: 10px; margin-top: 8px;">
-                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? 'btn-gate-option--active' : ''}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? '#0D9488' : 'var(--color-border)'}; background: ${soloEpisodeCount === 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 1 ? "btn-gate-option--active" : ""}" data-gate-count="1" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 1 ? "#0D9488" : "var(--color-border)"}; background: ${soloEpisodeCount === 1 ? "rgba(99, 102, 241, 0.15)" : "var(--color-surface)"}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
                     1 Episode
                   </button>
-                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? 'btn-gate-option--active' : ''}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? '#0D9488' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 2 ? "btn-gate-option--active" : ""}" data-gate-count="2" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 2 ? "#0D9488" : "var(--color-border)"}; background: ${soloEpisodeCount === 2 ? "rgba(99, 102, 241, 0.15)" : "var(--color-surface)"}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
                     2 Episodes
                   </button>
-                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? 'btn-gate-option--active' : ''}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? '#0D9488' : 'var(--color-border)'}; background: ${soloEpisodeCount === 2 ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)'}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
+                  <button type="button" class="btn-gate-option ${soloEpisodeCount === 3 ? "btn-gate-option--active" : ""}" data-gate-count="3" style="flex: 1; padding: 12px 14px; border-radius: 12px; border: 2px solid ${soloEpisodeCount === 3 ? "#0D9488" : "var(--color-border)"}; background: ${soloEpisodeCount === 2 ? "rgba(99, 102, 241, 0.15)" : "var(--color-surface)"}; color: var(--color-text); font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s;">
                     3 Episodes
                   </button>
                 </div>
                 <div class="ss-field__hint" id="ss-gate-hint" style="font-size: 0.76rem; color: var(--color-text-muted); margin-top: 8px; line-height: 1.45;">
-                  ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.
+                  ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : " 1"} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.
                 </div>
               </div>
             </div>
-          `}
+          `
+          }
         </div>
-        `}
+        `
+        }
+        </fieldset>
       </div>
     </div>
   `;
 
   // ── Tab Switching ──
-  wizard.querySelectorAll('.ss-tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetTab = (btn as HTMLElement).getAttribute('data-tab') as any;
+  wizard.querySelectorAll(".ss-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetTab = (btn as HTMLElement).getAttribute("data-tab") as any;
       if (!targetTab) return;
       activeStorySettingsTab = targetTab;
-      
+
       // Update active button state
-      wizard.querySelectorAll('.ss-tab-btn').forEach(b => b.classList.remove('ss-tab-btn--active'));
-      btn.classList.add('ss-tab-btn--active');
+      wizard
+        .querySelectorAll(".ss-tab-btn")
+        .forEach((b) => b.classList.remove("ss-tab-btn--active"));
+      btn.classList.add("ss-tab-btn--active");
 
       // Update active pane state
-      wizard.querySelectorAll('.ss-tab-pane').forEach(p => p.classList.remove('ss-tab-pane--active'));
+      wizard
+        .querySelectorAll(".ss-tab-pane")
+        .forEach((p) => p.classList.remove("ss-tab-pane--active"));
       const activePane = document.getElementById(`ss-pane-${targetTab}`);
-      if (activePane) activePane.classList.add('ss-tab-pane--active');
+      if (activePane) activePane.classList.add("ss-tab-pane--active");
+      const castWrap = document.getElementById("ss-manage-cast-wrap");
+      if (castWrap)
+        castWrap.style.display = targetTab === "characters" ? "block" : "none";
     });
   });
 
   // ── Cover Media Upload ──
-  const modalThumbZone = document.getElementById('modal-cover-thumb-zone');
-  const modalThumbInput = document.getElementById('modal-cover-thumb-input') as HTMLInputElement;
-  const modalThumbPreview = document.getElementById('modal-cover-thumb-preview') as HTMLImageElement;
-  const modalThumbVideoPreview = document.getElementById('modal-cover-video-preview') as HTMLVideoElement;
-  const modalThumbPlaceholder = document.getElementById('modal-cover-thumb-placeholder');
+  const modalThumbZone = document.getElementById("modal-cover-thumb-zone");
+  const modalThumbInput = document.getElementById(
+    "modal-cover-thumb-input",
+  ) as HTMLInputElement;
+  const modalThumbPreview = document.getElementById(
+    "modal-cover-thumb-preview",
+  ) as HTMLImageElement;
+  const modalThumbVideoPreview = document.getElementById(
+    "modal-cover-video-preview",
+  ) as HTMLVideoElement;
+  const modalThumbPlaceholder = document.getElementById(
+    "modal-cover-thumb-placeholder",
+  );
 
-  if (modalThumbZone && modalThumbInput) {
-    modalThumbZone.addEventListener('click', () => modalThumbInput.click());
-    modalThumbInput.addEventListener('change', async () => {
+  if (modalThumbZone && modalThumbInput && !isCurrentEpisodeLive) {
+    modalThumbZone.addEventListener("click", () => modalThumbInput.click());
+    modalThumbInput.addEventListener("change", async () => {
       const file = modalThumbInput.files?.[0];
       if (file) {
         try {
-          const isVid = file.type.startsWith('video/');
-          const res = await uploadMedia(file, 'covers');
+          const isVid = file.type.startsWith("video/");
+          const res = await uploadMedia(file, "covers");
           const mediaUrl = res.url;
 
           if (isVid) {
             storyCoverVideo = mediaUrl;
             _coverThumbnail = mediaUrl;
-            if (modalThumbVideoPreview && modalThumbPreview && modalThumbPlaceholder) {
+            if (
+              modalThumbVideoPreview &&
+              modalThumbPreview &&
+              modalThumbPlaceholder
+            ) {
               modalThumbVideoPreview.src = mediaUrl;
-              modalThumbVideoPreview.style.display = 'block';
-              modalThumbPreview.style.display = 'none';
-              modalThumbPlaceholder.style.display = 'none';
+              modalThumbVideoPreview.style.display = "block";
+              modalThumbPreview.style.display = "none";
+              modalThumbPlaceholder.style.display = "none";
               ensureVideoPlayback(modalThumbVideoPreview);
             }
           } else {
             _coverThumbnail = mediaUrl;
-            storyCoverVideo = '';
-            if (modalThumbPreview && modalThumbVideoPreview && modalThumbPlaceholder) {
+            _autoEpisodeThumbnail = mediaUrl;
+            storyCoverVideo = "";
+            if (
+              modalThumbPreview &&
+              modalThumbVideoPreview &&
+              modalThumbPlaceholder
+            ) {
               modalThumbPreview.src = mediaUrl;
-              modalThumbPreview.style.display = 'block';
-              modalThumbVideoPreview.style.display = 'none';
-              modalThumbPlaceholder.style.display = 'none';
+              modalThumbPreview.style.display = "block";
+              modalThumbVideoPreview.style.display = "none";
+              modalThumbPlaceholder.style.display = "none";
             }
           }
           saveDraft();
         } catch (e) {
-          console.error('Error uploading cover media', e);
+          console.error("Error uploading cover media", e);
         }
       }
     });
@@ -1292,43 +1904,51 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
   // ── Story Canvas & Background Theme ──
   const updateThemeColor = (hex: string) => {
     storyThemeColor = hex;
-    const customColorInput = document.getElementById('ss-theme-color-custom') as HTMLInputElement | null;
-    const hexInput = document.getElementById('ss-theme-color-hex') as HTMLInputElement | null;
-    const livePreviewBox = document.getElementById('ss-live-preview-box');
+    const customColorInput = document.getElementById(
+      "ss-theme-color-custom",
+    ) as HTMLInputElement | null;
+    const hexInput = document.getElementById(
+      "ss-theme-color-hex",
+    ) as HTMLInputElement | null;
+    const livePreviewBox = document.getElementById("ss-live-preview-box");
 
     if (customColorInput) customColorInput.value = hex;
     if (hexInput) hexInput.value = hex;
     if (livePreviewBox) livePreviewBox.style.backgroundColor = hex;
 
     // Highlight matching preset card if any
-    wizard.querySelectorAll('.ss-theme-card').forEach(card => {
-      const cardHex = (card as HTMLElement).getAttribute('data-theme-hex');
+    wizard.querySelectorAll(".ss-theme-card").forEach((card) => {
+      const cardHex = (card as HTMLElement).getAttribute("data-theme-hex");
       if (cardHex && cardHex.toLowerCase() === hex.toLowerCase()) {
-        card.classList.add('ss-theme-card--active');
+        card.classList.add("ss-theme-card--active");
       } else {
-        card.classList.remove('ss-theme-card--active');
+        card.classList.remove("ss-theme-card--active");
       }
     });
 
     saveDraft();
   };
 
-  wizard.querySelectorAll('.ss-theme-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const hex = (card as HTMLElement).getAttribute('data-theme-hex');
+  wizard.querySelectorAll(".ss-theme-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const hex = (card as HTMLElement).getAttribute("data-theme-hex");
       if (hex) updateThemeColor(hex);
     });
   });
 
-  const customColorInput = document.getElementById('ss-theme-color-custom') as HTMLInputElement | null;
-  customColorInput?.addEventListener('input', () => {
+  const customColorInput = document.getElementById(
+    "ss-theme-color-custom",
+  ) as HTMLInputElement | null;
+  customColorInput?.addEventListener("input", () => {
     if (customColorInput.value) updateThemeColor(customColorInput.value);
   });
 
-  const hexInput = document.getElementById('ss-theme-color-hex') as HTMLInputElement | null;
-  hexInput?.addEventListener('change', () => {
+  const hexInput = document.getElementById(
+    "ss-theme-color-hex",
+  ) as HTMLInputElement | null;
+  hexInput?.addEventListener("change", () => {
     let val = hexInput.value.trim();
-    if (!val.startsWith('#')) val = '#' + val;
+    if (!val.startsWith("#")) val = "#" + val;
     if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
       updateThemeColor(val);
     } else {
@@ -1337,237 +1957,110 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
   });
 
   // ── Back Button ──
-  document.getElementById('ss-back')?.addEventListener('click', () => {
+  document.getElementById("ss-back")?.addEventListener("click", () => {
     getFormData();
     updateView();
   });
 
   // ── Audio Mode Switching ──
-  wizard.querySelectorAll('[data-audio-mode]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const mode = (btn as HTMLElement).getAttribute('data-audio-mode') as StoryAudioMode;
+  wizard.querySelectorAll("[data-audio-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = (btn as HTMLElement).getAttribute(
+        "data-audio-mode",
+      ) as StoryAudioMode;
       storyAudioMode = mode;
       // Update active states
-      wizard.querySelectorAll('.ss-audio-mode-btn').forEach(b => b.classList.remove('ss-audio-mode-btn--active'));
-      (btn as HTMLElement).classList.add('ss-audio-mode-btn--active');
+      wizard
+        .querySelectorAll(".ss-audio-mode-btn")
+        .forEach((b) => b.classList.remove("ss-audio-mode-btn--active"));
+      (btn as HTMLElement).classList.add("ss-audio-mode-btn--active");
       // Show/hide narrator + characters sections
-      const narratorSection = document.getElementById('ss-narrator-section');
-      const charsSection = document.getElementById('ss-characters-section');
-      if (narratorSection) narratorSection.style.display = mode === 'make_audio' ? '' : 'none';
-      if (charsSection) charsSection.style.display = mode === 'make_audio' ? '' : 'none';
+      const narratorSection = document.getElementById("ss-narrator-section");
+      const charsSection = document.getElementById("ss-characters-section");
+      if (narratorSection)
+        narratorSection.style.display = mode === "make_audio" ? "" : "none";
+      if (charsSection)
+        charsSection.style.display = mode === "make_audio" ? "" : "none";
       saveDraft();
     });
   });
 
   // ── Permanent voices: Narrator + Story Text ──
-  wizard.querySelectorAll('[data-goto-ss-tab]').forEach(b => {
-    b.addEventListener('click', () => {
-      const tab = (b as HTMLElement).getAttribute('data-goto-ss-tab') || 'characters';
-      (wizard.querySelector(`.ss-tab-btn[data-tab="${tab}"]`) as HTMLElement | null)?.click();
+  wizard.querySelectorAll("[data-goto-ss-tab]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const tab =
+        (b as HTMLElement).getAttribute("data-goto-ss-tab") || "characters";
+      (
+        wizard.querySelector(
+          `.ss-tab-btn[data-tab="${tab}"]`,
+        ) as HTMLElement | null
+      )?.click();
     });
   });
-  wizard.querySelectorAll('[data-fixed-voice]').forEach(sel => {
-    sel.addEventListener('change', () => {
-      const kind = (sel as HTMLElement).getAttribute('data-fixed-voice');
-      const val = (sel as HTMLSelectElement).value;
-      if (kind === 'narrator') {
-        clearAuditionCache(storyNarratorVoiceId);
-        storyNarratorVoiceId = val;
-      } else {
-        clearAuditionCache(storyPlainTextVoiceId || storyNarratorVoiceId);
-        storyPlainTextVoiceId = val;
-      }
-      saveDraft();
+  // ── Manage Cast in Story Settings ──
+  document
+    .getElementById("ss-manage-cast-btn")
+    ?.addEventListener("click", () => {
+      openCastManager(() =>
+        showModal({
+          title: "Save the story first",
+          content:
+            "<p>Cast, voices and mute are managed in Admin &rarr; Story Settings, which needs a saved story. Save this story as a draft once, then open Manage Cast again. You can still add characters from the screenplay editor with <strong>+ Add Character</strong>.</p>",
+          confirmText: "OK",
+        }),
+      );
     });
-  });
-  wizard.querySelectorAll('[data-fixed-color-dot]').forEach(dot => {
-    dot.addEventListener('click', () => {
-      const kind = (dot as HTMLElement).getAttribute('data-fixed-kind');
-      const color = (dot as HTMLElement).getAttribute('data-fixed-color-dot') || '#7C6FFA';
-      if (kind === 'narrator') storyNarratorHighlightColor = color;
-      else storyPlainTextColor = color;
-      paintCastCard((dot as HTMLElement).closest('.ss-char-card') as HTMLElement | null, color, dot as HTMLElement);
-      saveDraft();
-    });
-  });
-  wizard.querySelectorAll('[data-fixed-audition]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const kind = (btn as HTMLElement).getAttribute('data-fixed-audition');
-      const voiceId = kind === 'narrator' ? storyNarratorVoiceId : (storyPlainTextVoiceId || storyNarratorVoiceId);
-      runAuditionButton(btn as HTMLButtonElement, voiceId, kind === 'narrator' ? 'the Narrator' : 'the Story Text voice');
-    });
-  });
-
-  // ── Character Cast Management ──
-  // Switch to audio mode from helper banner
-  document.getElementById('ss-enable-audio-mode-btn')?.addEventListener('click', () => {
-    storyAudioMode = 'make_audio';
-    saveDraft();
-    openStorySettings({ preserveScroll: true });
-  });
-
-  // Rename character
-  wizard.querySelectorAll('[data-char-name]').forEach(input => {
-    input.addEventListener('input', () => {
-      const idx = parseInt((input as HTMLElement).getAttribute('data-char-name') || '0');
-      if (!storyCharacters[idx]) return;
-      storyCharacters[idx].name = (input as HTMLInputElement).value;
-      const card = (input as HTMLElement).closest('.ss-char-card');
-      const badge = card?.querySelector('.ss-char-card__badge') as HTMLElement | null;
-      if (badge) badge.textContent = (storyCharacters[idx].name.trim().charAt(0) || '?').toUpperCase();
-      saveDraft();
-    });
-  });
-
-  // Color palette chip selection
-  wizard.querySelectorAll('[data-char-color-dot]').forEach(dot => {
-    dot.addEventListener('click', () => {
-      const idx = parseInt((dot as HTMLElement).getAttribute('data-char-idx') || '0');
-      const color = (dot as HTMLElement).getAttribute('data-char-color-dot') || '#10B981';
-      if (!storyCharacters[idx]) return;
-      storyCharacters[idx].color = color;
-      paintCastCard((dot as HTMLElement).closest('.ss-char-card') as HTMLElement | null, color, dot as HTMLElement);
-      saveDraft();
-    });
-  });
-
-  // Voice change
-  wizard.querySelectorAll('[data-char-voice]').forEach(sel => {
-    sel.addEventListener('change', () => {
-      const idx = parseInt((sel as HTMLElement).getAttribute('data-char-voice') || '0');
-      if (!storyCharacters[idx]) return;
-      const oldVoiceId = storyCharacters[idx].voiceId;
-      storyCharacters[idx].voiceId = (sel as HTMLSelectElement).value;
-      clearAuditionCache(oldVoiceId);
-      saveDraft();
-    });
-  });
-
-  // Audition
-  wizard.querySelectorAll('[data-char-audition]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt((btn as HTMLElement).getAttribute('data-char-audition') || '0');
-      const ch = storyCharacters[idx];
-      if (!ch) return;
-      // Read the dropdown directly so the voice just picked is the one auditioned
-      const sel = wizard.querySelector(`[data-char-voice="${idx}"]`) as HTMLSelectElement | null;
-      if (sel && sel.value && sel.value !== ch.voiceId) { ch.voiceId = sel.value; saveDraft(); }
-      runAuditionButton(btn as HTMLButtonElement, ch.voiceId, ch.name || 'your character');
-    });
-  });
-
-  // Delete with safe confirmation
-  wizard.querySelectorAll('[data-char-delete]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt((btn as HTMLElement).getAttribute('data-char-delete') || '0');
-      const ch = storyCharacters[idx];
-      if (!ch) return;
-
-      let usedCount = 0;
-      bookPages.forEach(p => {
-        (p.dialogueLines || []).forEach(l => {
-          if (l.characterId === ch.id) usedCount++;
-        });
-      });
-
-      const confirmMsg = usedCount > 0
-        ? `"${ch.name}" is used in ${usedCount} dialogue line${usedCount > 1 ? 's' : ''}. Deleting them will reassign those lines to Narrator. Are you sure?`
-        : `Delete character "${ch.name}"?`;
-
-      if (!confirm(confirmMsg)) return;
-
-      if (usedCount > 0) {
-        bookPages.forEach(p => {
-          if (p.dialogueLines) {
-            p.dialogueLines = p.dialogueLines.map(l => {
-              if (l.characterId === ch.id) {
-                return { ...l, characterId: 'narrator' };
-              }
-              return l;
-            });
-          }
-        });
-      }
-
-      const scrollY = window.scrollY;
-      const appContent = document.getElementById('app-content');
-      const appScrollY = appContent?.scrollTop || 0;
-      storyCharacters.splice(idx, 1);
-      getFormData();
-      saveDraft();
-      openStorySettings({ preserveScroll: true }); // re-render preserving tab
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
-        if (appContent) appContent.scrollTop = appScrollY;
-      });
-    });
-  });
-
-  // Add character
-  const handleAddCharacter = () => {
-    const scrollY = window.scrollY;
-    const appContent = document.getElementById('app-content');
-    const appScrollY = appContent?.scrollTop || 0;
-    const newId = 'char_' + Date.now();
-    const defaultVoice = VOICE_OPTIONS[storyCharacters.length % VOICE_OPTIONS.length];
-    const defaultColor = nextFreeCharacterColor();
-    storyCharacters.push({
-      id: newId,
-      name: 'Character ' + (storyCharacters.length + 1),
-      voiceId: defaultVoice.voiceId,
-      color: defaultColor,
-    });
-    getFormData(); // sync form fields before re-render
-    saveDraft();
-    openStorySettings({ preserveScroll: true }); // re-render preserving tab
-    
-    // Restore scroll position after re-render and focus on the new character input
-    requestAnimationFrame(() => {
-      window.scrollTo({ top: scrollY, behavior: 'instant' });
-      if (appContent) appContent.scrollTop = appScrollY;
-      const inputs = wizard.querySelectorAll<HTMLInputElement>('.ss-char-card__name-input');
-      const lastInput = inputs[inputs.length - 1];
-      if (lastInput) {
-        lastInput.focus();
-        lastInput.select();
-      }
-    });
-  };
-
-  document.getElementById('ss-add-char-btn')?.addEventListener('click', handleAddCharacter);
-  document.getElementById('ss-empty-add-char-btn')?.addEventListener('click', handleAddCharacter);
 
   // ── Squad Gate Episodes Before Gate Selector ──
-  wizard.querySelectorAll('[data-gate-count]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const count = parseInt((btn as HTMLElement).getAttribute('data-gate-count') || '1', 10) as 1 | 2 | 3;
+  wizard.querySelectorAll("[data-gate-count]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const count = parseInt(
+        (btn as HTMLElement).getAttribute("data-gate-count") || "1",
+        10,
+      ) as 1 | 2 | 3;
       soloEpisodeCount = count;
-      wizard.querySelectorAll('[data-gate-count]').forEach(b => {
-        const c = parseInt((b as HTMLElement).getAttribute('data-gate-count') || '1', 10);
+      wizard.querySelectorAll("[data-gate-count]").forEach((b) => {
+        const c = parseInt(
+          (b as HTMLElement).getAttribute("data-gate-count") || "1",
+          10,
+        );
         const isActive = c === count;
-        (b as HTMLElement).style.borderColor = isActive ? '#0D9488' : 'var(--color-border)';
-        (b as HTMLElement).style.background = isActive ? 'rgba(99, 102, 241, 0.15)' : 'var(--color-surface)';
+        (b as HTMLElement).style.borderColor = isActive
+          ? "#0D9488"
+          : "var(--color-border)";
+        (b as HTMLElement).style.background = isActive
+          ? "rgba(99, 102, 241, 0.15)"
+          : "var(--color-surface)";
       });
-      const hint = document.getElementById('ss-gate-hint');
+      const hint = document.getElementById("ss-gate-hint");
       if (hint) {
-        hint.innerHTML = `ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : ' 1'} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.`;
+        hint.innerHTML = `ℹ️ Players can read Episode${soloEpisodeCount > 1 ? `s 1–${soloEpisodeCount}` : " 1"} solo for free. Starting at Episode ${soloEpisodeCount + 1}, a squad of 3–5 players is required to unlock and read together.`;
       }
       // If current episode is now solo-only, clear any SPARC data
-      if (episodeNumber <= soloEpisodeCount && (sparcPromptText.trim() || sparcPromptMediaUrls.length > 0)) {
-        sparcPromptText = '';
+      if (
+        episodeNumber <= soloEpisodeCount &&
+        (sparcPromptText.trim() || sparcPromptMediaUrls.length > 0)
+      ) {
+        sparcPromptText = "";
         sparcPromptMediaUrls = [];
-        console.log('[SPARC] Cleared SPARC data — Ep.' + episodeNumber + ' is now solo-only');
+        console.log(
+          "[SPARC] Cleared SPARC data — Ep." +
+            episodeNumber +
+            " is now solo-only",
+        );
       }
       saveDraft();
     });
   });
 
   // ── Auto-save on Form Changes ──
-  ['ss-title', 'ss-author', 'ss-synopsis'].forEach(id => {
-    document.getElementById(id)?.addEventListener('input', () => {
-      if (id === 'ss-synopsis') {
-        const count = document.getElementById('ss-synopsis-count');
-        const val = (document.getElementById('ss-synopsis') as HTMLTextAreaElement)?.value || '';
+  ["ss-title", "ss-author", "ss-synopsis", "ed-episode-title", "ed-episode-number"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      if (id === "ss-synopsis") {
+        const count = document.getElementById("ss-synopsis-count");
+        const val =
+          (document.getElementById("ss-synopsis") as HTMLTextAreaElement)
+            ?.value || "";
         if (count) count.textContent = `${val.length}/500`;
       }
       getFormData();
@@ -1575,40 +2068,79 @@ function openStorySettings(options?: { preserveScroll?: boolean }): void {
     });
   });
 
-  ['ss-genre', 'ss-rating'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', () => {
+  ["ss-genre", "ss-rating", "ed-episode-number"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", () => {
       getFormData();
       saveDraft();
     });
   });
 }
 
-
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // CANVAS RENDERING (from create.ts)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const layoutOptions = [
-  { id: 'single', label: 'Single', cells: '<rect x="8" y="4" width="32" height="40" rx="3" fill="currentColor" opacity="0.25"/>'},
-  { id: '2-stack', label: '2 Stack', cells: '<rect x="8" y="4" width="32" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="8" y="26" width="32" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
-  { id: '2-side', label: '2 Side', cells: '<rect x="4" y="6" width="18" height="36" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="6" width="18" height="36" rx="3" fill="currentColor" opacity="0.25"/>'},
-  { id: '2x2', label: '2\u00d72', cells: '<rect x="4" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
-  { id: '2top-1bot', label: '2T+1B', cells: '<rect x="4" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="40" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
-  { id: '1top-2bot', label: '1T+2B', cells: '<rect x="4" y="4" width="40" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/>'},
+  {
+    id: "single",
+    label: "Single",
+    cells:
+      '<rect x="8" y="4" width="32" height="40" rx="3" fill="currentColor" opacity="0.25"/>',
+  },
+  {
+    id: "2-stack",
+    label: "2 Stack",
+    cells:
+      '<rect x="8" y="4" width="32" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="8" y="26" width="32" height="18" rx="3" fill="currentColor" opacity="0.25"/>',
+  },
+  {
+    id: "2-side",
+    label: "2 Side",
+    cells:
+      '<rect x="4" y="6" width="18" height="36" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="6" width="18" height="36" rx="3" fill="currentColor" opacity="0.25"/>',
+  },
+  {
+    id: "2x2",
+    label: "2\u00d72",
+    cells:
+      '<rect x="4" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/>',
+  },
+  {
+    id: "2top-1bot",
+    label: "2T+1B",
+    cells:
+      '<rect x="4" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="4" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="40" height="18" rx="3" fill="currentColor" opacity="0.25"/>',
+  },
+  {
+    id: "1top-2bot",
+    label: "1T+2B",
+    cells:
+      '<rect x="4" y="4" width="40" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="4" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/><rect x="26" y="26" width="18" height="18" rx="3" fill="currentColor" opacity="0.25"/>',
+  },
 ];
 
 function getTileCount(layout: string): number {
   switch (layout) {
-    case '2-stack': case '2-side': return 2;
-    case '2x2': return 4;
-    case '2top-1bot': case '1top-2bot': return 3;
-    default: return 1;
+    case "2-stack":
+    case "2-side":
+      return 2;
+    case "2x2":
+      return 4;
+    case "2top-1bot":
+    case "1top-2bot":
+      return 3;
+    default:
+      return 1;
   }
 }
 
-function renderTileGrid(panelIndex: number, layout: string, tiles: (string | null)[]): string {
+function renderTileGrid(
+  panelIndex: number,
+  layout: string,
+  tiles: (string | null)[],
+): string {
   const count = getTileCount(layout);
-  
+
   // Ensure tiles array has enough entries
   while (tiles.length < count) tiles.push(null);
 
@@ -1616,17 +2148,18 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
     const tileImage = tiles[tileIdx];
 
     if (tileImage) {
-      const overlays = (scrollPanels[panelIndex]?.textOverlays?.[tileIdx]) || [];
-      const overlayHtml = overlays.map(ov => {
-        if (ov.locked) {
-          return `
+      const overlays = scrollPanels[panelIndex]?.textOverlays?.[tileIdx] || [];
+      const overlayHtml = overlays
+        .map((ov) => {
+          if (ov.locked) {
+            return `
             <div class="text-overlay text-overlay--locked" data-ov-id="${ov.id}" data-ov-panel="${panelIndex}" data-ov-tile="${tileIdx}"
               style="left:${ov.x}%; top:${ov.y}%; font-size:${ov.fontSize}px; color:${ov.color};">
               <span class="text-overlay__content">${ov.text}</span>
               <button class="text-overlay__edit-hint" data-unlock-ov="${ov.id}" data-unlock-panel="${panelIndex}" data-unlock-tile="${tileIdx}" type="button" title="Edit">✏</button>
             </div>`;
-        }
-        return `
+          }
+          return `
           <div class="text-overlay text-overlay--editing" data-ov-id="${ov.id}" data-ov-panel="${panelIndex}" data-ov-tile="${tileIdx}"
             style="left:${ov.x}%; top:${ov.y}%; font-size:${ov.fontSize}px; color:${ov.color};">
             <div class="text-overlay__handle" data-drag-ov="${ov.id}" data-drag-panel="${panelIndex}" data-drag-tile="${tileIdx}" title="Drag to move">⠿</div>
@@ -1637,9 +2170,10 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
               <button class="text-overlay__delete" data-del-ov="${ov.id}" data-del-panel="${panelIndex}" data-del-tile="${tileIdx}" type="button" title="Delete">🗑</button>
               <button class="text-overlay__commit" data-commit-ov="${ov.id}" data-commit-panel="${panelIndex}" data-commit-tile="${tileIdx}" type="button" title="Done">✓</button>
             </div>
-            <div class="text-overlay__content" contenteditable="true" data-edit-ov="${ov.id}" data-edit-panel="${panelIndex}" data-edit-tile="${tileIdx}">${ov.text}</div>
+            <div class="text-overlay__content" contenteditable="${String(currentStoryStatus) === "published" || String(currentStoryStatus) === "live" ? "false" : "true"}" data-edit-ov="${ov.id}" data-edit-panel="${panelIndex}" data-edit-tile="${tileIdx}">${ov.text}</div>
           </div>`;
-      }).join('');
+        })
+        .join("");
 
       return `
         <div class="panel-tile panel-tile--filled" data-tile="${tileIdx}" data-panel="${panelIndex}">
@@ -1659,18 +2193,30 @@ function renderTileGrid(panelIndex: number, layout: string, tiles: (string | nul
       </div>
     `;
   };
-  
-  let gridClass = 'tile-grid';
+
+  let gridClass = "tile-grid";
   switch (layout) {
-    case '2-stack': gridClass += ' tile-grid--2stack'; break;
-    case '2-side': gridClass += ' tile-grid--2side'; break;
-    case '2x2': gridClass += ' tile-grid--2x2'; break;
-    case '2top-1bot': gridClass += ' tile-grid--2t1b'; break;
-    case '1top-2bot': gridClass += ' tile-grid--1t2b'; break;
-    default: gridClass += ' tile-grid--single'; break;
+    case "2-stack":
+      gridClass += " tile-grid--2stack";
+      break;
+    case "2-side":
+      gridClass += " tile-grid--2side";
+      break;
+    case "2x2":
+      gridClass += " tile-grid--2x2";
+      break;
+    case "2top-1bot":
+      gridClass += " tile-grid--2t1b";
+      break;
+    case "1top-2bot":
+      gridClass += " tile-grid--1t2b";
+      break;
+    default:
+      gridClass += " tile-grid--single";
+      break;
   }
-  
-  return `<div class="${gridClass}">${Array.from({length: count}, (_, i) => renderSingleTile(i)).join('')}</div>`;
+
+  return `<div class="${gridClass}">${Array.from({ length: count }, (_, i) => renderSingleTile(i)).join("")}</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1709,15 +2255,20 @@ function renderSparcAdminEditor(): string {
           Attached Reference Media (Images, Videos, Links)
         </label>
         <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px;" id="admin-sparc-media-list">
-          ${sparcPromptMediaUrls.map((url, uIdx) => `
+          ${sparcPromptMediaUrls
+            .map(
+              (url, uIdx) => `
             <div class="sparc-admin-thumb" style="position: relative; width: 84px; height: 84px; border-radius: 10px; overflow: hidden; border: 1px solid var(--color-border); background: #1a1a2e;">
-              ${isVideoMedia(url)
-                ? `<video src="${url}" style="width: 100%; height: 100%; object-fit: cover;" autoplay muted loop playsinline></video>`
-                : `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover;" alt="SPARC media" onerror="this.style.display='none'; this.parentElement.innerHTML+='<div style=\\'display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#94a3b8;font-size:0.65rem;text-align:center;padding:4px;\\'>Image failed</div>'" />`
+              ${
+                isVideoMedia(url)
+                  ? `<video src="${url}" style="width: 100%; height: 100%; object-fit: cover;" autoplay muted loop playsinline></video>`
+                  : `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover;" alt="SPARC media" onerror="this.style.display='none'; this.parentElement.innerHTML+='<div style=\\'display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#94a3b8;font-size:0.65rem;text-align:center;padding:4px;\\'>Image failed</div>'" />`
               }
               <button type="button" class="sparc-admin-remove-media" data-remove-media="${uIdx}" title="Remove media" style="position: absolute; top: 3px; right: 3px; background: rgba(0, 0, 0, 0.75); color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">✕</button>
             </div>
-          `).join('')}
+          `,
+            )
+            .join("")}
           <button type="button" id="btn-sparc-upload-media" style="width: 84px; height: 84px; border-radius: 10px; border: 2px dashed var(--color-border); background: var(--color-surface); color: var(--color-text-muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 0.72rem; transition: border-color 0.2s;">
             <span style="font-size: 1.3rem;">📎</span>
             <span>Attach File</span>
@@ -1734,57 +2285,71 @@ function renderSparcAdminEditor(): string {
 }
 
 function attachSparcAdminListeners(container: HTMLElement | Document): void {
-  const sparcTextEl = container.querySelector('#admin-sparc-text') as HTMLTextAreaElement | null;
+  const sparcTextEl = container.querySelector(
+    "#admin-sparc-text",
+  ) as HTMLTextAreaElement | null;
   if (sparcTextEl) {
-    sparcTextEl.addEventListener('input', () => {
+    sparcTextEl.addEventListener("input", () => {
       sparcPromptText = sparcTextEl.value;
       saveDraft();
     });
   }
 
-  const uploadBtn = container.querySelector('#btn-sparc-upload-media') as HTMLElement | null;
-  const fileInput = container.querySelector('#sparc-media-file-input') as HTMLInputElement | null;
+  const uploadBtn = container.querySelector(
+    "#btn-sparc-upload-media",
+  ) as HTMLElement | null;
+  const fileInput = container.querySelector(
+    "#sparc-media-file-input",
+  ) as HTMLInputElement | null;
   if (uploadBtn && fileInput) {
-    uploadBtn.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', async () => {
+    uploadBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", async () => {
       const file = fileInput.files?.[0];
       if (file) {
         try {
-          uploadBtn.innerHTML = '<span style="font-size:0.75rem;">Uploading...</span>';
-          const res = await uploadMedia(file, 'covers');
+          uploadBtn.innerHTML =
+            '<span style="font-size:0.75rem;">Uploading...</span>';
+          const res = await uploadMedia(file, "covers");
           if (res?.url) {
             sparcPromptMediaUrls.push(res.url);
             saveDraft();
             rerenderSparcEditor();
           }
         } catch (e) {
-          console.error('Failed to upload SPARC media:', e);
-          alert('Failed to upload media attachment.');
+          console.error("Failed to upload SPARC media:", e);
+          alert("Failed to upload media attachment.");
         } finally {
-          fileInput.value = '';
+          fileInput.value = "";
         }
       }
     });
   }
 
-  const addUrlBtn = container.querySelector('#btn-sparc-add-url') as HTMLElement | null;
-  const urlInput = container.querySelector('#sparc-media-url-input') as HTMLInputElement | null;
+  const addUrlBtn = container.querySelector(
+    "#btn-sparc-add-url",
+  ) as HTMLElement | null;
+  const urlInput = container.querySelector(
+    "#sparc-media-url-input",
+  ) as HTMLInputElement | null;
   if (addUrlBtn && urlInput) {
-    addUrlBtn.addEventListener('click', () => {
+    addUrlBtn.addEventListener("click", () => {
       const url = urlInput.value.trim();
       if (url) {
         sparcPromptMediaUrls.push(url);
-        urlInput.value = '';
+        urlInput.value = "";
         saveDraft();
         rerenderSparcEditor();
       }
     });
   }
 
-  container.querySelectorAll('.sparc-admin-remove-media').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  container.querySelectorAll(".sparc-admin-remove-media").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const idx = parseInt((btn as HTMLElement).getAttribute('data-remove-media') || '-1', 10);
+      const idx = parseInt(
+        (btn as HTMLElement).getAttribute("data-remove-media") || "-1",
+        10,
+      );
       if (idx >= 0 && idx < sparcPromptMediaUrls.length) {
         sparcPromptMediaUrls.splice(idx, 1);
         saveDraft();
@@ -1795,10 +2360,10 @@ function attachSparcAdminListeners(container: HTMLElement | Document): void {
 }
 
 function rerenderSparcEditor(): void {
-  const currentEditor = document.getElementById('sparc-admin-editor');
+  const currentEditor = document.getElementById("sparc-admin-editor");
   if (currentEditor && currentEditor.parentElement) {
     const parent = currentEditor.parentElement;
-    const tempDiv = document.createElement('div');
+    const tempDiv = document.createElement("div");
     tempDiv.innerHTML = renderSparcAdminEditor();
     const newEl = tempDiv.firstElementChild;
     if (newEl) {
@@ -1809,13 +2374,15 @@ function rerenderSparcEditor(): void {
 }
 
 function openSparcModal(): void {
-  document.getElementById('sparc-modal-overlay')?.remove();
+  document.getElementById("sparc-modal-overlay")?.remove();
 
-  const modal = document.createElement('div');
-  modal.id = 'sparc-modal-overlay';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);';
-  const card = document.createElement('div');
-  card.style.cssText = 'background:var(--color-surface);border:1px solid var(--color-border);border-radius:18px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,0.5);';
+  const modal = document.createElement("div");
+  modal.id = "sparc-modal-overlay";
+  modal.style.cssText =
+    "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);";
+  const card = document.createElement("div");
+  card.style.cssText =
+    "background:var(--color-surface);border:1px solid var(--color-border);border-radius:18px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,0.5);";
   card.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <h3 style="margin:0;font-size:1.05rem;font-weight:700;color:var(--color-text);">⚡ SPARC Checkpoint</h3>
@@ -1833,9 +2400,15 @@ function openSparcModal(): void {
     modal.remove();
     updateView();
   };
-  document.getElementById('sparc-modal-close')?.addEventListener('click', closeModal);
-  document.getElementById('sparc-modal-done')?.addEventListener('click', closeModal);
-  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  document
+    .getElementById("sparc-modal-close")
+    ?.addEventListener("click", closeModal);
+  document
+    .getElementById("sparc-modal-done")
+    ?.addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
 }
 
 function renderStudioOrbs(): string {
@@ -1853,10 +2426,11 @@ function renderStudioOrbs(): string {
 }
 
 function renderCanvasToolbar(formatLabel: string): string {
-  const isBook = formatLabel.startsWith('Illustrated Book');
-  const pageCount = selectedFormat === 'book' ? bookPages.length : scrollPanels.length;
+  const isBook = formatLabel.startsWith("Illustrated Book");
+  const pageCount =
+    selectedFormat === "book" ? bookPages.length : scrollPanels.length;
   const isValidLength = pageCount >= 12 && pageCount <= 36;
-  
+
   return `
     <div class="canvas-toolbar" id="canvas-toolbar">
       <div class="canvas-toolbar__left" style="display:flex; align-items:center; gap:6px;">
@@ -1870,8 +2444,8 @@ function renderCanvasToolbar(formatLabel: string): string {
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span class="canvas-toolbar__title">${formatLabel}</span>
-        <span class="canvas-toolbar__page-counter" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:700; padding:3px 10px; border-radius:10px; background:${isValidLength ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.12)'}; color:${isValidLength ? '#22c55e' : '#eab308'};">
-          ${pageCount} pg${pageCount !== 1 ? 's' : ''}
+        <span class="canvas-toolbar__page-counter" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:700; padding:3px 10px; border-radius:10px; background:${isValidLength ? "rgba(34,197,94,0.12)" : "rgba(234,179,8,0.12)"}; color:${isValidLength ? "#22c55e" : "#eab308"};">
+          ${pageCount} pg${pageCount !== 1 ? "s" : ""}
         </span>
       </div>
       <div class="canvas-toolbar__right" style="position:relative; display:flex; align-items:center; gap:8px;">
@@ -1884,10 +2458,12 @@ function renderCanvasToolbar(formatLabel: string): string {
             Story Settings
           </button>
           ${episodeNavItemsHtml()}
-          ${isBook ? `
+          ${
+            isBook
+              ? `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Page
+              + Add Page
             </button>
             <button class="canvas-toolbar__dd-item" id="btn-dd-storyboard">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -1903,18 +2479,20 @@ function renderCanvasToolbar(formatLabel: string): string {
             </button>
             <button class="canvas-toolbar__dd-item" id="btn-dd-publish" style="color:#10B981;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
-              ${isUserMode() ? 'Submit for Review' : 'Pre-Flight Checklist'}
+              ${isUserMode() ? "Submit for Review" : "Pre-Flight Checklist"}
             </button>
-          ` : `
+          `
+              : `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Panel
+              + Add Page
             </button>
             <button class="canvas-toolbar__dd-item" id="btn-dd-publish" style="color:#10B981;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
-              ${isUserMode() ? 'Submit for Review' : 'Pre-Flight Checklist'}
+              ${isUserMode() ? "Submit for Review" : "Pre-Flight Checklist"}
             </button>
-          `}
+          `
+          }
         </div>
       </div>
     </div>
@@ -1923,12 +2501,12 @@ function renderCanvasToolbar(formatLabel: string): string {
 }
 
 function renderScrollCanvas(): string {
-  const filledCount = characters.filter(c => c.image).length;
+  const filledCount = characters.filter((c) => c.image).length;
 
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
-      ${renderCanvasToolbar((episodeNumber <= soloEpisodeCount ? 'Solo-Only Ep.' : 'Squad Ep.') + episodeNumber)}
+      ${renderCanvasToolbar((episodeNumber <= soloEpisodeCount ? "Solo-Only Ep." : "Squad Ep.") + episodeNumber)}
 
       <!-- ─── CHARACTER SHEET STUDIO ─── -->
       <div class="cs-studio">
@@ -1937,28 +2515,37 @@ function renderScrollCanvas(): string {
             <span class="cs-studio-title">Character Sheet Studio</span>
             <span class="cs-studio-count">${filledCount}/${characters.length}</span>
           </div>
-          <span class="cs-studio-caret ${studioOpen ? 'cs-studio-caret--open' : ''}">
+          <span class="cs-studio-caret ${studioOpen ? "cs-studio-caret--open" : ""}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </span>
         </button>
-        <div class="cs-studio-body ${studioOpen ? 'cs-studio-body--open' : ''}">
+        <div class="cs-studio-body ${studioOpen ? "cs-studio-body--open" : ""}">
           <div class="cs-carousel-wrap">
             <div class="cs-carousel" id="cs-carousel">
-              ${characters.map((char, i) => `
-                <div class="cs-char-tile ${char.image ? 'cs-char-tile--filled' : ''}" data-char-idx="${i}">
-                  ${char.image
-                    ? `<img class="cs-char-tile__img" src="${char.image}" alt="${char.name}" />`
-                    : `<div class="cs-char-tile__empty"><span class="cs-char-tile__plus">+</span></div>`
+              ${characters
+                .map(
+                  (char, i) => `
+                <div class="cs-char-tile ${char.image ? "cs-char-tile--filled" : ""}" data-char-idx="${i}">
+                  ${
+                    char.image
+                      ? `<img class="cs-char-tile__img" src="${char.image}" alt="${char.name}" />`
+                      : `<div class="cs-char-tile__empty"><span class="cs-char-tile__plus">+</span></div>`
                   }
                   <span class="cs-char-tile__label">${char.name}</span>
                 </div>
-              `).join('')}
-              ${characters.length < 10 ? `
+              `,
+                )
+                .join("")}
+              ${
+                characters.length < 10
+                  ? `
                 <div class="cs-char-tile cs-char-tile--add" id="btn-add-character">
                   <div class="cs-char-tile__empty"><span class="cs-char-tile__plus">+</span></div>
                   <span class="cs-char-tile__label">Add</span>
                 </div>
-              ` : ''}
+              `
+                  : ""
+              }
             </div>
           </div>
           <button class="cs-script-btn" id="btn-open-script" type="button">ðŸ“ Script</button>
@@ -1967,8 +2554,10 @@ function renderScrollCanvas(): string {
 
       <!-- â”€â”€â”€ PANELS LIST â”€â”€â”€ -->
       <div class="create-canvas">
-        ${scrollPanels.map((panel, i) => {
-          return `
+        <fieldset style="border: none; padding: 0; margin: 0; min-width: 0;" ${String(currentStoryStatus) === "published" || String(currentStoryStatus) === "live" ? "disabled" : ""}>
+        ${scrollPanels
+          .map((panel, i) => {
+            return `
             <div class="create-panel-row" data-panel="${i}" data-longpress="${i}" style="flex-direction:column; gap:12px; background:var(--color-surface); padding:16px; border-radius:16px; border:1px solid var(--color-border); margin-bottom:16px; position:relative;">
               
               <div style="display:flex; align-items:center; justify-content:space-between;">
@@ -1980,17 +2569,23 @@ function renderScrollCanvas(): string {
 
               <!-- Tile Grid Area -->
               <div class="webtoon-panel-wrap" style="position:relative;">
-                ${renderTileGrid(i, panel.layout || 'single', panel.tiles || [panel.image])}
+                ${renderTileGrid(i, panel.layout || "single", panel.tiles || [panel.image])}
                 <input type="file" class="create-upload-block__input" data-file="${i}" accept="image/*" hidden>
                 
-                ${panel.notes && (panel.tiles?.[0] || panel.image) ? `
+                ${
+                  panel.notes && (panel.tiles?.[0] || panel.image)
+                    ? `
                   <div class="speech-bubble-overlay">
                     ${panel.notes}
                   </div>
-                ` : ''}
+                `
+                    : ""
+                }
                 
                 <!-- Panel Layout Overlay -->
-                ${panelLayoutOverlay === i ? `
+                ${
+                  panelLayoutOverlay === i
+                    ? `
                   <div class="panel-layout-overlay" data-overlay-panel="${i}">
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
                       <button class="panel-overlay-back" data-close-overlay="${i}" type="button">
@@ -1999,15 +2594,21 @@ function renderScrollCanvas(): string {
                       <span style="font-family:var(--font-heading); font-size:0.88rem; font-weight:700; color:var(--color-text-primary);">Panel Layout</span>
                     </div>
                     <div class="panel-overlay-grid">
-                      ${layoutOptions.map(opt => `
-                        <div class="panel-overlay-option ${(panel.layout || 'single') === opt.id ? 'panel-overlay-option--active' : ''}" data-set-layout="${opt.id}" data-for-panel="${i}" title="${opt.label}">
+                      ${layoutOptions
+                        .map(
+                          (opt) => `
+                        <div class="panel-overlay-option ${(panel.layout || "single") === opt.id ? "panel-overlay-option--active" : ""}" data-set-layout="${opt.id}" data-for-panel="${i}" title="${opt.label}">
                           <svg width="44" height="44" viewBox="0 0 48 48" fill="none" stroke="none">${opt.cells}</svg>
                           <span style="font-size:0.68rem; font-weight:600; color:var(--color-text-secondary);">${opt.label}</span>
                         </div>
-                      `).join('')}
+                      `,
+                        )
+                        .join("")}
                     </div>
                   </div>
-                ` : ''}
+                `
+                    : ""
+                }
               </div>
 
               <!-- Dialogue / Speech Bubble Notes -->
@@ -2021,32 +2622,47 @@ function renderScrollCanvas(): string {
                     rows="2" maxlength="1000" style="width:100%; box-sizing:border-box;">${panel.notes}</textarea>
                 </div>
                 <div class="prerecord-row" style="margin-top:6px;">
-                  <button class="prerecord-btn ${panel.audioUrl ? 'prerecord-btn--done' : 'prerecord-btn--pending'}" data-prerecord-scroll="${i}" type="button">
-                    ${panel.audioUrl
-                      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg> <span>Pre-recorded</span>`
-                      : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg> <span>Pre-record</span>`}
+                  <button class="prerecord-btn ${panel.audioUrl ? "prerecord-btn--done" : "prerecord-btn--pending"}" data-prerecord-scroll="${i}" type="button">
+                    ${
+                      panel.audioUrl
+                        ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg> <span>Pre-recorded</span>`
+                        : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg> <span>Pre-record</span>`
+                    }
                   </button>
-                  ${panel.audioUrl ? `
+                  ${
+                    panel.audioUrl
+                      ? `
                     <button class="prerecord-play-btn" data-prerecord-play-scroll="${i}" type="button" title="Preview audio">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                     </button>
-                  ` : ''}
+                  `
+                      : ""
+                  }
                 </div>
               </div>
 
             </div>
           `;
-        }).join('')}
+          })
+          .join("")}
 
+        ${
+          String(currentStoryStatus) === "published" ||
+          String(currentStoryStatus) === "live"
+            ? ""
+            : `
         <!-- Add panel tile -->
         <div class="create-add-tile" id="btn-add-tile">
           <div class="create-add-tile__inner">
             ${ICON.add}
-            <span>Add Panel</span>
+            <span>+ Add Page</span>
           </div>
         </div>
+        `
+        }
 
-        ${!isUserMode() && episodeNumber > soloEpisodeCount ? renderSparcAdminEditor() : ''}
+        ${!isUserMode() && episodeNumber > soloEpisodeCount ? renderSparcAdminEditor() : ""}
+        </fieldset>
 
         <!-- Bottom Actions -->
         <div class="scroll-bottom-actions">
@@ -2054,7 +2670,7 @@ function renderScrollCanvas(): string {
             Save & Exit
           </button>
           <button type="button" class="scroll-bottom-btn scroll-bottom-btn--primary" id="btn-submit-review">
-            ${isUserMode() ? 'Submit for Review' : 'Pre-Flight Checklist'}
+            ${isUserMode() ? "Submit for Review" : "Pre-Flight Checklist"}
           </button>
         </div>
       </div>
@@ -2071,70 +2687,137 @@ function renderScrollCanvas(): string {
  * Unprefixed lines are attributed to the Narrator.
  * Preserves existing audioUrls if the text and character match.
  */
-function parseScreenplayToDialogueLines(text: string, existingLines?: DialogueLine[]): DialogueLine[] {
-  if (!text || !text.trim()) return [];
+function parseScreenplayToDialogueLines(
+  text: string,
+  existingLines?: DialogueLine[],
+): DialogueLine[] {
+  return parseScreenplayLines(text, existingLines, storyCharacters, {
+    plainTextId: PLAIN_TEXT_ID,
+    plainTextName: PLAIN_TEXT_NAME,
+  });
+}
 
-  const rawLines = text.split('\n');
-  const result: DialogueLine[] = [];
-  let currentNarratorBuffer: string[] = [];
-
-  const flushNarrator = () => {
-    const combined = currentNarratorBuffer.join(' ').trim();
-    if (combined) {
-      // Untagged text = "Story Text" (its own voice), not the Narrator.
-      // Older saves stored it as 'narrator', so match those too to keep existing audio.
-      const existing = existingLines?.find(el => (el.characterId === PLAIN_TEXT_ID || el.characterId === 'narrator') && el.text === combined);
-      result.push({
-        id: existing?.id || 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        characterId: PLAIN_TEXT_ID,
-        characterName: '📖 ' + PLAIN_TEXT_NAME,
-        text: combined,
-        audioUrl: existing?.audioUrl || null,
-      });
-    }
-    currentNarratorBuffer = [];
-  };
-
-  for (const raw of rawLines) {
-    const line = raw.trim();
-    if (!line) {
-      flushNarrator();
-      continue;
-    }
-
-    // Match "SPEAKER: dialogue" or "[SPEAKER]: dialogue"
-    const charMatch = line.match(/^(?:\[([^\]]+)\]|([A-Za-z0-9_ -]+))\s*(?:\([^)]*\))?\s*:\s*["']?(.*?)["']?$/);
-
-    if (charMatch) {
-      flushNarrator();
-      const speakerRaw = (charMatch[1] || charMatch[2] || '').trim();
-      const speech = charMatch[3] !== undefined ? charMatch[3].trim() : '';
-
-      const isNarrator = /^narrator$/i.test(speakerRaw);
-      const matchedChar = isNarrator ? null : storyCharacters.find(c => c.name.toLowerCase() === speakerRaw.toLowerCase());
-
-      const charId = isNarrator ? 'narrator' : (matchedChar?.id || 'char_' + speakerRaw.toLowerCase().replace(/\s+/g, '_'));
-      const charName = isNarrator ? '🎙️ Narrator' : (matchedChar?.name || speakerRaw);
-
-      const existing = existingLines?.find(el =>
-        (el.characterId === charId || el.characterName.toLowerCase() === charName.toLowerCase()) &&
-        el.text === speech
+function reparseAllBookPages(): void {
+  if (!Array.isArray(bookPages)) return;
+  bookPages.forEach((bp, idx) => {
+    if (bp && bp.text && bp.text.trim()) {
+      bp.dialogueLines = parseScreenplayToDialogueLines(
+        bp.text,
+        bp.dialogueLines,
       );
-
-      result.push({
-        id: existing?.id || 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        characterId: charId,
-        characterName: charName,
-        text: speech || line,
-        audioUrl: existing?.audioUrl || null,
-      });
-    } else {
-      currentNarratorBuffer.push(line);
+      syncDialogText(idx);
     }
-  }
+  });
+}
 
-  flushNarrator();
-  return result;
+function getScreenplayHighlightHtml(text: string): string {
+  const html = highlightScreenplayHtml(text || "", {
+    storyCharacters,
+    narratorColor: storyNarratorHighlightColor,
+    plainTextColor: storyPlainTextColor || storyNarratorHighlightColor,
+    plainTextId: PLAIN_TEXT_ID,
+    plainTextName: PLAIN_TEXT_NAME,
+  });
+  return (text || "").endsWith("\n") ? html + "\n " : html;
+}
+
+function renderScreenplaySummaryRow(pageIdx: number, prefix: string): string {
+  const page = bookPages[pageIdx] || defaultBookPage();
+  const lines = page.dialogueLines || [];
+  const packedCast = getPackedCast();
+  const hasAnyAudio = lines.some(
+    (l) => !!l.audioUrl && !isLineMuted(l, packedCast),
+  );
+  const audibleLinesCount = lines.filter(
+    (l) => !isLineMuted(l, packedCast),
+  ).length;
+  const mutedLinesCount = lines.length - audibleLinesCount;
+
+  return `
+    <span>💬 <strong>${lines.length}</strong> speech line${lines.length !== 1 ? "s" : ""} detected${mutedLinesCount > 0 ? ` <span style="opacity:0.75;">(${mutedLinesCount} muted)</span>` : ""}</span>
+    ${
+      hasAnyAudio
+        ? `
+      <button type="button" class="sb-dialog-play-all" data-${prefix}-play-all="${pageIdx}" style="
+        padding:3px 9px; border-radius:6px; border:1px solid var(--color-border); background:var(--color-surface);
+        color:var(--color-text-primary); font-size:0.72rem; font-weight:600; cursor:pointer; font-family:var(--font-body);
+      ">
+        ▶ Play All
+      </button>
+    `
+        : ""
+    }
+  `;
+}
+
+function renderScreenplayLineDetailsList(
+  pageIdx: number,
+  prefix: string,
+  forceOpen?: boolean,
+): string {
+  const page = bookPages[pageIdx] || defaultBookPage();
+  const lines = page.dialogueLines || [];
+  if (lines.length === 0) return "";
+
+  const packedCast = getPackedCast();
+  const audibleLinesCount = lines.filter(
+    (l) => !isLineMuted(l, packedCast),
+  ).length;
+  const mutedLinesCount = lines.length - audibleLinesCount;
+  const shouldOpen = forceOpen !== undefined ? forceOpen : mutedLinesCount > 0;
+
+  return `
+      <details${shouldOpen ? " open" : ""} style="margin-top:6px;">
+        <summary style="font-size:0.72rem; color:var(--color-text-secondary); cursor:pointer; font-weight:600; padding:2px 0;">
+          🎙️ Line Audio Details (${lines.filter((l) => !!l.audioUrl && !isLineMuted(l, packedCast)).length}/${audibleLinesCount} ready${mutedLinesCount > 0 ? `, ${mutedLinesCount} muted` : ""})
+        </summary>
+        <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
+          ${lines
+            .map((line, li) => {
+              const isNarrator = line.characterId === "narrator";
+              const isPlain = line.characterId === PLAIN_TEXT_ID;
+              const lineMuted = isLineMuted(line, packedCast);
+              const charColor = resolveSpeakerColor(
+                isNarrator
+                  ? "narrator"
+                  : isPlain
+                    ? PLAIN_TEXT_ID
+                    : line.characterId !== "unknown"
+                      ? line.characterId
+                      : line.characterName,
+                {
+                  storyCharacters,
+                  narratorColor: storyNarratorHighlightColor,
+                  plainTextColor:
+                    storyPlainTextColor || storyNarratorHighlightColor,
+                  plainTextId: PLAIN_TEXT_ID,
+                  plainTextName: PLAIN_TEXT_NAME,
+                },
+              );
+              const hasAudio = !!line.audioUrl && !lineMuted;
+              return `
+              <div class="screenplay-line-detail${lineMuted ? " screenplay-line-detail--muted" : ""}"${lineMuted ? ' data-muted="true"' : ""} style="display:flex; align-items:center; justify-content:space-between; gap:6px; padding:4px 8px; background:rgba(0,0,0,0.25); border-radius:6px; font-size:0.74rem;${lineMuted ? " opacity:0.45;" : ""}">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;">
+                  <span style="color:var(--color-text-muted); font-weight:700; white-space:nowrap;">${isNarrator ? "🎙️ Narrator" : isPlain ? "📖 " + PLAIN_TEXT_NAME : escapeHtml(line.characterName)}:</span>
+                  <span class="screenplay-line-detail__text" style="color:${charColor}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${escapeHtml(line.text)}"</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                  ${
+                    lineMuted
+                      ? `<span class="sb-dialog-line__muted-badge" style="padding:2px 7px; font-size:0.68rem; color:var(--color-text-muted); font-style:italic;" title="Speaker is muted in Story Settings">🔇 Muted</span>`
+                      : `<button class="sb-dialog-line__btn ${hasAudio ? "sb-dialog-line__btn--done" : ""}" data-${prefix}-line-rec="${pageIdx}-${li}" type="button" style="padding:2px 7px; font-size:0.68rem;">
+                    ${hasAudio ? "✅ Done" : "🎙️ Record"}
+                  </button>
+                  ${hasAudio ? `<button class="sb-dialog-line__btn" data-${prefix}-line-play="${pageIdx}-${li}" type="button" style="padding:2px 7px; font-size:0.68rem;">▶</button>` : ""}`
+                  }
+                </div>
+              </div>
+            `;
+            })
+            .join("")}
+        </div>
+      </details>
+  `;
 }
 
 /**
@@ -2148,8 +2831,14 @@ function insertTextAtCursor(textarea: HTMLTextAreaElement, tag: string): void {
   const before = val.substring(0, start);
   const after = val.substring(end);
 
-  const needsLeadingNewline = before.length > 0 && !before.endsWith('\n');
-  const leading = needsLeadingNewline ? '\n\n' : (before.endsWith('\n\n') ? '' : (before.endsWith('\n') ? '\n' : ''));
+  const needsLeadingNewline = before.length > 0 && !before.endsWith("\n");
+  const leading = needsLeadingNewline
+    ? "\n\n"
+    : before.endsWith("\n\n")
+      ? ""
+      : before.endsWith("\n")
+        ? "\n"
+        : "";
   const insertion = `${leading}${tag} "`;
 
   textarea.value = before + insertion + after;
@@ -2167,26 +2856,35 @@ function insertTextAtCursor(textarea: HTMLTextAreaElement, tag: string): void {
 function renderScreenplayEditor(pageIdx: number, prefix: string): string {
   const page = bookPages[pageIdx] || defaultBookPage();
   const lines = page.dialogueLines || [];
-  const hasAnyAudio = lines.some(l => !!l.audioUrl);
 
-  const charChipsHtml = storyCharacters.map(ch => `
+  const charChipsHtml = storyCharacters
+    .map(
+      (ch) => `
     <button type="button" class="screenplay-chip" data-insert-tag="${prefix}-${pageIdx}" data-tag="${escapeHtml(ch.name.toUpperCase())}:" style="
       display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px;
-      border:1px solid ${ch.color || 'var(--color-purple)'}; background:rgba(255,255,255,0.06);
+      border:1px solid ${ch.color || "var(--color-purple)"}; background:rgba(255,255,255,0.06);
       color:var(--color-text-primary); font-size:0.75rem; font-weight:600; cursor:pointer; font-family:var(--font-body);
-      transition:background 0.15s;
+      transition:background 0.15s;${ch.muted ? " opacity:0.6;" : ""}
     ">
-      👤 ${escapeHtml(ch.name)}
+      ${ch.muted ? "🔇" : "👤"} ${escapeHtml(ch.name)}
     </button>
-  `).join('');
+  `,
+    )
+    .join("");
+
+  const hasUnknown = lines.some((l) => l.characterId === "unknown");
+  const unknownWarning = `<span class="screenplay-unknown-warning" data-screenplay-unknown="${prefix}-${pageIdx}" style="font-size:0.7rem; color: #ef4444; background: rgba(239,68,68,0.1); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(239,68,68,0.2); display: ${hasUnknown ? "inline-flex" : "none"}; align-items: center;">⚠️ Unknown character detected in script. Add to Cast.</span>`;
 
   return `
   <div class="screenplay-editor" data-${prefix}-screenplay="${pageIdx}" style="padding:10px 14px 14px; box-sizing:border-box;">
     <!-- Header -->
     <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
-      <span style="font-size:0.75rem; font-weight:700; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.04em; white-space:nowrap;">
-        🎬 Screenplay
-      </span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:0.75rem; font-weight:700; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.04em; white-space:nowrap;">
+          🎬 Screenplay
+        </span>
+        ${unknownWarning}
+      </div>
       <button type="button" data-open-char-settings="true" style="display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:8px; border:1px solid rgba(16,185,129,0.3); background:rgba(16,185,129,0.08); color:var(--color-purple); font-size:0.72rem; font-weight:700; cursor:pointer; font-family:var(--font-body); white-space:nowrap;">
         🎭 Cast (${storyCharacters.length})
       </button>
@@ -2198,9 +2896,9 @@ function renderScreenplayEditor(pageIdx: number, prefix: string): string {
       <button type="button" class="screenplay-chip" data-insert-tag="${prefix}-${pageIdx}" data-tag="NARRATOR:" style="
         display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px;
         border:1px solid rgba(167,139,250,0.35); background:rgba(167,139,250,0.1);
-        color:#6EE7B7; font-size:0.75rem; font-weight:700; cursor:pointer; font-family:var(--font-body);
+        color:#6EE7B7; font-size:0.75rem; font-weight:700; cursor:pointer; font-family:var(--font-body);${storyNarratorMuted ? " opacity:0.6;" : ""}
       ">
-        🎙️ Narrator
+        ${storyNarratorMuted ? "🔇" : "🎙️"} Narrator
       </button>
       ${charChipsHtml}
       <button type="button" data-open-char-settings="true" style="
@@ -2212,26 +2910,21 @@ function renderScreenplayEditor(pageIdx: number, prefix: string): string {
       </button>
     </div>
 
-    <!-- Unified Textarea -->
-    <textarea class="${prefix === 'sbd' ? 'sb-card__textarea ' : 'book-tile__textarea '}screenplay-textarea"
-      data-${prefix === 'sbd' ? 'sb-text' : 'tile-text'}="${pageIdx}"
-      rows="${prefix === 'sbd' ? '8' : '5'}"
-      placeholder="Write story narration or character dialogue...&#10;&#10;e.g.&#10;The ancient gates creaked open.&#10;&#10;SARAH: &quot;Is anyone there?&quot;&#10;LUCAS: &quot;Stay close.&quot;"
-      maxlength="2000"
-      style="width:100%; box-sizing:border-box; font-family:var(--font-body); font-size:0.88rem; line-height:1.5; border-radius:10px; border:1px solid var(--color-border); background:rgba(0,0,0,0.18); padding:10px 12px; resize:vertical;">${escapeHtml(page.text)}</textarea>
+    <!-- Unified Textarea with Live Highlight Backdrop -->
+    <div class="screenplay-input-wrap" style="position:relative; width:100%; border-radius:10px; border:1px solid var(--color-border); background:rgba(0,0,0,0.18);">
+      <div class="screenplay-backdrop" data-screenplay-backdrop="${prefix}-${pageIdx}" aria-hidden="true">${getScreenplayHighlightHtml(page.text || "")}</div>
+      <textarea class="${prefix === "sbd" ? "sb-card__textarea " : "book-tile__textarea "}screenplay-textarea"
+        data-${prefix === "sbd" ? "sb-text" : "tile-text"}="${pageIdx}"
+        rows="${prefix === "sbd" ? "8" : "5"}"
+        placeholder="Write story narration or character dialogue...&#10;&#10;e.g.&#10;The ancient gates creaked open.&#10;&#10;SARAH: &quot;Is anyone there?&quot;&#10;LUCAS: &quot;Stay close.&quot;"
+        maxlength="2000"
+        style="width:100%; box-sizing:border-box; font-family:var(--font-body); font-size:0.88rem; line-height:1.5; border-radius:10px; border:none; background:transparent; color:transparent; caret-color:var(--color-text-primary, #fff); padding:10px 12px; resize:vertical;">${escapeHtml(page.text)}</textarea>
+    </div>
 
     <!-- Audio & Line Summary Strip -->
     <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--color-border); border-radius:10px;">
-      <div style="display:flex; align-items:center; justify-content:space-between; font-size:0.74rem; color:var(--color-text-muted);">
-        <span>💬 <strong>${lines.length}</strong> speech line${lines.length !== 1 ? 's' : ''} detected</span>
-        ${hasAnyAudio ? `
-          <button type="button" class="sb-dialog-play-all" data-${prefix}-play-all="${pageIdx}" style="
-            padding:3px 9px; border-radius:6px; border:1px solid var(--color-border); background:var(--color-surface);
-            color:var(--color-text-primary); font-size:0.72rem; font-weight:600; cursor:pointer; font-family:var(--font-body);
-          ">
-            ▶ Play All
-          </button>
-        ` : ''}
+      <div data-screenplay-summary="${prefix}-${pageIdx}" style="display:flex; align-items:center; justify-content:space-between; font-size:0.74rem; color:var(--color-text-muted);">
+        ${renderScreenplaySummaryRow(pageIdx, prefix)}
       </div>
       <button type="button" class="sb-dialog-batch-btn" data-${prefix}-batch-rec="${pageIdx}" style="
         width:100%; padding:9px 16px; border-radius:8px; border:none; background:var(--color-purple); color:white;
@@ -2244,76 +2937,69 @@ function renderScreenplayEditor(pageIdx: number, prefix: string): string {
     </div>
 
     <!-- Collapsible Recorded Lines Details (if lines exist) -->
-    ${lines.length > 0 ? `
-      <details style="margin-top:6px;">
-        <summary style="font-size:0.72rem; color:var(--color-text-secondary); cursor:pointer; font-weight:600; padding:2px 0;">
-          🎙️ Line Audio Details (${lines.filter(l => !!l.audioUrl).length}/${lines.length} ready)
-        </summary>
-        <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
-          ${lines.map((line, li) => {
-            const isNarrator = line.characterId === 'narrator';
-            const isPlain = line.characterId === PLAIN_TEXT_ID;
-            const charColor = isNarrator ? storyNarratorHighlightColor : isPlain ? (storyPlainTextColor || storyNarratorHighlightColor) : (storyCharacters.find(c => c.id === line.characterId)?.color || '#60a5fa');
-            const hasAudio = !!line.audioUrl;
-            return `
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; padding:4px 8px; background:rgba(0,0,0,0.25); border-radius:6px; font-size:0.74rem;">
-                <div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1; overflow:hidden;">
-                  <span style="color:${charColor}; font-weight:700; white-space:nowrap;">${isNarrator ? '🎙️ Narrator' : isPlain ? '📖 ' + PLAIN_TEXT_NAME : escapeHtml(line.characterName)}:</span>
-                  <span style="color:var(--color-text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${escapeHtml(line.text)}"</span>
-                </div>
-                <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
-                  <button class="sb-dialog-line__btn ${hasAudio ? 'sb-dialog-line__btn--done' : ''}" data-${prefix}-line-rec="${pageIdx}-${li}" type="button" style="padding:2px 7px; font-size:0.68rem;">
-                    ${hasAudio ? '✅ Done' : '🎙️ Record'}
-                  </button>
-                  ${hasAudio ? `<button class="sb-dialog-line__btn" data-${prefix}-line-play="${pageIdx}-${li}" type="button" style="padding:2px 7px; font-size:0.68rem;">▶</button>` : ''}
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </details>
-    ` : ''}
+    <div data-screenplay-details="${prefix}-${pageIdx}">
+      ${renderScreenplayLineDetailsList(pageIdx, prefix)}
+    </div>
   </div>
   `;
 }
 
 /** Render multi-character dialogue lines UI for a page (used in both mobile + storyboard views) */
-function renderDialogueLines(pageIdx: number, lines: DialogueLine[], prefix: string): string {
-  const charOptions = storyCharacters.map(ch =>
-    `<option value="${ch.id}">${ch.name}</option>`
-  ).join('') + '<option value="__new__">+ Add New Character...</option>';
+function renderDialogueLines(
+  pageIdx: number,
+  lines: DialogueLine[],
+  prefix: string,
+): string {
+  const packedCast = getPackedCast();
 
-  const linesHtml = lines.map((line, li) => {
-    const isNarrator = line.characterId === 'narrator';
-    const isPlain = line.characterId === PLAIN_TEXT_ID;
-    const charColor = isNarrator ? storyNarratorHighlightColor : isPlain ? (storyPlainTextColor || storyNarratorHighlightColor) : (storyCharacters.find(c => c.id === line.characterId)?.color || CHAR_COLORS[li % CHAR_COLORS.length]);
-    const hasAudio = !!line.audioUrl;
-    return `
-    <div class="sb-dialog-line" data-${prefix}-line="${pageIdx}-${li}">
+  const linesHtml = lines
+    .map((line, li) => {
+      const isNarrator = line.characterId === "narrator";
+      const isPlain = line.characterId === PLAIN_TEXT_ID;
+      const lineMuted = isLineMuted(line, packedCast);
+      const charColor = isNarrator
+        ? storyNarratorHighlightColor
+        : isPlain
+          ? storyPlainTextColor || storyNarratorHighlightColor
+          : storyCharacters.find((c) => c.id === line.characterId)?.color ||
+            CHAR_COLORS[li % CHAR_COLORS.length];
+      const hasAudio = !!line.audioUrl && !lineMuted;
+      return `
+    <div class="sb-dialog-line${lineMuted ? " sb-dialog-line--muted" : ""}" data-${prefix}-line="${pageIdx}-${li}"${lineMuted ? ' data-muted="true"' : ""}>
       <div class="sb-dialog-line__top">
         <select class="sb-dialog-line__char-select" data-${prefix}-line-char="${pageIdx}-${li}" style="border-left: 3px solid ${charColor};">
-          <option value="${PLAIN_TEXT_ID}" ${isPlain ? 'selected' : ''}>📖 ${PLAIN_TEXT_NAME}</option>
-          <option value="narrator" ${isNarrator ? 'selected' : ''}>🎙️ Narrator</option>
-          ${storyCharacters.map(ch =>
-            `<option value="${ch.id}" ${ch.id === line.characterId ? 'selected' : ''}>${ch.name}</option>`
-          ).join('')}
+          <option value="${PLAIN_TEXT_ID}" ${isPlain ? "selected" : ""}>📖 ${PLAIN_TEXT_NAME}${storyPlainTextMuted ? " (Muted)" : ""}</option>
+          <option value="narrator" ${isNarrator ? "selected" : ""}>🎙️ Narrator${storyNarratorMuted ? " (Muted)" : ""}</option>
+          ${storyCharacters
+            .map(
+              (ch) =>
+                `<option value="${ch.id}" ${ch.id === line.characterId ? "selected" : ""}>${ch.name}${ch.muted ? " (Muted)" : ""}</option>`,
+            )
+            .join("")}
           <option value="__new__">+ Add New...</option>
         </select>
         <div class="sb-dialog-line__actions">
-          <button class="sb-dialog-line__btn ${hasAudio ? 'sb-dialog-line__btn--done' : ''}" data-${prefix}-line-rec="${pageIdx}-${li}" type="button">${hasAudio ? '✅ Recorded' : '🎙️ Record'}</button>
-          ${hasAudio ? `<button class="sb-dialog-line__btn" data-${prefix}-line-play="${pageIdx}-${li}" type="button">▶</button>` : ''}
+          ${
+            lineMuted
+              ? `<span class="sb-dialog-line__muted-badge" style="padding:2px 7px; font-size:0.68rem; color:var(--color-text-muted); font-style:italic;" title="Speaker is muted in Story Settings">🔇 Muted</span>`
+              : `<button class="sb-dialog-line__btn ${hasAudio ? "sb-dialog-line__btn--done" : ""}" data-${prefix}-line-rec="${pageIdx}-${li}" type="button">${hasAudio ? "✅ Recorded" : "🎙️ Record"}</button>
+          ${hasAudio ? `<button class="sb-dialog-line__btn" data-${prefix}-line-play="${pageIdx}-${li}" type="button">▶</button>` : ""}`
+          }
           <button class="sb-dialog-line__btn sb-dialog-line__btn--delete" data-${prefix}-line-del="${pageIdx}-${li}" type="button">✕</button>
         </div>
       </div>
-      <textarea class="sb-dialog-line__text" data-${prefix}-line-text="${pageIdx}-${li}" rows="2" placeholder="Write dialogue..." maxlength="500">${line.text}</textarea>
+      <textarea class="sb-dialog-line__text${lineMuted ? " sb-dialog-line__text--muted" : ""}" data-${prefix}-line-text="${pageIdx}-${li}" rows="2" placeholder="Write dialogue..." maxlength="500">${line.text}</textarea>
     </div>`;
-  }).join('');
+    })
+    .join("");
 
-  const hasAnyAudio = lines.some(l => !!l.audioUrl);
+  const hasAnyAudio = lines.some((l) => !!l.audioUrl && !isLineMuted(l, packedCast));
 
   return `
   <div class="sb-dialog-lines" data-${prefix}-lines="${pageIdx}">
-    ${storyCharacters.length === 0 ? `
+    ${
+      storyCharacters.length === 0
+        ? `
       <div style="background:rgba(138,99,210,0.08); border:1.5px dashed var(--color-purple); border-radius:10px; padding:12px; margin-bottom:8px; font-size:0.75rem; color:var(--color-text-secondary); text-align:center;">
         <div style="font-weight:700; color:var(--color-purple); font-size:0.85rem; margin-bottom:4px;">🎭 Characters & Cast Voices</div>
         <div>Define named characters and give each their own voice from 26 ElevenLabs options.</div>
@@ -2323,27 +3009,40 @@ function renderDialogueLines(pageIdx: number, lines: DialogueLine[], prefix: str
           </button>
         </div>
       </div>
-    ` : ''}
+    `
+        : ""
+    }
     ${linesHtml}
     <div style="display:flex; gap:6px; margin-top:4px;">
       <button class="sb-dialog-add-line" data-${prefix}-add-line="${pageIdx}" type="button" style="flex:1;">+ Add Dialogue Line</button>
       <button class="sb-dialog-line__btn" data-open-char-settings="true" type="button" title="Manage character voices in Story Settings" style="white-space:nowrap; padding:6px 10px; font-size:0.72rem; font-weight:700;">🎭 Cast & Voices</button>
     </div>
-    ${lines.length > 0 ? `
+    ${
+      lines.length > 0
+        ? `
       <button class="sb-dialog-batch-btn" data-${prefix}-batch-rec="${pageIdx}" type="button">🎙️ Pre-record Page Dialogue</button>
-      ${hasAnyAudio ? `<button class="sb-dialog-play-all" data-${prefix}-play-all="${pageIdx}" type="button">▶ Play All Dialogue</button>` : ''}
-    ` : ''}
+      ${hasAnyAudio ? `<button class="sb-dialog-play-all" data-${prefix}-play-all="${pageIdx}" type="button">▶ Play All Dialogue</button>` : ""}
+    `
+        : ""
+    }
   </div>`;
 }
 
 /** Show quick-add character modal and return the new character (or null if cancelled) */
-function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => void): void {
-  const voiceOptionsHtml = VOICE_OPTIONS.map(v =>
-    `<option value="${v.voiceId}">${v.name} — ${v.description}</option>`
-  ).join('');
+function showQuickAddCharacterModal(
+  callback: (ch: StoryCharacter | null) => void,
+): void {
+  const voiceOptionsHtml = VOICE_OPTIONS.map(
+    (v) => `<option value="${v.voiceId}">${v.name} — ${v.description}</option>`,
+  ).join("");
 
-  const overlay = document.createElement('div');
-  overlay.className = 'char-quick-add-modal';
+  const defaultColor = nextFreeCharacterColor();
+  const paletteHtml = CHARACTER_PALETTE.map(color => `
+    <button type="button" class="qa-color-btn" data-color="${color}" style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid ${color === defaultColor ? 'white' : 'transparent'};cursor:pointer;flex-shrink:0;"></button>
+  `).join("");
+
+  const overlay = document.createElement("div");
+  overlay.className = "char-quick-add-modal";
   overlay.innerHTML = `
     <div class="char-quick-add-modal__card">
       <div class="char-quick-add-modal__title">Add New Character</div>
@@ -2358,6 +3057,12 @@ function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => voi
           <button type="button" class="btn btn--sm btn--secondary" id="qa-audition-btn" style="white-space:nowrap; padding:6px 12px; font-size:0.75rem;">🔊 Audition</button>
         </div>
       </div>
+      <div class="char-quick-add-modal__field">
+        <label class="char-quick-add-modal__label">Character Color</label>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;" id="qa-color-palette">
+          ${paletteHtml}
+        </div>
+      </div>
       <div class="char-quick-add-modal__actions">
         <button class="char-quick-add-modal__btn char-quick-add-modal__btn--cancel" id="qa-cancel" type="button">Cancel</button>
         <button class="char-quick-add-modal__btn char-quick-add-modal__btn--save" id="qa-save" type="button">Add Character</button>
@@ -2366,116 +3071,379 @@ function showQuickAddCharacterModal(callback: (ch: StoryCharacter | null) => voi
   `;
   document.body.appendChild(overlay);
 
-  const qaAuditionBtn = document.getElementById('qa-audition-btn') as HTMLButtonElement | null;
-  qaAuditionBtn?.addEventListener('click', async () => {
-    const voiceSelect = document.getElementById('qa-char-voice') as HTMLSelectElement | null;
-    const nameInput = document.getElementById('qa-char-name') as HTMLInputElement | null;
+  let selectedColor = defaultColor;
+  overlay.querySelectorAll(".qa-color-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const target = e.currentTarget as HTMLElement;
+      selectedColor = target.getAttribute("data-color") || defaultColor;
+      overlay.querySelectorAll(".qa-color-btn").forEach(b => (b as HTMLElement).style.borderColor = "transparent");
+      target.style.borderColor = "white";
+    });
+  });
+
+  const qaAuditionBtn = document.getElementById(
+    "qa-audition-btn",
+  ) as HTMLButtonElement | null;
+  qaAuditionBtn?.addEventListener("click", async () => {
+    const voiceSelect = document.getElementById(
+      "qa-char-voice",
+    ) as HTMLSelectElement | null;
+    const nameInput = document.getElementById(
+      "qa-char-name",
+    ) as HTMLInputElement | null;
     const voiceId = voiceSelect?.value || VOICE_OPTIONS[0]?.voiceId;
-    const name = nameInput?.value.trim() || 'Character';
+    const name = nameInput?.value.trim() || "Character";
     if (!voiceId) return;
 
-    qaAuditionBtn.textContent = '🔊 Playing...';
+    qaAuditionBtn.textContent = "🔊 Playing...";
     qaAuditionBtn.disabled = true;
     try {
       const audio = await auditionVoice(voiceId, name);
       if (audio) {
-        audio.addEventListener('ended', () => {
-          qaAuditionBtn.textContent = '🔊 Audition';
-          qaAuditionBtn.disabled = false;
-        }, { once: true });
+        audio.addEventListener(
+          "ended",
+          () => {
+            qaAuditionBtn.textContent = "🔊 Audition";
+            qaAuditionBtn.disabled = false;
+          },
+          { once: true },
+        );
       } else {
-        qaAuditionBtn.textContent = '🔊 Audition';
+        qaAuditionBtn.textContent = "🔊 Audition";
         qaAuditionBtn.disabled = false;
       }
     } catch {
-      qaAuditionBtn.textContent = '🔊 Audition';
+      qaAuditionBtn.textContent = "🔊 Audition";
       qaAuditionBtn.disabled = false;
     }
   });
 
-  document.getElementById('qa-cancel')?.addEventListener('click', () => { overlay.remove(); callback(null); });
-  document.getElementById('qa-save')?.addEventListener('click', () => {
-    const nameInput = document.getElementById('qa-char-name') as HTMLInputElement | null;
-    const voiceSelect = document.getElementById('qa-char-voice') as HTMLSelectElement | null;
+  document.getElementById("qa-cancel")?.addEventListener("click", () => {
+    overlay.remove();
+    callback(null);
+  });
+  document.getElementById("qa-save")?.addEventListener("click", () => {
+    const nameInput = document.getElementById(
+      "qa-char-name",
+    ) as HTMLInputElement | null;
+    const voiceSelect = document.getElementById(
+      "qa-char-voice",
+    ) as HTMLSelectElement | null;
     const name = nameInput?.value.trim();
     if (!name) return;
 
-    const voiceId = voiceSelect?.value || VOICE_OPTIONS[0]?.voiceId || '';
-    const color = nextFreeCharacterColor();
-    const ch: StoryCharacter = { id: 'char_' + Date.now(), name, voiceId, color };
+    const voiceId = voiceSelect?.value || VOICE_OPTIONS[0]?.voiceId || "";
+    const color = selectedColor;
+    const ch: StoryCharacter = {
+      id: "char_" + Date.now(),
+      name,
+      voiceId,
+      color,
+    };
     storyCharacters.push(ch);
+    reparseAllBookPages();
     saveDraft();
     overlay.remove();
     callback(ch);
   });
 
-  setTimeout(() => (document.getElementById('qa-char-name') as HTMLInputElement)?.focus(), 100);
+  setTimeout(
+    () =>
+      (document.getElementById("qa-char-name") as HTMLInputElement)?.focus(),
+    100,
+  );
 }
 
 /** Wire event handlers for multi-character dialogue lines on a given container.
  *  prefix: 'mob' for mobile canvas, 'sbd' for storyboard overlay */
-function wireDialogueLineEvents(container: HTMLElement | Document, prefix: string, refreshView: () => void): void {
-  // Open Story Settings for characters
-  container.querySelectorAll('[data-open-char-settings]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      getFormData();
-      activeStorySettingsTab = 'characters';
-      openStorySettings();
-      setTimeout(() => {
-        const card = document.querySelector('.ss-characters-card');
-        if (card) card.scrollIntoView({ behavior: 'smooth' });
-      }, 150);
+function wireScreenplayLineAudioActions(
+  scope: HTMLElement | Document,
+  prefix: string,
+  refreshView: () => void,
+): void {
+  // Per-line record
+  scope.querySelectorAll(`[data-${prefix}-line-rec]`).forEach((btn) => {
+    if ((btn as any).__lineRecWired) return;
+    (btn as any).__lineRecWired = true;
+    btn.addEventListener("click", async () => {
+      const [pStr, lStr] = (
+        (btn as HTMLElement).getAttribute(`data-${prefix}-line-rec`) || "0-0"
+      ).split("-");
+      const pageIdx = parseInt(pStr);
+      const lineIdx = parseInt(lStr);
+      const line = bookPages[pageIdx].dialogueLines?.[lineIdx];
+      if (!line || !line.text.trim()) {
+        showModal({
+          title: "No Text",
+          content: "<p>Write some dialogue text first.</p>",
+          confirmText: "OK",
+        });
+        return;
+      }
+      if (isLineMuted(line, getPackedCast())) {
+        showModal({
+          title: "Speaker Muted",
+          content:
+            "<p>This speaker is muted in Story Settings and will remain silent.</p>",
+          confirmText: "OK",
+        });
+        return;
+      }
+      const isNarrator = line.characterId === "narrator";
+      const isPlain = line.characterId === PLAIN_TEXT_ID;
+      const ch =
+        isNarrator || isPlain
+          ? null
+          : storyCharacters.find((c) => c.id === line.characterId);
+      const voiceId = isNarrator
+        ? storyNarratorVoiceId
+        : isPlain
+          ? storyPlainTextVoiceId || storyNarratorVoiceId
+          : ch?.voiceId;
+      const b = btn as HTMLButtonElement;
+      b.disabled = true;
+      b.textContent = "⏳ Recording...";
+      try {
+        const audioData = await preRecordAudio(line.text, 0.5, voiceId);
+        const storyId = editStoryId || activeDraftId || "draft";
+        const cdnUrl = await uploadAudioData(audioData, storyId, line.id);
+        line.audioUrl = cdnUrl;
+        saveDraft();
+      } catch (err: any) {
+        showModal({
+          title: "Record Failed",
+          content: `<p>${err.message || "Something went wrong."}</p>`,
+          confirmText: "OK",
+        });
+      }
+      refreshView();
+    });
+  });
+
+  // Per-line play
+  scope.querySelectorAll(`[data-${prefix}-line-play]`).forEach((btn) => {
+    if ((btn as any).__linePlayWired) return;
+    (btn as any).__linePlayWired = true;
+    btn.addEventListener("click", () => {
+      const [pStr, lStr] = (
+        (btn as HTMLElement).getAttribute(`data-${prefix}-line-play`) || "0-0"
+      ).split("-");
+      const pageIdx = parseInt(pStr);
+      const lineIdx = parseInt(lStr);
+      const line = bookPages[pageIdx].dialogueLines?.[lineIdx];
+      if (!line || isLineMuted(line, getPackedCast())) return;
+      const url = line.audioUrl;
+      if (url) {
+        if (isSpeaking()) {
+          stopSpeaking();
+        } else {
+          playAudioUrl(url);
+        }
+      }
+    });
+  });
+
+  // Play all dialogue
+  scope.querySelectorAll(`[data-${prefix}-play-all]`).forEach((btn) => {
+    if ((btn as any).__playAllWired) return;
+    (btn as any).__playAllWired = true;
+    btn.addEventListener("click", () => {
+      const pageIdx = parseInt(
+        (btn as HTMLElement).getAttribute(`data-${prefix}-play-all`) || "0",
+      );
+      const lines = bookPages[pageIdx].dialogueLines || [];
+      const packedCast = getPackedCast();
+      const urls = lines.map((l) =>
+        isLineMuted(l, packedCast) ? null : l.audioUrl || null,
+      );
+      if (!urls.some(Boolean)) return;
+      if (isSpeaking()) {
+        stopSpeaking();
+        return;
+      }
+      playAudioSequence(urls);
+    });
+  });
+}
+
+function refreshScreenplayEditorLiveDom(
+  container: HTMLElement | Document,
+  pageIdx: number,
+  prefix: string,
+  refreshView: () => void,
+): void {
+  const textarea = (
+    prefix === "sbd"
+      ? container.querySelector(`[data-sb-text="${pageIdx}"]`)
+      : container.querySelector(`[data-tile-text="${pageIdx}"]`)
+  ) as HTMLTextAreaElement | null;
+
+  const backdrop = container.querySelector(
+    `[data-screenplay-backdrop="${prefix}-${pageIdx}"]`,
+  ) as HTMLElement | null;
+  if (textarea) {
+    autoGrow(textarea);
+  }
+  if (backdrop && textarea) {
+    backdrop.innerHTML = getScreenplayHighlightHtml(textarea.value);
+    backdrop.scrollTop = textarea.scrollTop;
+    backdrop.scrollLeft = textarea.scrollLeft;
+  }
+
+  const lines = bookPages[pageIdx]?.dialogueLines || [];
+  const hasUnknown = lines.some((l) => l.characterId === "unknown");
+  const unknownEl = container.querySelector(
+    `[data-screenplay-unknown="${prefix}-${pageIdx}"]`,
+  ) as HTMLElement | null;
+  if (unknownEl) {
+    unknownEl.style.display = hasUnknown ? "inline-flex" : "none";
+  }
+
+  const summaryEl = container.querySelector(
+    `[data-screenplay-summary="${prefix}-${pageIdx}"]`,
+  ) as HTMLElement | null;
+  if (summaryEl) {
+    summaryEl.innerHTML = renderScreenplaySummaryRow(pageIdx, prefix);
+    wireScreenplayLineAudioActions(summaryEl, prefix, refreshView);
+  }
+
+  const detailsWrap = container.querySelector(
+    `[data-screenplay-details="${prefix}-${pageIdx}"]`,
+  ) as HTMLElement | null;
+  if (detailsWrap) {
+    const prevDetails = detailsWrap.querySelector("details");
+    const wasOpen = prevDetails ? prevDetails.open : undefined;
+    detailsWrap.innerHTML = renderScreenplayLineDetailsList(
+      pageIdx,
+      prefix,
+      wasOpen,
+    );
+    wireScreenplayLineAudioActions(detailsWrap, prefix, refreshView);
+  }
+}
+
+function wireDialogueLineEvents(
+  container: HTMLElement | Document,
+  prefix: string,
+  refreshView: () => void,
+): void {
+  (container as any).__lastRefreshView = refreshView;
+
+  // Open the cast manager (Admin > Story Settings). A story that was never saved has no
+  // story group yet, so fall back to the quick-add character dialog there.
+  container.querySelectorAll("[data-open-char-settings]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openCastManager(() => showQuickAddCharacterModal(() => refreshView()));
     });
   });
 
   // Quick insert character chip into screenplay textarea (delegated for dynamic chips).
   // Guarded: the mobile `wizard` container persists across re-renders, so without this
   // guard every updateView() stacked another listener and one tap inserted N tags.
-  const insertGuardKey = '__insertTagDelegated';
+  const insertGuardKey = "__insertTagDelegated";
   if (!(container as any)[insertGuardKey]) {
-  (container as any)[insertGuardKey] = true;
-  container.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('[data-insert-tag]');
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const attr = (btn as HTMLElement).getAttribute('data-insert-tag') || 'mob-0';
-    const lastDash = attr.lastIndexOf('-');
-    const pfx = attr.substring(0, lastDash);
-    const pageIdx = parseInt(attr.substring(lastDash + 1));
-    const tag = (btn as HTMLElement).getAttribute('data-tag') || '';
+    (container as any)[insertGuardKey] = true;
+    container.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement).closest("[data-insert-tag]");
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const attr =
+        (btn as HTMLElement).getAttribute("data-insert-tag") || "mob-0";
+      const lastDash = attr.lastIndexOf("-");
+      const pfx = attr.substring(0, lastDash);
+      const pageIdx = parseInt(attr.substring(lastDash + 1));
+      const tag = (btn as HTMLElement).getAttribute("data-tag") || "";
 
-    const textarea = (pfx === 'sbd'
-      ? container.querySelector(`[data-sb-text="${pageIdx}"]`)
-      : container.querySelector(`[data-tile-text="${pageIdx}"]`)) as HTMLTextAreaElement | null;
+      const textarea = (
+        pfx === "sbd"
+          ? container.querySelector(`[data-sb-text="${pageIdx}"]`)
+          : container.querySelector(`[data-tile-text="${pageIdx}"]`)
+      ) as HTMLTextAreaElement | null;
 
-    if (textarea && tag) {
-      insertTextAtCursor(textarea, tag);
-      if (bookPages[pageIdx]) {
-        bookPages[pageIdx].text = textarea.value;
-        bookPages[pageIdx].dialogueLines = parseScreenplayToDialogueLines(textarea.value, bookPages[pageIdx].dialogueLines);
-        syncDialogText(pageIdx);
-        saveDraft();
+      if (textarea && tag) {
+        insertTextAtCursor(textarea, tag);
+        if (bookPages[pageIdx]) {
+          bookPages[pageIdx].text = textarea.value;
+          bookPages[pageIdx].dialogueLines = parseScreenplayToDialogueLines(
+            textarea.value,
+            bookPages[pageIdx].dialogueLines,
+          );
+          syncDialogText(pageIdx);
+          saveDraft();
+          const activeRefresh =
+            (container as any).__lastRefreshView || refreshView;
+          refreshScreenplayEditorLiveDom(
+            container,
+            pageIdx,
+            pfx,
+            activeRefresh,
+          );
+        }
       }
-    }
-  });
+    });
   }
 
+  // Wire live backdrop highlighting + live dialogue line details updates as the user types or scrolls
+  const taAttr = prefix === "sbd" ? "data-sb-text" : "data-tile-text";
+  container
+    .querySelectorAll<HTMLTextAreaElement>(`textarea.screenplay-textarea[${taAttr}]`)
+    .forEach((ta) => {
+      const pageIdx = parseInt(ta.getAttribute(taAttr) || "0");
+      autoGrow(ta);
+      const initBackdrop = container.querySelector(
+        `[data-screenplay-backdrop="${prefix}-${pageIdx}"]`,
+      ) as HTMLElement | null;
+      if (initBackdrop) {
+        initBackdrop.scrollTop = ta.scrollTop;
+        initBackdrop.scrollLeft = ta.scrollLeft;
+      }
+      if ((ta as any).__screenplayLiveWired) return;
+      (ta as any).__screenplayLiveWired = true;
+      const syncLive = () => {
+        if (bookPages[pageIdx]) {
+          bookPages[pageIdx].text = ta.value;
+          bookPages[pageIdx].dialogueLines = parseScreenplayToDialogueLines(
+            ta.value,
+            bookPages[pageIdx].dialogueLines,
+          );
+          syncDialogText(pageIdx);
+        }
+        refreshScreenplayEditorLiveDom(container, pageIdx, prefix, refreshView);
+      };
+      ta.addEventListener("input", syncLive);
+      ta.addEventListener("paste", () => setTimeout(syncLive, 0));
+      ta.addEventListener("scroll", () => {
+        const backdrop = container.querySelector(
+          `[data-screenplay-backdrop="${prefix}-${pageIdx}"]`,
+        ) as HTMLElement | null;
+        if (backdrop) {
+          backdrop.scrollTop = ta.scrollTop;
+          backdrop.scrollLeft = ta.scrollLeft;
+        }
+      });
+    });
+
   // Add dialogue line
-  container.querySelectorAll(`[data-${prefix}-add-line]`).forEach(btn => {
-    btn.addEventListener('click', () => {
-      const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-add-line`) || '0');
-      if (!bookPages[pageIdx].dialogueLines) bookPages[pageIdx].dialogueLines = [];
+  container.querySelectorAll(`[data-${prefix}-add-line]`).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pageIdx = parseInt(
+        (btn as HTMLElement).getAttribute(`data-${prefix}-add-line`) || "0",
+      );
+      if (!bookPages[pageIdx].dialogueLines)
+        bookPages[pageIdx].dialogueLines = [];
 
       // Default to narrator (always available), or first character if any exist
-      const defaultCharId = storyCharacters.length > 0 ? storyCharacters[0].id : 'narrator';
-      const defaultCharName = storyCharacters.length > 0 ? storyCharacters[0].name : '🎙️ Narrator';
+      const defaultCharId =
+        storyCharacters.length > 0 ? storyCharacters[0].id : "narrator";
+      const defaultCharName =
+        storyCharacters.length > 0 ? storyCharacters[0].name : "🎙️ Narrator";
 
       bookPages[pageIdx].dialogueLines!.push({
-        id: 'line_' + Date.now(),
+        id: "line_" + Date.now(),
         characterId: defaultCharId,
         characterName: defaultCharName,
-        text: '',
+        text: "",
       });
       saveDraft();
       refreshView();
@@ -2483,10 +3451,13 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
   });
 
   // Delete line
-  container.querySelectorAll(`[data-${prefix}-line-del]`).forEach(btn => {
-    btn.addEventListener('click', () => {
-      const [pStr, lStr] = ((btn as HTMLElement).getAttribute(`data-${prefix}-line-del`) || '0-0').split('-');
-      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
+  container.querySelectorAll(`[data-${prefix}-line-del]`).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const [pStr, lStr] = (
+        (btn as HTMLElement).getAttribute(`data-${prefix}-line-del`) || "0-0"
+      ).split("-");
+      const pageIdx = parseInt(pStr);
+      const lineIdx = parseInt(lStr);
       bookPages[pageIdx].dialogueLines?.splice(lineIdx, 1);
       // Sync dialogText for backward compat
       syncDialogText(pageIdx);
@@ -2496,12 +3467,17 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
   });
 
   // Text input
-  container.querySelectorAll(`[data-${prefix}-line-text]`).forEach(ta => {
-    ta.addEventListener('input', () => {
-      const [pStr, lStr] = ((ta as HTMLElement).getAttribute(`data-${prefix}-line-text`) || '0-0').split('-');
-      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
+  container.querySelectorAll(`[data-${prefix}-line-text]`).forEach((ta) => {
+    ta.addEventListener("input", () => {
+      const [pStr, lStr] = (
+        (ta as HTMLElement).getAttribute(`data-${prefix}-line-text`) || "0-0"
+      ).split("-");
+      const pageIdx = parseInt(pStr);
+      const lineIdx = parseInt(lStr);
       if (bookPages[pageIdx].dialogueLines?.[lineIdx]) {
-        bookPages[pageIdx].dialogueLines![lineIdx].text = (ta as HTMLTextAreaElement).value;
+        bookPages[pageIdx].dialogueLines![lineIdx].text = (
+          ta as HTMLTextAreaElement
+        ).value;
         syncDialogText(pageIdx);
         saveDraft();
       }
@@ -2509,12 +3485,15 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
   });
 
   // Character change
-  container.querySelectorAll(`[data-${prefix}-line-char]`).forEach(sel => {
-    sel.addEventListener('change', () => {
-      const [pStr, lStr] = ((sel as HTMLElement).getAttribute(`data-${prefix}-line-char`) || '0-0').split('-');
-      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
+  container.querySelectorAll(`[data-${prefix}-line-char]`).forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const [pStr, lStr] = (
+        (sel as HTMLElement).getAttribute(`data-${prefix}-line-char`) || "0-0"
+      ).split("-");
+      const pageIdx = parseInt(pStr);
+      const lineIdx = parseInt(lStr);
       const val = (sel as HTMLSelectElement).value;
-      if (val === '__new__') {
+      if (val === "__new__") {
         showQuickAddCharacterModal((ch) => {
           if (ch && bookPages[pageIdx].dialogueLines?.[lineIdx]) {
             bookPages[pageIdx].dialogueLines![lineIdx].characterId = ch.id;
@@ -2526,17 +3505,18 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         });
         return;
       }
-      if (val === 'narrator' || val === PLAIN_TEXT_ID) {
+      if (val === "narrator" || val === PLAIN_TEXT_ID) {
         if (bookPages[pageIdx].dialogueLines?.[lineIdx]) {
           bookPages[pageIdx].dialogueLines![lineIdx].characterId = val;
-          bookPages[pageIdx].dialogueLines![lineIdx].characterName = val === 'narrator' ? '🎙️ Narrator' : '📖 ' + PLAIN_TEXT_NAME;
+          bookPages[pageIdx].dialogueLines![lineIdx].characterName =
+            val === "narrator" ? "🎙️ Narrator" : "📖 " + PLAIN_TEXT_NAME;
           syncDialogText(pageIdx);
           saveDraft();
           refreshView();
         }
         return;
       }
-      const ch = storyCharacters.find(c => c.id === val);
+      const ch = storyCharacters.find((c) => c.id === val);
       if (ch && bookPages[pageIdx].dialogueLines?.[lineIdx]) {
         bookPages[pageIdx].dialogueLines![lineIdx].characterId = ch.id;
         bookPages[pageIdx].dialogueLines![lineIdx].characterName = ch.name;
@@ -2546,52 +3526,14 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
     });
   });
 
-  // Per-line record
-  container.querySelectorAll(`[data-${prefix}-line-rec]`).forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const [pStr, lStr] = ((btn as HTMLElement).getAttribute(`data-${prefix}-line-rec`) || '0-0').split('-');
-      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
-      const line = bookPages[pageIdx].dialogueLines?.[lineIdx];
-      if (!line || !line.text.trim()) {
-        showModal({ title: 'No Text', content: '<p>Write some dialogue text first.</p>', confirmText: 'OK' });
-        return;
-      }
-      const isNarrator = line.characterId === 'narrator';
-      const isPlain = line.characterId === PLAIN_TEXT_ID;
-      const ch = (isNarrator || isPlain) ? null : storyCharacters.find(c => c.id === line.characterId);
-      const voiceId = isNarrator ? storyNarratorVoiceId : isPlain ? (storyPlainTextVoiceId || storyNarratorVoiceId) : ch?.voiceId;
-      const b = btn as HTMLButtonElement;
-      b.disabled = true;
-      b.textContent = '⏳ Recording...';
-      try {
-        const audioData = await preRecordAudio(line.text, 0.5, voiceId);
-        const storyId = editStoryId || activeDraftId || 'draft';
-        const cdnUrl = await uploadAudioData(audioData, storyId, line.id);
-        line.audioUrl = cdnUrl;
-        saveDraft();
-      } catch (err: any) {
-        showModal({ title: 'Record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
-      }
-      refreshView();
-    });
-  });
-
-  // Per-line play
-  container.querySelectorAll(`[data-${prefix}-line-play]`).forEach(btn => {
-    btn.addEventListener('click', () => {
-      const [pStr, lStr] = ((btn as HTMLElement).getAttribute(`data-${prefix}-line-play`) || '0-0').split('-');
-      const pageIdx = parseInt(pStr); const lineIdx = parseInt(lStr);
-      const url = bookPages[pageIdx].dialogueLines?.[lineIdx]?.audioUrl;
-      if (url) {
-        if (isSpeaking()) { stopSpeaking(); } else { playAudioUrl(url); }
-      }
-    });
-  });
+  wireScreenplayLineAudioActions(container, prefix, refreshView);
 
   // Batch pre-record all lines on page with timestamp alignment
-  container.querySelectorAll(`[data-${prefix}-batch-rec]`).forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-batch-rec`) || '0');
+  container.querySelectorAll(`[data-${prefix}-batch-rec]`).forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pageIdx = parseInt(
+        (btn as HTMLElement).getAttribute(`data-${prefix}-batch-rec`) || "0",
+      );
       const page = bookPages[pageIdx];
       let lines = page.dialogueLines || [];
 
@@ -2601,35 +3543,54 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         lines = page.dialogueLines;
       }
       if (lines.length === 0) {
-        alert('Please write some story text or dialogue on this page before recording.');
+        alert(
+          "Please write some story text or dialogue on this page before recording.",
+        );
+        return;
+      }
+
+      const packedCast = getPackedCast();
+      const audibleLines = lines.filter(
+        (l) => l.text && l.text.trim() && !isLineMuted(l, packedCast),
+      );
+      if (audibleLines.length === 0) {
+        alert(
+          "All dialogue lines on this page are muted in Story Settings.",
+        );
         return;
       }
 
       // Check for existing voice-over/audio and ask for confirmation
-      const hasExistingAudio = !!page.audioUrl || lines.some(l => !!l.audioUrl);
+      const hasExistingAudio =
+        !!page.audioUrl || lines.some((l) => !!l.audioUrl);
       if (hasExistingAudio) {
         const confirmed = window.confirm(
-          'This page already has recorded audio attached. Do you want to overwrite it with a new AI voice-over?'
+          "This page already has recorded audio attached. Do you want to overwrite it with a new AI voice-over?",
         );
         if (!confirmed) return;
       }
 
       const b = btn as HTMLButtonElement;
       b.disabled = true;
-      b.classList.add('sb-dialog-batch-btn--recording');
+      b.classList.add("sb-dialog-batch-btn--recording");
 
       try {
         const result = await preRecordPageAudio(
           lines,
           storyNarratorVoiceId,
-          getPackedCast(),
+          packedCast,
           (current, total) => {
             b.textContent = `🎙️ Pre-recording ${current}/${total}...`;
-          }
+          },
         );
 
-        // Store timestamps and alignments on each line
-        result.segments.forEach(seg => {
+        // Clear stale timestamps/audio on muted lines and store new timestamps on recorded lines
+        lines.forEach((l) => {
+          l.alignment = undefined;
+          l.duration = undefined;
+          if (isLineMuted(l, packedCast)) l.audioUrl = null;
+        });
+        result.segments.forEach((seg) => {
           if (lines[seg.lineIdx]) {
             lines[seg.lineIdx].alignment = seg.alignment;
             lines[seg.lineIdx].duration = seg.duration;
@@ -2639,10 +3600,17 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         // Upload combined audio file to Supabase storage
         let finalAudioUrl = result.audioUrl;
         try {
-          const storyId = editStoryId || activeDraftId || 'draft';
-          finalAudioUrl = await uploadAudioData(result.audioUrl, storyId, `page_${pageIdx}_audio`);
+          const storyId = editStoryId || activeDraftId || "draft";
+          finalAudioUrl = await uploadAudioData(
+            result.audioUrl,
+            storyId,
+            `page_${pageIdx}_audio`,
+          );
         } catch (uploadErr) {
-          console.warn('[PreRecord] Storage upload fallback to data URL:', uploadErr);
+          console.warn(
+            "[PreRecord] Storage upload fallback to data URL:",
+            uploadErr,
+          );
         }
 
         page.audioUrl = finalAudioUrl;
@@ -2652,24 +3620,13 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
         b.textContent = `✅ Pre-Recorded!`;
         setTimeout(() => refreshView(), 1200);
       } catch (err: any) {
-        console.error('[PreRecord] Failed:', err);
-        alert('Pre-record failed: ' + (err.message || err));
+        console.error("[PreRecord] Failed:", err);
+        alert("Pre-record failed: " + (err.message || err));
         b.textContent = `❌ Failed - Try Again`;
         b.disabled = false;
       } finally {
-        b.classList.remove('sb-dialog-batch-btn--recording');
+        b.classList.remove("sb-dialog-batch-btn--recording");
       }
-    });
-  });
-
-  // Play all dialogue
-  container.querySelectorAll(`[data-${prefix}-play-all]`).forEach(btn => {
-    btn.addEventListener('click', () => {
-      const pageIdx = parseInt((btn as HTMLElement).getAttribute(`data-${prefix}-play-all`) || '0');
-      const lines = bookPages[pageIdx].dialogueLines || [];
-      const urls = lines.map(l => l.audioUrl || null);
-      if (isSpeaking()) { stopSpeaking(); return; }
-      playAudioSequence(urls);
     });
   });
 }
@@ -2677,7 +3634,9 @@ function wireDialogueLineEvents(container: HTMLElement | Document, prefix: strin
 /** Sync dialogueLines back to legacy dialogText for backward compatibility */
 function syncDialogText(pageIdx: number): void {
   const lines = bookPages[pageIdx].dialogueLines || [];
-  bookPages[pageIdx].dialogText = lines.map(l => `[${l.characterName}]: ${l.text}`).join('\n');
+  bookPages[pageIdx].dialogText = lines
+    .map((l) => `[${l.characterName}]: ${l.text}`)
+    .join("\n");
 }
 
 function renderBookCanvas(): string {
@@ -2686,9 +3645,9 @@ function renderBookCanvas(): string {
   if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
 
   // Generate dots (1 dot per page)
-  let dotsHtml = '';
+  let dotsHtml = "";
   for (let i = 0; i < bookPages.length; i++) {
-    dotsHtml += `<div class="book-dot${i === currentPage ? ' book-dot--active' : ''}" data-dot="${i}"></div>`;
+    dotsHtml += `<div class="book-dot${i === currentPage ? " book-dot--active" : ""}" data-dot="${i}"></div>`;
   }
 
   const i = currentPage;
@@ -2698,19 +3657,17 @@ function renderBookCanvas(): string {
       <div class="book-tile__header" style="position:relative; display:flex; align-items:center; justify-content:space-between; padding:10px 14px;">
         <span class="book-tile__label">PAGE ${i + 1}</span>
         <div class="book-tile__header-actions">
-          <button type="button" class="book-tile__action-btn book-tile__action-btn--move-up" data-page-move-up="${i}" title="Move Page Up" ${i === 0 ? 'disabled' : ''}>
+          <button type="button" class="book-tile__action-btn book-tile__action-btn--move-up" data-page-move-up="${i}" title="Move Page Up" ${i === 0 ? "disabled" : ""}>
             ▲
           </button>
-          <button type="button" class="book-tile__action-btn book-tile__action-btn--move-down" data-page-move-down="${i}" title="Move Page Down" ${i === bookPages.length - 1 ? 'disabled' : ''}>
+          <button type="button" class="book-tile__action-btn book-tile__action-btn--move-down" data-page-move-down="${i}" title="Move Page Down" ${i === bookPages.length - 1 ? "disabled" : ""}>
             ▼
           </button>
-          <button type="button" class="book-tile__action-btn book-tile__action-btn--duplicate" data-page-duplicate="${i}" title="Duplicate Page">
-            📋
-          </button>
+
           <button class="book-tile__maximize" data-tile-maximize="${i}" title="Expand page">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
-          <button type="button" class="book-tile__action-btn book-tile__action-btn--delete" data-page-delete="${i}" title="Delete Page" style="color:#ef4444;" ${bookPages.length <= 1 ? 'disabled style="opacity:0.3;"' : ''}>
+          <button type="button" class="book-tile__action-btn book-tile__action-btn--delete" data-page-delete="${i}" title="Delete Page" style="color:#ef4444;" ${bookPages.length <= 1 ? 'disabled style="opacity:0.3;"' : ""}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
           </button>
         </div>
@@ -2718,10 +3675,13 @@ function renderBookCanvas(): string {
 
       <!-- Image area -->
       <div class="book-tile__image" data-tile-upload="${i}">
-        ${page.image
-            ? `${isVideoMedia(page.image)
-                 ? `<video class="book-tile__img" src="${page.image}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;object-position:center ${page.focalPosition || 'center'}; border-radius:8px;"></video>`
-                 : `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}" style="object-position:center ${page.focalPosition || 'center'};">`}
+        ${
+          page.image
+            ? `${
+                isVideoMedia(page.image)
+                  ? `<video class="book-tile__img" src="${page.image}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;object-position:center ${page.focalPosition || "center"}; border-radius:8px;"></video>`
+                  : `<img class="book-tile__img" src="${page.image}" alt="Page ${i + 1}" style="object-position:center ${page.focalPosition || "center"};">`
+              }
                <button class="book-tile__remove-img" data-tile-remove-img="${i}">${ICON.close}</button>`
             : `<div class="book-tile__empty-img">
                 <div class="book-tile__upload-btn">${ICON.upload}</div>
@@ -2731,30 +3691,40 @@ function renderBookCanvas(): string {
         <input type="file" class="book-tile__file" data-tile-file="${i}" accept="image/*,video/*" hidden>
       </div>
 
-      ${page.image ? `
+      ${
+        page.image
+          ? `
       <!-- Focal position selector -->
       <div class="book-tile__focal-pill" data-focal-group="${i}">
         <span class="book-tile__focal-label">Align:</span>
-        <button type="button" class="focal-btn ${(page.focalPosition || 'center') === 'top' ? 'focal-btn--active' : ''}" data-set-focal="${i}" data-focal-val="top" title="Align image to top">Top</button>
-        <button type="button" class="focal-btn ${(page.focalPosition || 'center') === 'center' ? 'focal-btn--active' : ''}" data-set-focal="${i}" data-focal-val="center" title="Align image to center">Center</button>
-        <button type="button" class="focal-btn ${(page.focalPosition || 'center') === 'bottom' ? 'focal-btn--active' : ''}" data-set-focal="${i}" data-focal-val="bottom" title="Align image to bottom">Bottom</button>
+        <button type="button" class="focal-btn ${(page.focalPosition || "center") === "top" ? "focal-btn--active" : ""}" data-set-focal="${i}" data-focal-val="top" title="Align image to top">Top</button>
+        <button type="button" class="focal-btn ${(page.focalPosition || "center") === "center" ? "focal-btn--active" : ""}" data-set-focal="${i}" data-focal-val="center" title="Align image to center">Center</button>
+        <button type="button" class="focal-btn ${(page.focalPosition || "center") === "bottom" ? "focal-btn--active" : ""}" data-set-focal="${i}" data-focal-val="bottom" title="Align image to bottom">Bottom</button>
       </div>
-      ` : ''}
+      `
+          : ""
+      }
       <!-- Per-Page Audio Source (video pages only) -->
-      ${page.image && isVideoMedia(page.image) ? `
+      ${
+        page.image && isVideoMedia(page.image)
+          ? `
         <div class="sb-card__audio-source" style="padding:6px 14px 2px; margin-top:4px;">
           <div class="book-tile__text-header" style="padding:0 0 6px 0;"><span>🔊 PAGE AUDIO SOURCE</span></div>
           <div class="sb-audio-source-selector" data-mob-audio-source="${i}">
-            <button class="sb-audio-src-btn ${(page.audioSource || 'native') === 'native' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="native" data-audio-src-page="${i}" type="button">🔊 Native</button>
-            <button class="sb-audio-src-btn ${page.audioSource === 'upload' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="upload" data-audio-src-page="${i}" type="button">🎙️ Upload</button>
-            <button class="sb-audio-src-btn ${page.audioSource === 'ai' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="ai" data-audio-src-page="${i}" type="button">🎭 AI</button>
-            <button class="sb-audio-src-btn ${page.audioSource === 'silent' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="silent" data-audio-src-page="${i}" type="button">🔇 Silent</button>
+            <button class="sb-audio-src-btn ${(page.audioSource || "native") === "native" ? "sb-audio-src-btn--active" : ""}" data-audio-src="native" data-audio-src-page="${i}" type="button">🔊 Native</button>
+            <button class="sb-audio-src-btn ${page.audioSource === "upload" ? "sb-audio-src-btn--active" : ""}" data-audio-src="upload" data-audio-src-page="${i}" type="button">🎙️ Upload</button>
+            <button class="sb-audio-src-btn ${page.audioSource === "ai" ? "sb-audio-src-btn--active" : ""}" data-audio-src="ai" data-audio-src-page="${i}" type="button">🎭 AI</button>
+            <button class="sb-audio-src-btn ${page.audioSource === "silent" ? "sb-audio-src-btn--active" : ""}" data-audio-src="silent" data-audio-src-page="${i}" type="button">🔇 Silent</button>
           </div>
         </div>
-      ` : ''}
+      `
+          : ""
+      }
 
       <!-- Story Text & Dialogue (Screenplay Editor) -->
-      ${storyAudioMode === 'simple_upload' ? `
+      ${
+        storyAudioMode === "simple_upload"
+          ? `
         <div class="book-tile__text-header">
           <span>STORY TEXT</span>
         </div>
@@ -2766,13 +3736,15 @@ function renderBookCanvas(): string {
           <span>📁 PAGE AUDIO</span>
         </div>
         <div class="audio-upload-zone" data-audio-upload-zone="${i}">
-          ${page.audioUrl ? `
+          ${
+            page.audioUrl
+              ? `
             <div class="audio-upload-preview">
               <div class="audio-upload-preview__info">
-                <span class="audio-upload-preview__icon">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? '🎬' : '🎵'}</span>
+                <span class="audio-upload-preview__icon">${page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName) ? "🎬" : "🎵"}</span>
                 <div class="audio-upload-preview__meta">
-                  <span class="audio-upload-preview__name">${page.audioFileName || 'Audio uploaded'}</span>
-                  <span class="audio-upload-preview__tag">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? 'Audio (from Video)' : 'Audio File'}</span>
+                  <span class="audio-upload-preview__name">${page.audioFileName || "Audio uploaded"}</span>
+                  <span class="audio-upload-preview__tag">${page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName) ? "Audio (from Video)" : "Audio File"}</span>
                 </div>
               </div>
               <div class="audio-scrubber" data-audio-scrubber-wrap="${i}">
@@ -2790,12 +3762,14 @@ function renderBookCanvas(): string {
                 <button class="audio-upload-actions__btn audio-upload-actions__btn--delete" data-audio-remove="${i}" type="button">✕</button>
               </div>
             </div>
-          ` : `
+          `
+              : `
             <button class="audio-upload-btn" data-audio-upload-trigger="${i}" type="button">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               <span>Click to Upload Audio or Video (MP3, WAV, M4A, MP4, MOV)</span>
             </button>
-          `}
+          `
+          }
           <input type="file" class="audio-upload-file" data-audio-file="${i}" accept="audio/*,video/*" hidden>
         </div>
         <div class="book-tile__text-header" style="margin-top: var(--space-sm);">
@@ -2803,10 +3777,12 @@ function renderBookCanvas(): string {
         </div>
         <textarea class="book-tile__textarea" data-simple-captions="${i}"
           placeholder="Type dialogue and captions here for hearing-impaired viewers (optional)..."
-          rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
-      ` : `
-        ${renderScreenplayEditor(i, 'mob')}
-      `}
+          rows="3" maxlength="1000">${page.dialogText || ""}</textarea>
+      `
+          : `
+        ${renderScreenplayEditor(i, "mob")}
+      `
+      }
 
 
       <!-- Deeper Dive -->
@@ -2818,7 +3794,7 @@ function renderBookCanvas(): string {
         <div class="book-tile__dd-panel" data-tile-dd-panel="${i}" style="display:none;">
           <textarea class="book-tile__dd-textarea" data-tile-dd-content="${i}"
             placeholder="Capture your deeper dive content here..."
-            rows="5">${page.deeperDiveContent || ''}</textarea>
+            rows="5">${page.deeperDiveContent || ""}</textarea>
 
         </div>
       </div>
@@ -2828,7 +3804,7 @@ function renderBookCanvas(): string {
   return `
     <div class="create-phase create-phase--canvas fade-in">
       ${renderStudioOrbs()}
-      ${renderCanvasToolbar((episodeNumber <= soloEpisodeCount ? 'Solo-Only Ep.' : 'Squad Ep.') + episodeNumber)}
+      ${renderCanvasToolbar((episodeNumber <= soloEpisodeCount ? "Solo-Only Ep." : "Squad Ep.") + episodeNumber)}
 
       <!-- Compact Page Indicator Bar -->
       <div class="book-page-bar">
@@ -2842,34 +3818,40 @@ function renderBookCanvas(): string {
       <!-- Single page view with arrow navigation -->
       <div class="book-single-view">
         <!-- Left arrow -->
-        <button class="book-nav-arrow book-nav-arrow--left" id="btn-book-prev" ${currentPage <= 0 ? 'style="visibility:hidden"' : ''}>
+        <button class="book-nav-arrow book-nav-arrow--left" id="btn-book-prev" ${currentPage <= 0 ? 'style="visibility:hidden"' : ""}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
 
         <!-- Page card -->
+        <fieldset style="border: none; padding: 0; margin: 0; min-width: 0; display: contents;" ${String(currentStoryStatus) === "published" || String(currentStoryStatus) === "live" ? "disabled" : ""}>
         ${cardHtml}
+        </fieldset>
 
         <!-- Right arrow -->
-        <button class="book-nav-arrow book-nav-arrow--right" id="btn-book-next" ${currentPage >= bookPages.length - 1 ? 'style="visibility:hidden"' : ''}>
+        <button class="book-nav-arrow book-nav-arrow--right" id="btn-book-next" ${currentPage >= bookPages.length - 1 ? 'style="visibility:hidden"' : ""}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
       </div>
 
-      ${!isUserMode() && currentPage === bookPages.length - 1 ? `
+      ${
+        !isUserMode() && currentPage === bookPages.length - 1
+          ? `
         <div style="margin-top:16px; text-align:center;">
-          <button type="button" id="btn-sparc-checkpoint" style="
+          <button type="button" id="btn-sparc-checkpoint" ${String(currentStoryStatus) === "published" || String(currentStoryStatus) === "live" ? 'disabled style="opacity:0.5; cursor:not-allowed;' : 'style="cursor:pointer;'}
             display:inline-flex; align-items:center; gap:8px; padding:12px 20px;
             background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.15));
             border: 2px solid rgba(99,102,241,0.4); border-radius:14px;
             color: var(--color-text-primary); font-size:0.9rem; font-weight:600;
-            cursor:pointer; font-family:var(--font-body); transition: all 0.2s;
+            font-family:var(--font-body); transition: all 0.2s;
           ">
             <span style="font-size:1.2rem;">⚡</span>
-            ${sparcPromptText.trim() || sparcPromptMediaUrls.length > 0 ? '✅ Edit SPARC Checkpoint' : '+ Add SPARC Checkpoint'}
+            ${sparcPromptText.trim() || sparcPromptMediaUrls.length > 0 ? "✅ Edit SPARC Checkpoint" : "+ Add SPARC Checkpoint"}
           </button>
-          ${sparcPromptText.trim() ? `<p style="font-size:0.72rem; color:var(--color-text-muted); margin-top:6px;">End of episode challenge configured</p>` : ''}
+          ${sparcPromptText.trim() ? `<p style="font-size:0.72rem; color:var(--color-text-muted); margin-top:6px;">End of episode challenge configured</p>` : ""}
         </div>
-      ` : ''}
+      `
+          : ""
+      }
     </div>
   `;
 }
@@ -2878,27 +3860,29 @@ function renderBookCanvas(): string {
 //  FULLSCREEN PAGE VIEWER
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-
 function openPageFullscreen(pageIndex: number): void {
   const page = bookPages[pageIndex];
   if (!page) return;
 
   // Remove existing overlay if any
-  document.getElementById('book-fullscreen')?.remove();
+  document.getElementById("book-fullscreen")?.remove();
 
-  const overlay = document.createElement('div');
-  overlay.className = 'book-fullscreen-overlay';
-  overlay.id = 'book-fullscreen';
+  const overlay = document.createElement("div");
+  overlay.className = "book-fullscreen-overlay";
+  overlay.id = "book-fullscreen";
   overlay.innerHTML = `
     <div class="book-fullscreen__body">
       <div class="book-fullscreen__image-area" id="fs-image-area">
         <button class="book-fullscreen__collapse" id="btn-fullscreen-collapse" title="Collapse" type="button">
           ${ICON.collapse}
         </button>
-        ${page.image
-            ? `${isVideoMedia(page.image)
-                 ? `<video src="${page.image}" autoplay loop muted playsinline style="width:100%;max-height:60vh;object-fit:contain;border-radius:12px;"></video>`
-                 : `<img src="${page.image}" alt="Page ${pageIndex + 1}">`}
+        ${
+          page.image
+            ? `${
+                isVideoMedia(page.image)
+                  ? `<video src="${page.image}" autoplay loop muted playsinline style="width:100%;max-height:60vh;object-fit:contain;border-radius:12px;"></video>`
+                  : `<img src="${page.image}" alt="Page ${pageIndex + 1}">`
+              }
                <button class="book-fullscreen__remove-img" id="fs-remove-img">${ICON.close}</button>`
             : `<div class="book-fullscreen__empty-img">
                  <div class="book-tile__upload-btn">${ICON.upload}</div>
@@ -2920,7 +3904,7 @@ function openPageFullscreen(pageIndex: number): void {
       </div>
       <textarea class="book-fullscreen__textarea" id="fs-dialog-textarea"
         placeholder="Write dialogue for this page..."
-        rows="4" maxlength="1000">${page.dialogText || ''}</textarea>
+        rows="4" maxlength="1000">${page.dialogText || ""}</textarea>
 
       <!-- Deeper Dive (fullscreen) -->
       <div class="book-tile__deeper-dive" style="margin-top: var(--space-md);">
@@ -2931,7 +3915,7 @@ function openPageFullscreen(pageIndex: number): void {
         <div class="book-tile__dd-panel" id="fs-dd-panel" style="display:none;">
           <textarea class="book-tile__dd-textarea" id="fs-dd-content"
             placeholder="Capture your deeper dive content here..."
-            rows="7">${page.deeperDiveContent || ''}</textarea>
+            rows="7">${page.deeperDiveContent || ""}</textarea>
 
         </div>
       </div>
@@ -2943,97 +3927,127 @@ function openPageFullscreen(pageIndex: number): void {
   // --- Wire up events ---
 
   // Collapse button
-  document.getElementById('btn-fullscreen-collapse')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    closePageFullscreen(overlay);
-  });
+  document
+    .getElementById("btn-fullscreen-collapse")
+    ?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closePageFullscreen(overlay);
+    });
 
   // Image area click → file upload
-  const imageArea = document.getElementById('fs-image-area');
-  const fileInput = document.getElementById('fs-file-input') as HTMLInputElement;
-  imageArea?.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).closest('#fs-remove-img') || (e.target as HTMLElement).closest('#btn-fullscreen-collapse')) return;
+  const imageArea = document.getElementById("fs-image-area");
+  const fileInput = document.getElementById(
+    "fs-file-input",
+  ) as HTMLInputElement;
+  imageArea?.addEventListener("click", (e) => {
+    if (
+      (e.target as HTMLElement).closest("#fs-remove-img") ||
+      (e.target as HTMLElement).closest("#btn-fullscreen-collapse")
+    )
+      return;
     fileInput?.click();
   });
 
-  fileInput?.addEventListener('change', async () => {
+  fileInput?.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
     if (file) {
       const dataUrl = await fileToDataUrl(file);
-      const blob = await fetch(dataUrl).then(r => r.blob());
-      const compressed = new File([blob], file.name, { type: file.type || 'image/jpeg' });
-      
-      const res = await uploadMedia(compressed, 'stories');
+      const blob = await fetch(dataUrl).then((r) => r.blob());
+      const compressed = new File([blob], file.name, {
+        type: file.type || "image/jpeg",
+      });
+
+      const res = await uploadMedia(compressed, "stories");
       bookPages[pageIndex].image = res.url;
-      
+
       closePageFullscreen(overlay);
-      const wizard = document.getElementById('create-wizard');
-      if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }
+      const wizard = document.getElementById("create-wizard");
+      if (wizard) {
+        wizard.innerHTML = renderPhase();
+        attachListenersGlobal();
+      }
       openPageFullscreen(pageIndex);
     }
   });
 
   // Remove image
-  document.getElementById('fs-remove-img')?.addEventListener('click', (e) => {
+  document.getElementById("fs-remove-img")?.addEventListener("click", (e) => {
     e.stopPropagation();
     bookPages[pageIndex].image = null;
     closePageFullscreen(overlay);
-    const wizard = document.getElementById('create-wizard');
-    if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }
+    const wizard = document.getElementById("create-wizard");
+    if (wizard) {
+      wizard.innerHTML = renderPhase();
+      attachListenersGlobal();
+    }
     openPageFullscreen(pageIndex);
   });
 
   // Text changes
-  const fsText = document.getElementById('fs-textarea') as HTMLTextAreaElement | null;
+  const fsText = document.getElementById(
+    "fs-textarea",
+  ) as HTMLTextAreaElement | null;
   const updateFsText = () => {
-    if (fsText) bookPages[pageIndex].text = fsText.value;
+    if (fsText) {
+      bookPages[pageIndex].text = fsText.value;
+      bookPages[pageIndex].dialogueLines = parseScreenplayToDialogueLines(
+        fsText.value,
+        bookPages[pageIndex].dialogueLines,
+      );
+      syncDialogText(pageIndex);
+    }
     saveDraft();
   };
-  fsText?.addEventListener('input', updateFsText);
-  fsText?.addEventListener('paste', () => setTimeout(updateFsText, 0));
+  fsText?.addEventListener("input", updateFsText);
+  fsText?.addEventListener("paste", () => setTimeout(updateFsText, 0));
 
   // Dialogue changes
-  const fsDialog = document.getElementById('fs-dialog-textarea') as HTMLTextAreaElement | null;
+  const fsDialog = document.getElementById(
+    "fs-dialog-textarea",
+  ) as HTMLTextAreaElement | null;
   const updateFsDialog = () => {
     if (fsDialog) bookPages[pageIndex].dialogText = fsDialog.value;
     saveDraft();
   };
-  fsDialog?.addEventListener('input', updateFsDialog);
-  fsDialog?.addEventListener('paste', () => setTimeout(updateFsDialog, 0));
-
+  fsDialog?.addEventListener("input", updateFsDialog);
+  fsDialog?.addEventListener("paste", () => setTimeout(updateFsDialog, 0));
 
   // Fullscreen Deeper Dive toggle
-  document.getElementById('fs-dd-toggle')?.addEventListener('click', (e) => {
+  document.getElementById("fs-dd-toggle")?.addEventListener("click", (e) => {
     e.preventDefault();
-    const panel = document.getElementById('fs-dd-panel') as HTMLElement;
-    const chevron = (e.currentTarget as HTMLElement).querySelector('.book-tile__dd-chevron') as HTMLElement;
+    const panel = document.getElementById("fs-dd-panel") as HTMLElement;
+    const chevron = (e.currentTarget as HTMLElement).querySelector(
+      ".book-tile__dd-chevron",
+    ) as HTMLElement;
     if (panel) {
-      const isOpen = panel.style.display !== 'none';
-      panel.style.display = isOpen ? 'none' : 'block';
-      if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+      const isOpen = panel.style.display !== "none";
+      panel.style.display = isOpen ? "none" : "block";
+      if (chevron) chevron.style.transform = isOpen ? "" : "rotate(90deg)";
       if (!isOpen) {
         setTimeout(() => {
-          panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }, 50);
       }
     }
   });
 
   // Fullscreen Deeper Dive content
-  const fsDd = document.getElementById('fs-dd-content') as HTMLTextAreaElement | null;
+  const fsDd = document.getElementById(
+    "fs-dd-content",
+  ) as HTMLTextAreaElement | null;
   const updateFsDd = () => {
     if (fsDd) bookPages[pageIndex].deeperDiveContent = fsDd.value;
     saveDraft();
   };
-  fsDd?.addEventListener('input', updateFsDd);
-  fsDd?.addEventListener('paste', () => setTimeout(updateFsDd, 0));
-
-
+  fsDd?.addEventListener("input", updateFsDd);
+  fsDd?.addEventListener("paste", () => setTimeout(updateFsDd, 0));
 }
 
 function closePageFullscreen(overlay: HTMLElement): void {
-  overlay.classList.add('closing');
-  overlay.addEventListener('animationend', () => overlay.remove(), { once: true });
+  overlay.classList.add("closing");
+  overlay.addEventListener("animationend", () => overlay.remove(), {
+    once: true,
+  });
 }
 
 // ═══════════════════════════════════════
@@ -3041,16 +4055,20 @@ function closePageFullscreen(overlay: HTMLElement): void {
 // ═══════════════════════════════════════
 
 const isDesktopScreen = (): boolean => {
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const isMobile =
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent,
+    );
   if (isMobile) return false;
   return window.innerWidth >= 768;
 };
-let activeEditorMode: 'storyboard' | 'mobile' = isDesktopScreen() ? 'storyboard' : 'mobile';
-
+let activeEditorMode: "storyboard" | "mobile" = isDesktopScreen()
+  ? "storyboard"
+  : "mobile";
 
 function showDesktopRequiredModal(): void {
   showModal({
-    title: '🖥️ Computer Screen Required',
+    title: "🖥️ Computer Screen Required",
     content: `
       <div style="text-align:center; padding: 12px 0;">
         <div style="font-size: 3rem; margin-bottom: 12px;">💻</div>
@@ -3062,19 +4080,21 @@ function showDesktopRequiredModal(): void {
         </p>
       </div>
     `,
-    confirmText: 'Continue in Mobile View',
-    cancelText: '',
+    confirmText: "Continue in Mobile View",
+    cancelText: "",
     onConfirm: () => hideModal(),
   });
 }
 
-function showDraftSavedToast(message: string = 'Draft saved successfully'): void {
-  const existing = document.getElementById('storyboard-draft-toast');
+function showDraftSavedToast(
+  message: string = "Draft saved successfully",
+): void {
+  const existing = document.getElementById("storyboard-draft-toast");
   if (existing) existing.remove();
 
-  const toast = document.createElement('div');
-  toast.id = 'storyboard-draft-toast';
-  toast.className = 'storyboard-draft-toast';
+  const toast = document.createElement("div");
+  toast.id = "storyboard-draft-toast";
+  toast.className = "storyboard-draft-toast";
   toast.innerHTML = `
     <span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; background:rgba(34,197,94,0.2); border-radius:50%; color:#22c55e; font-size:0.85rem; font-weight:800;">✓</span>
     <span>${message}</span>
@@ -3082,34 +4102,34 @@ function showDraftSavedToast(message: string = 'Draft saved successfully'): void
   document.body.appendChild(toast);
 
   requestAnimationFrame(() => {
-    toast.classList.add('show');
+    toast.classList.add("show");
   });
 
   setTimeout(() => {
-    toast.classList.remove('show');
+    toast.classList.remove("show");
     setTimeout(() => toast.remove(), 400);
   }, 2600);
 }
 
 function openInEditorPreview(initialPageIdx: number = 0): void {
   getFormData();
-  const story = buildStory('draft');
+  const story = buildStory("draft");
   const total = Math.max(1, story.panels?.length || bookPages.length || 1);
   let previewPageIdx = Math.max(0, Math.min(initialPageIdx, total - 1));
   let activePreviewInstance: { destroy: () => void } | null = null;
 
-  document.getElementById('editor-preview-modal')?.remove();
+  document.getElementById("editor-preview-modal")?.remove();
 
-  const modalEl = document.createElement('div');
-  modalEl.className = 'editor-preview-modal';
-  modalEl.id = 'editor-preview-modal';
+  const modalEl = document.createElement("div");
+  modalEl.className = "editor-preview-modal";
+  modalEl.id = "editor-preview-modal";
   modalEl.innerHTML = `
     <div class="editor-preview-modal__backdrop"></div>
     <div class="editor-preview-modal__dialog">
       <div class="editor-preview-modal__header">
         <div class="editor-preview-modal__title-wrap">
           <span class="editor-preview-modal__badge">LIVE PREVIEW</span>
-          <span class="editor-preview-modal__title">${escapeHtml(story.title || 'Untitled Story')}</span>
+          <span class="editor-preview-modal__title">${escapeHtml(story.title || "Untitled Story")}</span>
         </div>
         <div class="editor-preview-modal__header-actions">
           <div class="editor-preview-nav">
@@ -3131,14 +4151,14 @@ function openInEditorPreview(initialPageIdx: number = 0): void {
   `;
 
   document.body.appendChild(modalEl);
-  document.body.style.overflow = 'hidden';
+  document.body.style.overflow = "hidden";
 
   const renderCurrentPage = () => {
     if (activePreviewInstance) {
       activePreviewInstance.destroy();
       activePreviewInstance = null;
     }
-    const bodyEl = modalEl.querySelector('#editor-preview-body') as HTMLElement;
+    const bodyEl = modalEl.querySelector("#editor-preview-body") as HTMLElement;
     if (!bodyEl) return;
 
     activePreviewInstance = renderStoryPagePreview({
@@ -3147,18 +4167,23 @@ function openInEditorPreview(initialPageIdx: number = 0): void {
       pageIdx: previewPageIdx,
     });
 
-    const indicator = modalEl.querySelector('#preview-page-indicator');
-    if (indicator) indicator.textContent = `Page ${previewPageIdx + 1} of ${total}`;
+    const indicator = modalEl.querySelector("#preview-page-indicator");
+    if (indicator)
+      indicator.textContent = `Page ${previewPageIdx + 1} of ${total}`;
 
-    const prevBtn = modalEl.querySelector('#preview-prev-btn') as HTMLButtonElement | null;
-    const nextBtn = modalEl.querySelector('#preview-next-btn') as HTMLButtonElement | null;
+    const prevBtn = modalEl.querySelector(
+      "#preview-prev-btn",
+    ) as HTMLButtonElement | null;
+    const nextBtn = modalEl.querySelector(
+      "#preview-next-btn",
+    ) as HTMLButtonElement | null;
     if (prevBtn) {
       prevBtn.disabled = previewPageIdx === 0;
-      prevBtn.style.opacity = previewPageIdx === 0 ? '0.3' : '1';
+      prevBtn.style.opacity = previewPageIdx === 0 ? "0.3" : "1";
     }
     if (nextBtn) {
       nextBtn.disabled = previewPageIdx >= total - 1;
-      nextBtn.style.opacity = previewPageIdx >= total - 1 ? '0.3' : '1';
+      nextBtn.style.opacity = previewPageIdx >= total - 1 ? "0.3" : "1";
     }
   };
 
@@ -3168,20 +4193,24 @@ function openInEditorPreview(initialPageIdx: number = 0): void {
       activePreviewInstance = null;
     }
     modalEl.remove();
-    document.body.style.overflow = '';
+    document.body.style.overflow = "";
   };
 
-  modalEl.querySelector('#preview-modal-close')?.addEventListener('click', closeModal);
-  modalEl.querySelector('.editor-preview-modal__backdrop')?.addEventListener('click', closeModal);
+  modalEl
+    .querySelector("#preview-modal-close")
+    ?.addEventListener("click", closeModal);
+  modalEl
+    .querySelector(".editor-preview-modal__backdrop")
+    ?.addEventListener("click", closeModal);
 
-  modalEl.querySelector('#preview-prev-btn')?.addEventListener('click', () => {
+  modalEl.querySelector("#preview-prev-btn")?.addEventListener("click", () => {
     if (previewPageIdx > 0) {
       previewPageIdx--;
       renderCurrentPage();
     }
   });
 
-  modalEl.querySelector('#preview-next-btn')?.addEventListener('click', () => {
+  modalEl.querySelector("#preview-next-btn")?.addEventListener("click", () => {
     if (previewPageIdx < total - 1) {
       previewPageIdx++;
       renderCurrentPage();
@@ -3195,6 +4224,7 @@ function openBatchPreRecordModal(): void {
   getFormData();
 
   // Prepare pages for batch pre-recording
+  const packedCast = getPackedCast();
   const batchPages: BatchPreRecordPage[] = [];
   bookPages.forEach((page, idx) => {
     let lines = page.dialogueLines || [];
@@ -3202,12 +4232,17 @@ function openBatchPreRecordModal(): void {
       page.dialogueLines = parseScreenplayToDialogueLines(page.text);
       lines = page.dialogueLines;
     }
-    const recordableLines = (lines || []).filter(l => l.text && l.text.trim());
-    const hasAudio = !!page.audioUrl || !!page.dialogAudioUrl || (page.dialogueLines || []).some(l => !!l.audioUrl);
+    const audibleLines = (lines || []).filter(
+      (l) => l.text && l.text.trim() && !isLineMuted(l, packedCast),
+    );
+    const hasAudio =
+      !!page.audioUrl ||
+      !!page.dialogAudioUrl ||
+      audibleLines.some((l) => !!l.audioUrl);
 
-    if (recordableLines.length > 0) {
+    if (audibleLines.length > 0) {
       batchPages.push({
-        dialogueLines: recordableLines,
+        dialogueLines: lines,
         hasExistingAudio: hasAudio,
         pageIndex: idx,
       });
@@ -3216,21 +4251,22 @@ function openBatchPreRecordModal(): void {
 
   if (batchPages.length === 0) {
     showModal({
-      title: 'No Dialogue Found',
-      content: '<p>Please write some story text or dialogue on your pages before batch pre-recording.</p>',
-      confirmText: 'OK',
-      onConfirm: () => {}
+      title: "No Audible Dialogue Found",
+      content:
+        "<p>Please write some unmuted story text or dialogue on your pages before batch pre-recording.</p>",
+      confirmText: "OK",
+      onConfirm: () => {},
     });
     return;
   }
 
-  const existingCount = batchPages.filter(p => p.hasExistingAudio).length;
+  const existingCount = batchPages.filter((p) => p.hasExistingAudio).length;
 
-  document.getElementById('batch-prerecord-modal')?.remove();
+  document.getElementById("batch-prerecord-modal")?.remove();
 
-  const modalEl = document.createElement('div');
-  modalEl.className = 'batch-prerecord-modal';
-  modalEl.id = 'batch-prerecord-modal';
+  const modalEl = document.createElement("div");
+  modalEl.className = "batch-prerecord-modal";
+  modalEl.id = "batch-prerecord-modal";
 
   let abortController: AbortController | null = null;
 
@@ -3239,13 +4275,13 @@ function openBatchPreRecordModal(): void {
       abortController.abort();
     }
     modalEl.remove();
-    document.body.style.overflow = '';
+    document.body.style.overflow = "";
   };
 
   const refreshCurrentEditorView = () => {
-    if (activeEditorMode === 'storyboard') {
+    if (activeEditorMode === "storyboard") {
       openStoryboard();
-    } else if (typeof updateView === 'function') {
+    } else if (typeof updateView === "function") {
       updateView();
     }
   };
@@ -3281,12 +4317,16 @@ function openBatchPreRecordModal(): void {
             Synthesizes all character and narrator dialogue with ElevenLabs AI and attaches word-level timestamps for synchronized karaoke highlighting.
           </p>
 
-          ${existingCount > 0 ? `
+          ${
+            existingCount > 0
+              ? `
             <label class="batch-prerecord-opt">
               <input type="checkbox" id="batch-prerecord-skip-existing" checked>
-              <span>Skip ${existingCount} page${existingCount === 1 ? '' : 's'} that already have recorded audio</span>
+              <span>Skip ${existingCount} page${existingCount === 1 ? "" : "s"} that already have recorded audio</span>
             </label>
-          ` : ''}
+          `
+              : ""
+          }
 
           <div class="batch-prerecord-actions">
             <button type="button" class="btn btn--secondary" id="batch-prerecord-cancel-btn">Cancel</button>
@@ -3298,21 +4338,33 @@ function openBatchPreRecordModal(): void {
       </div>
     `;
 
-    modalEl.querySelector('#batch-prerecord-close')?.addEventListener('click', closeModal);
-    modalEl.querySelector('#batch-prerecord-cancel-btn')?.addEventListener('click', closeModal);
-    modalEl.querySelector('.batch-prerecord-modal__backdrop')?.addEventListener('click', closeModal);
+    modalEl
+      .querySelector("#batch-prerecord-close")
+      ?.addEventListener("click", closeModal);
+    modalEl
+      .querySelector("#batch-prerecord-cancel-btn")
+      ?.addEventListener("click", closeModal);
+    modalEl
+      .querySelector(".batch-prerecord-modal__backdrop")
+      ?.addEventListener("click", closeModal);
 
-    modalEl.querySelector('#batch-prerecord-start-btn')?.addEventListener('click', () => {
-      const skipCheckbox = modalEl.querySelector('#batch-prerecord-skip-existing') as HTMLInputElement | null;
-      const skipExisting = skipCheckbox ? skipCheckbox.checked : false;
-      startRecording(skipExisting);
-    });
+    modalEl
+      .querySelector("#batch-prerecord-start-btn")
+      ?.addEventListener("click", () => {
+        const skipCheckbox = modalEl.querySelector(
+          "#batch-prerecord-skip-existing",
+        ) as HTMLInputElement | null;
+        const skipExisting = skipCheckbox ? skipCheckbox.checked : false;
+        startRecording(skipExisting);
+      });
   };
 
   const startRecording = async (skipExisting: boolean) => {
     abortController = new AbortController();
 
-    const pagesToRun = skipExisting ? batchPages.filter(p => !p.hasExistingAudio) : batchPages;
+    const pagesToRun = skipExisting
+      ? batchPages.filter((p) => !p.hasExistingAudio)
+      : batchPages;
     const totalToProcess = pagesToRun.length;
 
     modalEl.innerHTML = `
@@ -3349,15 +4401,19 @@ function openBatchPreRecordModal(): void {
       </div>
     `;
 
-    modalEl.querySelector('#batch-prerecord-stop-btn')?.addEventListener('click', () => {
-      if (abortController) {
-        abortController.abort();
-        const mainStatus = modalEl.querySelector('#batch-prerecord-main-status');
-        if (mainStatus) mainStatus.textContent = 'Stopping recording...';
-      }
-    });
+    modalEl
+      .querySelector("#batch-prerecord-stop-btn")
+      ?.addEventListener("click", () => {
+        if (abortController) {
+          abortController.abort();
+          const mainStatus = modalEl.querySelector(
+            "#batch-prerecord-main-status",
+          );
+          if (mainStatus) mainStatus.textContent = "Stopping recording...";
+        }
+      });
 
-    const storyId = editStoryId || activeDraftId || 'draft';
+    const storyId = editStoryId || activeDraftId || "draft";
 
     const summary = await batchPreRecordStory(
       batchPages,
@@ -3368,28 +4424,44 @@ function openBatchPreRecordModal(): void {
         skipExisting,
         interPageDelayMs: 400,
         onProgress: (progress) => {
-          const mainStatus = modalEl.querySelector('#batch-prerecord-main-status');
-          const subStatus = modalEl.querySelector('#batch-prerecord-sub-status');
-          const barFill = modalEl.querySelector('#batch-prerecord-bar-fill') as HTMLElement | null;
-          const pageCounter = modalEl.querySelector('#batch-prerecord-page-counter');
-          const pctEl = modalEl.querySelector('#batch-prerecord-pct');
+          const mainStatus = modalEl.querySelector(
+            "#batch-prerecord-main-status",
+          );
+          const subStatus = modalEl.querySelector(
+            "#batch-prerecord-sub-status",
+          );
+          const barFill = modalEl.querySelector(
+            "#batch-prerecord-bar-fill",
+          ) as HTMLElement | null;
+          const pageCounter = modalEl.querySelector(
+            "#batch-prerecord-page-counter",
+          );
+          const pctEl = modalEl.querySelector("#batch-prerecord-pct");
 
-          const pct = Math.round((progress.currentPage / progress.totalPages) * 100);
+          const pct = Math.round(
+            (progress.currentPage / progress.totalPages) * 100,
+          );
           if (barFill) barFill.style.width = `${pct}%`;
           if (pctEl) pctEl.textContent = `${pct}%`;
-          if (pageCounter) pageCounter.textContent = `Page ${progress.currentPage} of ${progress.totalPages}`;
+          if (pageCounter)
+            pageCounter.textContent = `Page ${progress.currentPage} of ${progress.totalPages}`;
 
-          if (progress.phase === 'recording') {
-            if (mainStatus) mainStatus.textContent = `Recording Page ${progress.pageIndex + 1}...`;
-            if (subStatus) subStatus.textContent = `Voicing line ${progress.currentLine} of ${progress.totalLines}`;
-          } else if (progress.phase === 'uploading') {
-            if (mainStatus) mainStatus.textContent = `Saving Page ${progress.pageIndex + 1}...`;
+          if (progress.phase === "recording") {
+            if (mainStatus)
+              mainStatus.textContent = `Recording Page ${progress.pageIndex + 1}...`;
+            if (subStatus)
+              subStatus.textContent = `Voicing line ${progress.currentLine} of ${progress.totalLines}`;
+          } else if (progress.phase === "uploading") {
+            if (mainStatus)
+              mainStatus.textContent = `Saving Page ${progress.pageIndex + 1}...`;
             if (subStatus) subStatus.textContent = `Uploading audio to storage`;
-          } else if (progress.phase === 'skipped') {
-            if (mainStatus) mainStatus.textContent = `Skipped Page ${progress.pageIndex + 1}`;
+          } else if (progress.phase === "skipped") {
+            if (mainStatus)
+              mainStatus.textContent = `Skipped Page ${progress.pageIndex + 1}`;
             if (subStatus) subStatus.textContent = `Already has recorded audio`;
-          } else if (progress.phase === 'failed') {
-            if (mainStatus) mainStatus.textContent = `Page ${progress.pageIndex + 1} Failed`;
+          } else if (progress.phase === "failed") {
+            if (mainStatus)
+              mainStatus.textContent = `Page ${progress.pageIndex + 1} Failed`;
             if (subStatus) subStatus.textContent = `Skipping to next page`;
           }
         },
@@ -3397,9 +4469,17 @@ function openBatchPreRecordModal(): void {
           const page = bookPages[result.pageIndex];
           if (!page) return;
 
-          // Attach timestamps to dialogue lines
+          // Attach timestamps to dialogue lines and clear stale audio metadata on muted lines
           if (page.dialogueLines) {
-            result.segments.forEach(seg => {
+            const currentCast = getPackedCast();
+            page.dialogueLines.forEach((line) => {
+              if (isLineMuted(line, currentCast)) {
+                delete line.alignment;
+                delete line.duration;
+                delete line.audioUrl;
+              }
+            });
+            result.segments.forEach((seg) => {
               if (page.dialogueLines?.[seg.lineIdx]) {
                 page.dialogueLines[seg.lineIdx].alignment = seg.alignment;
                 page.dialogueLines[seg.lineIdx].duration = seg.duration;
@@ -3410,16 +4490,23 @@ function openBatchPreRecordModal(): void {
           // Upload to Supabase storage immediately
           let finalAudioUrl = result.audioUrl;
           try {
-            finalAudioUrl = await uploadAudioData(result.audioUrl, storyId, `page_${result.pageIndex}_audio`);
+            finalAudioUrl = await uploadAudioData(
+              result.audioUrl,
+              storyId,
+              `page_${result.pageIndex}_audio`,
+            );
           } catch (uploadErr) {
-            console.warn('[BatchPreRecord] Storage upload fallback to data URL:', uploadErr);
+            console.warn(
+              "[BatchPreRecord] Storage upload fallback to data URL:",
+              uploadErr,
+            );
           }
 
           page.audioUrl = finalAudioUrl;
           page.dialogAudioUrl = finalAudioUrl;
           saveDraft();
-        }
-      }
+        },
+      },
     );
 
     renderSummaryState(summary);
@@ -3431,11 +4518,11 @@ function openBatchPreRecordModal(): void {
       <div class="batch-prerecord-modal__dialog">
         <div class="batch-prerecord-modal__header">
           <div class="batch-prerecord-modal__title-wrap">
-            <span class="batch-prerecord-modal__badge ${summary.failed.length > 0 ? 'batch-prerecord-modal__badge--warning' : ''}">
-              ${summary.cancelled ? 'STOPPED' : (summary.failed.length > 0 ? 'COMPLETED WITH WARNINGS' : 'COMPLETE')}
+            <span class="batch-prerecord-modal__badge ${summary.failed.length > 0 ? "batch-prerecord-modal__badge--warning" : ""}">
+              ${summary.cancelled ? "STOPPED" : summary.failed.length > 0 ? "COMPLETED WITH WARNINGS" : "COMPLETE"}
             </span>
             <span class="batch-prerecord-modal__title">
-              ${summary.cancelled ? 'Recording Stopped' : 'Batch Recording Finished'}
+              ${summary.cancelled ? "Recording Stopped" : "Batch Recording Finished"}
             </span>
           </div>
           <button type="button" class="batch-prerecord-modal__close" id="batch-prerecord-close" title="Close">
@@ -3447,20 +4534,28 @@ function openBatchPreRecordModal(): void {
           <div class="batch-prerecord-summary-list">
             <div class="batch-prerecord-summary-item">
               <span class="batch-prerecord-summary-icon">✅</span>
-              <span><strong>${summary.recorded}</strong> page${summary.recorded === 1 ? '' : 's'} successfully pre-recorded</span>
+              <span><strong>${summary.recorded}</strong> page${summary.recorded === 1 ? "" : "s"} successfully pre-recorded</span>
             </div>
-            ${summary.skipped > 0 ? `
+            ${
+              summary.skipped > 0
+                ? `
               <div class="batch-prerecord-summary-item">
                 <span class="batch-prerecord-summary-icon">⏭️</span>
-                <span><strong>${summary.skipped}</strong> page${summary.skipped === 1 ? '' : 's'} skipped (already voiced)</span>
+                <span><strong>${summary.skipped}</strong> page${summary.skipped === 1 ? "" : "s"} skipped (already voiced)</span>
               </div>
-            ` : ''}
-            ${summary.failed.length > 0 ? `
+            `
+                : ""
+            }
+            ${
+              summary.failed.length > 0
+                ? `
               <div class="batch-prerecord-summary-item batch-prerecord-summary-item--failed">
                 <span class="batch-prerecord-summary-icon">❌</span>
-                <span><strong>${summary.failed.length}</strong> page${summary.failed.length === 1 ? '' : 's'} failed</span>
+                <span><strong>${summary.failed.length}</strong> page${summary.failed.length === 1 ? "" : "s"} failed</span>
               </div>
-            ` : ''}
+            `
+                : ""
+            }
           </div>
 
           <div class="batch-prerecord-actions" style="margin-top: 20px;">
@@ -3477,13 +4572,19 @@ function openBatchPreRecordModal(): void {
       refreshCurrentEditorView();
     };
 
-    modalEl.querySelector('#batch-prerecord-close')?.addEventListener('click', closeAndRefresh);
-    modalEl.querySelector('#batch-prerecord-done-btn')?.addEventListener('click', closeAndRefresh);
-    modalEl.querySelector('.batch-prerecord-modal__backdrop')?.addEventListener('click', closeAndRefresh);
+    modalEl
+      .querySelector("#batch-prerecord-close")
+      ?.addEventListener("click", closeAndRefresh);
+    modalEl
+      .querySelector("#batch-prerecord-done-btn")
+      ?.addEventListener("click", closeAndRefresh);
+    modalEl
+      .querySelector(".batch-prerecord-modal__backdrop")
+      ?.addEventListener("click", closeAndRefresh);
   };
 
   document.body.appendChild(modalEl);
-  document.body.style.overflow = 'hidden';
+  document.body.style.overflow = "hidden";
   renderInitialState();
 }
 
@@ -3491,24 +4592,34 @@ function openPreflightPublishModal(): void {
   getFormData();
 
   // Remove existing modal if present
-  document.getElementById('preflight-publish-modal')?.remove();
+  document.getElementById("preflight-publish-modal")?.remove();
 
   // Gather current story data to validate
-  const allMedia = selectedFormat === 'book' ? bookPages.map(p => p.image || '') : scrollPanels.map(p => p.image || '');
-  const page0 = allMedia[0] || '';
-  const coverVideo = storyCoverVideo
-    || (isVideoMedia(_coverThumbnail) ? _coverThumbnail || '' : undefined)
-    || (isVideoMedia(page0) ? page0 : undefined);
-  const coverImage = (!isVideoMedia(_coverThumbnail) && _coverThumbnail)
-    || (!isVideoMedia(page0) && page0)
-    || '';
+  const allMedia =
+    selectedFormat === "book"
+      ? bookPages.map((p) => p.image || "")
+      : scrollPanels.map((p) => p.image || "");
+  const page0 = allMedia[0] || "";
+  const coverVideo =
+    storyCoverVideo ||
+    (isVideoMedia(_coverThumbnail) ? _coverThumbnail || "" : undefined) ||
+    (isVideoMedia(page0) ? page0 : undefined);
+  const coverImage =
+    (!isVideoMedia(_coverThumbnail) && _coverThumbnail) ||
+    (!isVideoMedia(page0) && page0) ||
+    "";
 
   const pageAudio: Record<number, string> = {};
   const pageDialogue: Record<number, DialogueLine[]> = {};
-  if (selectedFormat === 'book') {
+  if (selectedFormat === "book") {
     bookPages.forEach((bp, i) => {
       if (bp.audioUrl) pageAudio[i] = bp.audioUrl;
-      if (bp.dialogueLines?.length) pageDialogue[i] = bp.dialogueLines;
+      if (bp.dialogueLines && bp.dialogueLines.length > 0) {
+        pageDialogue[i] = bp.dialogueLines;
+      } else if (bp.text && bp.text.trim()) {
+        const autoParsed = parseScreenplayToDialogueLines(bp.text);
+        if (autoParsed.length > 0) pageDialogue[i] = autoParsed;
+      }
     });
   }
 
@@ -3518,24 +4629,30 @@ function openPreflightPublishModal(): void {
     coverImage,
     coverVideo,
     panels: allMedia,
-    pages: selectedFormat === 'book'
-      ? bookPages.map(p => ({ image: p.image, text: p.text }))
-      : scrollPanels.map(p => ({ image: p.image, text: p.notes })),
-    pageScripts: selectedFormat === 'book'
-      ? Object.fromEntries(bookPages.map((p, i) => [i, p.text]))
-      : Object.fromEntries(scrollPanels.map((p, i) => [i, p.notes])),
+    pages:
+      selectedFormat === "book"
+        ? bookPages.map((p, i) => ({
+            image: p.image,
+            text: p.text,
+            dialogueLines: pageDialogue[i] || p.dialogueLines,
+          }))
+        : scrollPanels.map((p) => ({ image: p.image, text: p.notes })),
+    pageScripts:
+      selectedFormat === "book"
+        ? Object.fromEntries(bookPages.map((p, i) => [i, p.text]))
+        : Object.fromEntries(scrollPanels.map((p, i) => [i, p.notes])),
     pageAudio,
     pageDialogue,
-    characters: storyCharacters,
+    characters: getPackedCast(),
     audioMode: storyAudioMode,
     narratorVoiceId: storyNarratorVoiceId,
   };
 
   const result = runPreflightChecks(storyData);
 
-  const modalEl = document.createElement('div');
-  modalEl.id = 'preflight-publish-modal';
-  modalEl.className = 'preflight-modal';
+  const modalEl = document.createElement("div");
+  modalEl.id = "preflight-publish-modal";
+  modalEl.className = "preflight-modal";
 
   const statusBadge = getStatusLabel(currentStoryStatus as any);
   const statusColor = getStatusColor(currentStoryStatus as any);
@@ -3548,7 +4665,7 @@ function openPreflightPublishModal(): void {
           <span class="preflight-modal__badge" style="background:${statusColor}22; color:${statusColor}; border:1px solid ${statusColor}44;">
             ${statusBadge}
           </span>
-          <span class="preflight-modal__title">${isUserMode() ? 'Publishing Checklist' : 'Pre-Flight Quality Checklist'}</span>
+          <span class="preflight-modal__title">${isUserMode() ? "Publishing Checklist" : "Pre-Flight Quality Checklist"}</span>
         </div>
         <button type="button" class="preflight-modal__close" id="preflight-close" title="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -3556,26 +4673,36 @@ function openPreflightPublishModal(): void {
       </div>
 
       <div class="preflight-modal__body">
-        ${!isUserMode() ? `
+        ${
+          !isUserMode()
+            ? `
           <div style="margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); font-size: 0.78rem; color: var(--color-text-secondary); line-height: 1.45;">
             ℹ️ <strong>Admin Notice:</strong> Official stories cannot be published live directly from the editor. Passing this checklist verifies quality. To make the story live on Explore, return to the <strong>Admin Dashboard</strong> and click <strong>"🚀 Go Live"</strong> in the story's 3-dot menu.
           </div>
-        ` : ''}
-        ${currentStoryStatus === 'denied' ? `
+        `
+            : ""
+        }
+        ${
+          currentStoryStatus === "denied"
+            ? `
           <div class="preflight-alert preflight-alert--denied">
             <div style="font-weight:700; color:#ef4444; margin-bottom:4px;">❌ Previous Submission Denied</div>
             <div style="font-size:0.78rem; color:var(--color-text-secondary);">
-              Reason: "${currentRejectionReason || 'Please review community guidelines and resubmit'}"
+              Reason: "${currentRejectionReason || "Please review community guidelines and resubmit"}"
             </div>
           </div>
-        ` : currentStoryStatus === 'under-review' ? `
+        `
+            : currentStoryStatus === "under-review"
+              ? `
           <div class="preflight-alert preflight-alert--review">
             <div style="font-weight:700; color:#f59e0b; margin-bottom:4px;">⏳ Currently Under Review</div>
             <div style="font-size:0.78rem; color:var(--color-text-secondary);">
               Your story is in the community moderation queue. Submitting changes will update your pending review.
             </div>
           </div>
-        ` : ''}
+        `
+              : ""
+        }
 
         <div class="preflight-score-card">
           <div class="preflight-score-stat">
@@ -3584,7 +4711,7 @@ function openPreflightPublishModal(): void {
           </div>
           <div class="preflight-score-divider"></div>
           <div class="preflight-score-stat">
-            <span class="preflight-score-num" style="color:${result.failCount > 0 ? '#ef4444' : '#10B981'};">${result.failCount}</span>
+            <span class="preflight-score-num" style="color:${result.failCount > 0 ? "#ef4444" : "#10B981"};">${result.failCount}</span>
             <span class="preflight-score-label">Required</span>
           </div>
           <div class="preflight-score-divider"></div>
@@ -3595,30 +4722,38 @@ function openPreflightPublishModal(): void {
         </div>
 
         <div class="preflight-check-list">
-          ${result.checks.map(c => `
+          ${result.checks
+            .map(
+              (c) => `
             <div class="preflight-check-item preflight-check-item--${c.status}">
               <div class="preflight-check-icon">
-                ${c.status === 'pass' ? '✅' : c.status === 'fail' ? '❌' : '⚠️'}
+                ${c.status === "pass" ? "✅" : c.status === "fail" ? "❌" : "⚠️"}
               </div>
               <div class="preflight-check-info">
                 <div class="preflight-check-label">${c.label}</div>
                 <div class="preflight-check-detail">${c.detail}</div>
               </div>
             </div>
-          `).join('')}
+          `,
+            )
+            .join("")}
         </div>
 
         <div class="preflight-actions">
           <button type="button" class="btn btn--secondary" id="preflight-cancel-btn">Back to Editor</button>
-          ${result.canSubmit ? `
+          ${
+            result.canSubmit
+              ? `
             <button type="button" class="btn btn--primary" id="preflight-submit-btn" style="background:#10B981; border-color:#10B981; font-weight:700;">
-              ${isUserMode() ? '🚀 Submit for Review' : '💾 Save as Draft & Exit'}
+              ${isUserMode() ? "🚀 Submit for Review" : "💾 Save as Draft & Exit"}
             </button>
-          ` : `
+          `
+              : `
             <button type="button" class="btn btn--secondary" disabled style="opacity:0.5; cursor:not-allowed;">
-              Fix ${result.failCount} Required Item${result.failCount === 1 ? '' : 's'}
+              Fix ${result.failCount} Required Item${result.failCount === 1 ? "" : "s"}
             </button>
-          `}
+          `
+          }
         </div>
       </div>
     </div>
@@ -3627,49 +4762,61 @@ function openPreflightPublishModal(): void {
   document.body.appendChild(modalEl);
 
   const closeModal = () => modalEl.remove();
-  modalEl.querySelector('#preflight-close')?.addEventListener('click', closeModal);
-  modalEl.querySelector('#preflight-backdrop')?.addEventListener('click', closeModal);
-  modalEl.querySelector('#preflight-cancel-btn')?.addEventListener('click', closeModal);
+  modalEl
+    .querySelector("#preflight-close")
+    ?.addEventListener("click", closeModal);
+  modalEl
+    .querySelector("#preflight-backdrop")
+    ?.addEventListener("click", closeModal);
+  modalEl
+    .querySelector("#preflight-cancel-btn")
+    ?.addEventListener("click", closeModal);
 
-  modalEl.querySelector('#preflight-submit-btn')?.addEventListener('click', async () => {
-    const userMode = isUserMode();
-    const btn = modalEl.querySelector('#preflight-submit-btn') as HTMLButtonElement;
-    if (btn) {
-      btn.textContent = userMode ? 'Submitting...' : 'Saving Draft...';
-      btn.disabled = true;
-    }
-
-    try {
-      await preUploadBase64Images();
-      const story = buildStory('draft');
-      if (userMode) {
-        await saveStoryForMode(story, 'under-review');
-        currentStoryStatus = 'under-review';
-      } else {
-        await saveStoryForMode(story, 'draft');
+  modalEl
+    .querySelector("#preflight-submit-btn")
+    ?.addEventListener("click", async () => {
+      const userMode = isUserMode();
+      const btn = modalEl.querySelector(
+        "#preflight-submit-btn",
+      ) as HTMLButtonElement;
+      if (btn) {
+        btn.textContent = userMode ? "Submitting..." : "Saving Draft...";
+        btn.disabled = true;
       }
 
-      // Replace modal body with confirmation
-      const body = modalEl.querySelector('.preflight-modal__body');
-      if (body) {
-        body.innerHTML = userMode ? `
+      try {
+        await preUploadBase64Images();
+        const story = buildStory("draft");
+        if (userMode) {
+          await saveStoryForMode(story, "under-review");
+          currentStoryStatus = "under-review";
+        } else {
+          await saveStoryForMode(story, "draft");
+        }
+
+        // Replace modal body with confirmation
+        const body = modalEl.querySelector(".preflight-modal__body");
+        if (body) {
+          body.innerHTML = userMode
+            ? `
           <div style="text-align:center; padding:24px 12px;">
             <div style="font-size:3rem; margin-bottom:12px;">🎉</div>
             <h3 style="font-size:1.2rem; font-weight:800; color:var(--color-text-primary); margin:0 0 8px 0;">Submitted for Review!</h3>
             <p style="font-size:0.82rem; color:var(--color-text-secondary); line-height:1.5; margin:0 0 20px 0;">
-              Your story <strong>"${escapeHtml(story.title || 'Untitled')}"</strong> is now in the community moderation queue. Admins review submissions before they go live on Explore.
+              Your story <strong>"${escapeHtml(story.title || "Untitled")}"</strong> is now in the community moderation queue. Admins review submissions before they go live on Explore.
             </p>
             <div style="display:flex; gap:10px; justify-content:center;">
               <button type="button" class="btn btn--secondary" id="preflight-continue-btn">Continue Editing</button>
               <button type="button" class="btn btn--primary" id="preflight-library-btn" style="background:#10B981; border-color:#10B981; font-weight:700;">Go to Library</button>
             </div>
           </div>
-        ` : `
+        `
+            : `
           <div style="text-align:center; padding:24px 12px;">
             <div style="font-size:3rem; margin-bottom:12px;">💾</div>
             <h3 style="font-size:1.2rem; font-weight:800; color:var(--color-text-primary); margin:0 0 8px 0;">Draft Saved & Quality Verified!</h3>
             <p style="font-size:0.82rem; color:var(--color-text-secondary); line-height:1.5; margin:0 0 20px 0;">
-              Your official story <strong>"${escapeHtml(story.title || 'Untitled')}"</strong> has passed quality verification and is safely saved as a Draft.<br><br>
+              Your official story <strong>"${escapeHtml(story.title || "Untitled")}"</strong> has passed quality verification and is safely saved as a Draft.<br><br>
               To make it live to all readers, open the <strong>Admin Dashboard</strong>, find this story under <strong>DRiVE Originals</strong>, and select <strong>"🚀 Go Live"</strong> from the 3-dot menu.
             </p>
             <div style="display:flex; gap:10px; justify-content:center;">
@@ -3678,21 +4825,27 @@ function openPreflightPublishModal(): void {
             </div>
           </div>
         `;
-        body.querySelector('#preflight-continue-btn')?.addEventListener('click', closeModal);
-        body.querySelector('#preflight-library-btn')?.addEventListener('click', () => {
-          closeModal();
-          navigate(userMode ? 'library' : 'admin');
-        });
+          body
+            .querySelector("#preflight-continue-btn")
+            ?.addEventListener("click", closeModal);
+          body
+            .querySelector("#preflight-library-btn")
+            ?.addEventListener("click", () => {
+              closeModal();
+              navigate(userMode ? "library" : "admin");
+            });
+        }
+      } catch (err: any) {
+        console.error("Save/Submission failed:", err);
+        alert("Operation failed: " + (err?.message || "Unknown error"));
+        if (btn) {
+          btn.textContent = userMode
+            ? "🚀 Submit for Review"
+            : "💾 Save as Draft & Exit";
+          btn.disabled = false;
+        }
       }
-    } catch (err: any) {
-      console.error('Save/Submission failed:', err);
-      alert('Operation failed: ' + (err?.message || 'Unknown error'));
-      if (btn) {
-        btn.textContent = userMode ? '🚀 Submit for Review' : '💾 Save as Draft & Exit';
-        btn.disabled = false;
-      }
-    }
-  });
+    });
 }
 
 function openStoryboard(): void {
@@ -3701,18 +4854,24 @@ function openStoryboard(): void {
     return;
   }
 
-  // Remove existing storyboard if open
-  document.querySelector('.storyboard-overlay')?.remove();
+  const isCurrentEpisodeLive =
+    String(currentStoryStatus) === "published" ||
+    String(currentStoryStatus) === "live";
 
-  const overlay = document.createElement('div');
-  overlay.className = 'storyboard-overlay';
+  // Remove existing storyboard if open
+  document.querySelector(".storyboard-overlay")?.remove();
+
+  const overlay = document.createElement("div");
+  overlay.className = "storyboard-overlay";
   if (storyThemeColor) {
-    overlay.style.setProperty('--story-theme-color', storyThemeColor);
+    overlay.style.setProperty("--story-theme-color", storyThemeColor);
     overlay.style.backgroundColor = storyThemeColor;
   }
 
-  const cardsHtml = bookPages.map((page, i) => `
-    <div class="sb-card" data-sb-card="${i}" draggable="true">
+  const cardsHtml = bookPages
+    .map(
+      (page, i) => `
+    <div class="sb-card" data-sb-card="${i}" draggable="${isCurrentEpisodeLive ? "false" : "true"}">
       <div class="sb-card__header">
         <div class="sb-card__drag-handle" title="Drag to reorder">
           <div class="sb-card__drag-handle-dot"><span></span><span></span></div>
@@ -3722,9 +4881,9 @@ function openStoryboard(): void {
         <span class="sb-card__num">${i + 1}</span>
         <span class="sb-card__label">SLIDE CONTENT</span>
         <div style="display:flex; align-items:center; gap:2px; margin-left:auto;">
-          <button class="sb-card__ctrl-btn" data-sb-move-up="${i}" title="Move page up" type="button" ${i === 0 ? 'disabled' : ''}>▲</button>
-          <button class="sb-card__ctrl-btn" data-sb-move-down="${i}" title="Move page down" type="button" ${i === bookPages.length - 1 ? 'disabled' : ''}>▼</button>
-          <button class="sb-card__ctrl-btn" data-sb-duplicate="${i}" title="Duplicate page" type="button">📋</button>
+          <button class="sb-card__ctrl-btn" data-sb-move-up="${i}" title="Move page up" type="button" ${i === 0 ? "disabled" : ""}>▲</button>
+          <button class="sb-card__ctrl-btn" data-sb-move-down="${i}" title="Move page down" type="button" ${i === bookPages.length - 1 ? "disabled" : ""}>▼</button>
+
           <button class="sb-card__delete" data-sb-delete="${i}" title="Delete page">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
@@ -3734,19 +4893,21 @@ function openStoryboard(): void {
       <div class="sb-card__media">
         <div class="sb-card__media-header">
           <span class="sb-card__media-label">MEDIA</span>
-          ${page.image ? `<span class="sb-card__media-badge">${isVideoMedia(page.image) ? '🎬 VIDEO' : '🖼️ IMAGE'}</span>` : ''}
+          ${page.image ? `<span class="sb-card__media-badge">${isVideoMedia(page.image) ? "🎬 VIDEO" : "🖼️ IMAGE"}</span>` : ""}
         </div>
         <div class="sb-card__media-wrap">
-          ${page.image
-            ? `${isVideoMedia(page.image)
-                ? `<video class="sb-card__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline></video>`
-                : `<img class="sb-card__img" src="${page.image}" alt="Page ${i + 1}">`
-              }
+          ${
+            page.image
+              ? `${
+                  isVideoMedia(page.image)
+                    ? `<video class="sb-card__video" src="${page.image}" autoplay loop muted playsinline webkit-playsinline></video>`
+                    : `<img class="sb-card__img" src="${page.image}" alt="Page ${i + 1}">`
+                }
               <div class="sb-card__media-actions">
                 <button type="button" class="sb-card__media-btn sb-card__media-btn--change" data-sb-change="${i}" title="Change media">Change</button>
                 <button type="button" class="sb-card__media-btn sb-card__media-btn--remove" data-sb-remove="${i}" title="Remove media">✕</button>
               </div>`
-            : `<div class="sb-card__no-img" data-sb-upload="${i}">
+              : `<div class="sb-card__no-img" data-sb-upload="${i}">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 <span>Upload Image or Video</span>
               </div>`
@@ -3756,31 +4917,39 @@ function openStoryboard(): void {
       </div>
 
       <div class="sb-card__section">
-        ${page.image && isVideoMedia(page.image) ? `
+        ${
+          page.image && isVideoMedia(page.image)
+            ? `
           <div class="sb-card__audio-source">
             <div class="book-tile__text-header"><span>🔊 PAGE AUDIO SOURCE</span></div>
             <div class="sb-audio-source-selector" data-sb-audio-source="${i}">
-              <button class="sb-audio-src-btn ${(page.audioSource || 'native') === 'native' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="native" data-audio-src-page="${i}" type="button" title="Use video's built-in audio">🔊 Native</button>
-              <button class="sb-audio-src-btn ${page.audioSource === 'upload' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="upload" data-audio-src-page="${i}" type="button" title="Upload your own audio">🎙️ Upload</button>
-              <button class="sb-audio-src-btn ${page.audioSource === 'ai' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="ai" data-audio-src-page="${i}" type="button" title="AI character voices">🎭 AI</button>
-              <button class="sb-audio-src-btn ${page.audioSource === 'silent' ? 'sb-audio-src-btn--active' : ''}" data-audio-src="silent" data-audio-src-page="${i}" type="button" title="No audio">🔇 Silent</button>
+              <button class="sb-audio-src-btn ${(page.audioSource || "native") === "native" ? "sb-audio-src-btn--active" : ""}" data-audio-src="native" data-audio-src-page="${i}" type="button" title="Use video's built-in audio">🔊 Native</button>
+              <button class="sb-audio-src-btn ${page.audioSource === "upload" ? "sb-audio-src-btn--active" : ""}" data-audio-src="upload" data-audio-src-page="${i}" type="button" title="Upload your own audio">🎙️ Upload</button>
+              <button class="sb-audio-src-btn ${page.audioSource === "ai" ? "sb-audio-src-btn--active" : ""}" data-audio-src="ai" data-audio-src-page="${i}" type="button" title="AI character voices">🎭 AI</button>
+              <button class="sb-audio-src-btn ${page.audioSource === "silent" ? "sb-audio-src-btn--active" : ""}" data-audio-src="silent" data-audio-src-page="${i}" type="button" title="No audio">🔇 Silent</button>
             </div>
           </div>
-        ` : ''}
-        ${storyAudioMode === 'simple_upload' ? `
+        `
+            : ""
+        }
+        ${
+          storyAudioMode === "simple_upload"
+            ? `
           <div class="book-tile__text-header"><span>STORY TEXT</span></div>
           <textarea class="book-tile__textarea" data-tile-text="${i}"
             placeholder="Write the story for this page..."
             rows="4" maxlength="1000">${page.text}</textarea>
           <div class="book-tile__text-header" style="margin-top: var(--space-sm);"><span>📁 PAGE AUDIO</span></div>
           <div class="audio-upload-zone" data-audio-upload-zone="${i}">
-            ${page.audioUrl ? `
+            ${
+              page.audioUrl
+                ? `
               <div class="audio-upload-preview">
                 <div class="audio-upload-preview__info">
-                  <span class="audio-upload-preview__icon">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? '🎬' : '🎵'}</span>
+                  <span class="audio-upload-preview__icon">${page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName) ? "🎬" : "🎵"}</span>
                   <div class="audio-upload-preview__meta">
-                    <span class="audio-upload-preview__name">${page.audioFileName || 'Audio uploaded'}</span>
-                    <span class="audio-upload-preview__tag">${(page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName)) ? 'Audio (from Video)' : 'Audio File'}</span>
+                    <span class="audio-upload-preview__name">${page.audioFileName || "Audio uploaded"}</span>
+                    <span class="audio-upload-preview__tag">${page.audioFileName && /\.(mp4|mov|webm|m4v|avi)$/i.test(page.audioFileName) ? "Audio (from Video)" : "Audio File"}</span>
                   </div>
                 </div>
                 <div class="audio-scrubber" data-audio-scrubber-wrap="${i}">
@@ -3798,30 +4967,69 @@ function openStoryboard(): void {
                   <button class="audio-upload-actions__btn audio-upload-actions__btn--delete" data-audio-remove="${i}" type="button">✕</button>
                 </div>
               </div>
-            ` : `
+            `
+                : `
               <button class="audio-upload-btn" data-audio-upload-trigger="${i}" type="button">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 <span>Click to Upload Audio or Video (MP3, WAV, M4A, MP4, MOV)</span>
               </button>
-            `}
+            `
+            }
             <input type="file" class="audio-upload-file" data-audio-file="${i}" accept="audio/*,video/*" hidden>
           </div>
           <div class="book-tile__text-header" style="margin-top: var(--space-sm);"><span>📝 CAPTIONS</span></div>
           <textarea class="book-tile__textarea" data-simple-captions="${i}"
             placeholder="Type dialogue and captions here for hearing-impaired viewers (optional)..."
-            rows="3" maxlength="1000">${page.dialogText || ''}</textarea>
-        ` : `
-          ${renderScreenplayEditor(i, 'sbd')}
-        `}
+            rows="3" maxlength="1000">${page.dialogText || ""}</textarea>
+        `
+            : `
+          ${renderScreenplayEditor(i, "sbd")}
+        `
+        }
       </div>
 
 
       <details class="sb-card__deeper-dive">
         <summary class="sb-card__dd-summary">🎓 DEEPER DIVE</summary>
-        <textarea class="sb-card__dd-textarea" data-sb-dd="${i}" rows="4" placeholder="Deeper dive content...">${page.deeperDiveContent || ''}</textarea>
+        <textarea class="sb-card__dd-textarea" data-sb-dd="${i}" rows="4" placeholder="Deeper dive content...">${page.deeperDiveContent || ""}</textarea>
       </details>
     </div>
-  `).join('');
+  `,
+    )
+    .join("");
+
+  const liveLockHtml = isCurrentEpisodeLive
+    ? `
+    <div style="background: rgba(239,68,68,0.12); border-bottom: 1px solid var(--color-red); padding: 8px 16px; color: var(--color-red); text-align: center; font-size: 0.82rem; font-weight: 600;">
+      🔒 Episode Locked — This episode is published and read-only.
+    </div>
+    <style>
+      .storyboard-overlay #sb-add-page,
+      .storyboard-overlay #sb-save-draft,
+      .storyboard-overlay #sb-batch-prerecord,
+      .storyboard-overlay #sb-publish-review,
+      .storyboard-overlay [data-sb-delete],
+      .storyboard-overlay [data-sb-move-up],
+      .storyboard-overlay [data-sb-move-down],
+      .storyboard-overlay [data-sb-upload],
+      .storyboard-overlay [data-sb-change],
+      .storyboard-overlay [data-sb-remove],
+      .storyboard-overlay [data-audio-upload-trigger],
+      .storyboard-overlay [data-audio-replace],
+      .storyboard-overlay [data-audio-remove],
+      .storyboard-overlay #btn-sparc-checkpoint,
+      .storyboard-overlay .sb-card--sparc,
+      .storyboard-overlay .sb-card__audio-source,
+      .storyboard-overlay .sb-card__drag-handle,
+      .storyboard-overlay .sbd-add-line,
+      .storyboard-overlay [data-sbd-delete],
+      .storyboard-overlay .screenplay-chip,
+      .storyboard-overlay [data-open-char-settings],
+      .storyboard-overlay [data-sbd-batch-rec],
+      .storyboard-overlay [data-sbd-line-rec] { display: none !important; }
+    </style>
+  `
+    : "";
 
   overlay.innerHTML = `
     <div class="sb-topbar">
@@ -3830,19 +5038,23 @@ function openStoryboard(): void {
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-purple)" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </div>
         <div>
-          <div class="sb-topbar__title">${escapeHtml(storyTitle || 'Illustrated Book')}</div>
+          <div class="sb-topbar__title">${escapeHtml(storyTitle || "Illustrated Book")}</div>
           <div class="sb-topbar__subtitle">CONTENT STORYBOARD • CREATOR VIEW</div>
         </div>
       </div>
       <div class="sb-topbar__right">
-        <span class="sb-topbar__counter" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:700; padding:3px 10px; border-radius:10px; background:${bookPages.length >= 12 && bookPages.length <= 36 ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.12)'}; color:${bookPages.length >= 12 && bookPages.length <= 36 ? '#22c55e' : '#eab308'};">
-          ${bookPages.length} pg${bookPages.length !== 1 ? 's' : ''}
+        <span class="sb-topbar__counter" style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-weight:700; padding:3px 10px; border-radius:10px; background:${bookPages.length >= 12 && bookPages.length <= 36 ? "rgba(34,197,94,0.12)" : "rgba(234,179,8,0.12)"}; color:${bookPages.length >= 12 && bookPages.length <= 36 ? "#22c55e" : "#eab308"};">
+          ${bookPages.length} pg${bookPages.length !== 1 ? "s" : ""}
         </span>
-        ${!isDesktopScreen() ? `
+        ${
+          !isDesktopScreen()
+            ? `
           <button class="sb-topbar__btn-switch" id="sb-switch-mobile" type="button" title="Switch to mobile phone preview">
             📱 Mobile View
           </button>
-        ` : ''}
+        `
+            : ""
+        }
         ${episodeNavSbHtml()}
         <button class="sb-topbar__btn-action" id="sb-story-settings" type="button" title="Edit story title, cover, and metadata">
           ⚙️ Settings
@@ -3856,104 +5068,148 @@ function openStoryboard(): void {
         <button class="sb-topbar__btn-action" id="sb-batch-prerecord" type="button" title="Pre-record audio for all pages">
           🎙️ Pre-Record All
         </button>
-        <button class="sb-topbar__btn-action" id="sb-publish-review" type="button" title="${isUserMode() ? 'Publishing checklist & submit for review' : 'Pre-flight quality checklist'}" style="background:rgba(16,185,129,0.15); color:#10B981; border:1px solid rgba(16,185,129,0.35); font-weight:700;">
-          ${isUserMode() ? '🚀 Submit for Review' : '📋 Pre-Flight Checklist'}
+        <button class="sb-topbar__btn-action" id="sb-publish-review" type="button" title="${isUserMode() ? "Publishing checklist & submit for review" : "Pre-flight quality checklist"}" style="background:rgba(16,185,129,0.15); color:#10B981; border:1px solid rgba(16,185,129,0.35); font-weight:700;">
+          ${isUserMode() ? "🚀 Submit for Review" : "📋 Pre-Flight Checklist"}
         </button>
 
         <button class="sb-topbar__add-btn" id="sb-add-page" type="button">+ Add Page</button>
-        ${!isDesktopScreen() ? `
+        ${
+          !isDesktopScreen()
+            ? `
           <button class="sb-topbar__close" id="sb-close" type="button" title="Close and return to mobile editor">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
-        ` : `
+        `
+            : `
           <button class="sb-topbar__close" id="sb-close" type="button" title="Return to admin dashboard" style="margin-left:8px;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
-        `}
+        `
+        }
       </div>
     </div>
+    ${liveLockHtml}
     <div class="sb-track" id="sb-track">
       ${cardsHtml}
-      ${!isUserMode() ? `<div class="sb-card sb-card--sparc" style="min-width:200px; max-width:240px; display:flex; align-items:center; justify-content:center; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px; padding:16px;">
+      ${
+        !isUserMode()
+          ? `<div class="sb-card sb-card--sparc" style="min-width:200px; max-width:240px; display:flex; align-items:center; justify-content:center; background:var(--color-surface); border:1.5px solid rgba(99,102,241,0.3); border-radius:16px; padding:16px;">
         <button type="button" id="btn-sparc-checkpoint" style="
           display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px;
           background:none; border:2px dashed rgba(99,102,241,0.4); border-radius:12px;
           color:var(--color-text-primary); cursor:pointer; font-family:var(--font-body);
         ">
           <span style="font-size:1.5rem;">⚡</span>
-          <span style="font-size:0.8rem; font-weight:600;">${sparcPromptText.trim() || sparcPromptMediaUrls.length > 0 ? '✅ Edit SPARC' : '+ Add SPARC'}</span>
+          <span style="font-size:0.8rem; font-weight:600;">${sparcPromptText.trim() || sparcPromptMediaUrls.length > 0 ? "✅ Edit SPARC" : "+ Add SPARC"}</span>
         </button>
-      </div>` : ''}
+      </div>`
+          : ""
+      }
     </div>
   `;
 
   document.body.appendChild(overlay);
+  overlay.querySelectorAll("textarea").forEach((ta) => {
+    if (ta.id !== "script-text-input" && ta.id !== "char-popup-desc") {
+      autoGrow(ta as HTMLTextAreaElement);
+    }
+  });
+  if (isCurrentEpisodeLive) {
+    overlay
+      .querySelectorAll<
+        HTMLTextAreaElement | HTMLInputElement | HTMLSelectElement | HTMLButtonElement
+      >("#sb-track textarea, #sb-track input:not(.audio-scrubber__slider), #sb-track select, #sb-track button:not([data-audio-play]):not([data-audio-restart]):not([data-sbd-line-play]):not([data-sbd-play-all])")
+      .forEach((el) => {
+        el.disabled = true;
+      });
+  }
   attachSparcAdminListeners(overlay);
   ensureVideoPlayback(overlay);
 
   // --- Wire up events ---
   const switchToMobileView = () => {
-    activeEditorMode = 'mobile';
-    overlay.classList.add('closing');
-    overlay.addEventListener('animationend', () => {
-      overlay.remove();
-      const wizard = document.getElementById('admin-admin-create-wizard');
-      if (wizard) { wizard.innerHTML = renderPhase(); attachListenersGlobal(); }
-    }, { once: true });
+    activeEditorMode = "mobile";
+    overlay.classList.add("closing");
+    overlay.addEventListener(
+      "animationend",
+      () => {
+        overlay.remove();
+        const wizard = document.getElementById("admin-admin-create-wizard");
+        if (wizard) {
+          wizard.innerHTML = renderPhase();
+          attachListenersGlobal();
+        }
+      },
+      { once: true },
+    );
   };
 
   // Mobile View button only exists on non-desktop screens
-  document.getElementById('sb-switch-mobile')?.addEventListener('click', switchToMobileView);
+  document
+    .getElementById("sb-switch-mobile")
+    ?.addEventListener("click", switchToMobileView);
 
   // Close button behavior depends on screen size:
   // Desktop → save draft and return to admin dashboard (no mobile editor available)
   // Mobile  → switch back to mobile editor view
-  document.getElementById('sb-close')?.addEventListener('click', () => {
+  document.getElementById("sb-close")?.addEventListener("click", () => {
     if (!isDesktopScreen()) {
       switchToMobileView();
       return;
     }
 
+    if (isCurrentEpisodeLive) {
+      overlay.remove();
+      navigate("admin");
+      return;
+    }
+
     const currentTitle = storyTitle.trim();
-    const hasExistingTitle = Boolean(currentTitle && currentTitle.toLowerCase() !== 'untitled' && currentTitle.toLowerCase() !== 'untitled draft');
+    const hasExistingTitle = Boolean(
+      currentTitle &&
+      currentTitle.toLowerCase() !== "untitled" &&
+      currentTitle.toLowerCase() !== "untitled draft",
+    );
 
     showModal({
-      title: 'Exit Storyboard',
+      title: "Exit Storyboard",
       content: `
         <div style="font-size: 0.95rem; line-height: 1.6; color: var(--color-text-secondary);">
           <p style="margin: 0 0 16px;">Would you like to save your story before exiting?</p>
           
           <div style="margin-top: 14px; text-align: left;">
             <label for="sb-exit-title-input" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: var(--color-text-primary);">
-              Story Title ${!hasExistingTitle ? '<span style="color: var(--color-purple);">*</span>' : ''}
+              Story Title ${!hasExistingTitle ? '<span style="color: var(--color-purple);">*</span>' : ""}
             </label>
             <input 
               type="text" 
               id="sb-exit-title-input" 
               class="form-input" 
               placeholder="Enter story title..." 
-              value="${hasExistingTitle ? currentTitle : ''}"
+              value="${hasExistingTitle ? currentTitle : ""}"
               style="width: 100%; box-sizing: border-box; padding: 10px 14px; border-radius: 8px; border: 1.5px solid var(--color-border); background: var(--color-surface); color: var(--color-text-primary); font-size: 0.95rem; outline: none;"
             />
             <div id="sb-exit-title-error" style="color: #ef4444; font-size: 0.8rem; margin-top: 6px; display: none;">Please enter a title to save your story.</div>
           </div>
         </div>
       `,
-      confirmText: 'Save story and exit',
+      confirmText: "Save story and exit",
       extraText: "Don't save story, and leave",
-      extraClass: 'modal-extra-btn--danger',
-      cancelText: 'Cancel',
+      extraClass: "modal-extra-btn--danger",
+      cancelText: "Cancel",
       onConfirm: async () => {
-        const titleInput = document.getElementById('sb-exit-title-input') as HTMLInputElement | null;
-        const enteredTitle = titleInput ? titleInput.value.trim() : '';
+        const titleInput = document.getElementById(
+          "sb-exit-title-input",
+        ) as HTMLInputElement | null;
+        const enteredTitle = titleInput ? titleInput.value.trim() : "";
 
         if (!enteredTitle) {
           if (titleInput) {
             titleInput.focus();
-            titleInput.style.borderColor = '#ef4444';
+            titleInput.style.borderColor = "#ef4444";
           }
-          const errEl = document.getElementById('sb-exit-title-error');
-          if (errEl) errEl.style.display = 'block';
+          const errEl = document.getElementById("sb-exit-title-error");
+          if (errEl) errEl.style.display = "block";
           return false;
         }
 
@@ -3962,107 +5218,123 @@ function openStoryboard(): void {
         saveDraft();
         try {
           await preUploadBase64Images();
-          await saveStoryForMode(buildStory('draft'));
+          await saveStoryForMode(buildStory("draft"));
         } catch (err) {
-          console.error('Cloud save on close failed:', err);
+          console.error("Cloud save on close failed:", err);
         }
         overlay.remove();
-        navigate('admin');
+        navigate("admin");
       },
       onExtra: () => {
         overlay.remove();
-        navigate('admin');
+        navigate("admin");
       },
-      onCancel: () => {}
+      onCancel: () => {},
     });
   });
 
-  wireEpisodeNav(['sb-prev-episode', 'sb-next-episode']);
+  wireEpisodeNav(["sb-prev-episode", "sb-next-episode"]);
 
-  document.getElementById('sb-story-settings')?.addEventListener('click', () => {
-    // Keep activeEditorMode = 'storyboard' so that pressing "Back" in settings
-    // returns to the storyboard view (updateView checks activeEditorMode).
-    overlay.remove();
-    getFormData();
-    openStorySettings();
-  });
+  document
+    .getElementById("sb-story-settings")
+    ?.addEventListener("click", () => {
+      // Keep activeEditorMode = 'storyboard' so that pressing "Back" in settings
+      // returns to the storyboard view (updateView checks activeEditorMode).
+      overlay.remove();
+      getFormData();
+      openStorySettings();
+    });
 
-  document.getElementById('sb-preview-story')?.addEventListener('click', () => {
+  document.getElementById("sb-preview-story")?.addEventListener("click", () => {
     openInEditorPreview(0);
   });
 
-  document.getElementById('sb-batch-prerecord')?.addEventListener('click', () => {
-    openBatchPreRecordModal();
-  });
+  document
+    .getElementById("sb-batch-prerecord")
+    ?.addEventListener("click", () => {
+      openBatchPreRecordModal();
+    });
 
-  document.getElementById('sb-publish-review')?.addEventListener('click', () => {
-    openPreflightPublishModal();
-  });
+  document
+    .getElementById("sb-publish-review")
+    ?.addEventListener("click", () => {
+      openPreflightPublishModal();
+    });
 
-  document.getElementById('sb-save-draft')?.addEventListener('click', async () => {
-    const savedIndicator = document.getElementById('sb-saved-indicator');
-    getFormData();
-    saveDraft(); // localStorage backup
-    showDraftSavedToast('Draft saved successfully');
-    try {
-      if (savedIndicator) savedIndicator.textContent = '⏳ Saving...';
-      await preUploadBase64Images();
-      await saveStoryForMode(buildStory('draft'));
-      if (savedIndicator) {
-        savedIndicator.textContent = '✅ Saved to cloud!';
-        setTimeout(() => { if (savedIndicator) savedIndicator.textContent = ''; }, 3000);
+  document
+    .getElementById("sb-save-draft")
+    ?.addEventListener("click", async () => {
+      const savedIndicator = document.getElementById("sb-saved-indicator");
+      getFormData();
+      saveDraft(); // localStorage backup
+      showDraftSavedToast("Draft saved successfully");
+      try {
+        if (savedIndicator) savedIndicator.textContent = "⏳ Saving...";
+        await preUploadBase64Images();
+        await saveStoryForMode(buildStory("draft"));
+        if (savedIndicator) {
+          savedIndicator.textContent = "✅ Saved to cloud!";
+          setTimeout(() => {
+            if (savedIndicator) savedIndicator.textContent = "";
+          }, 3000);
+        }
+      } catch (err) {
+        console.error("Cloud save failed:", err);
+        if (savedIndicator) {
+          savedIndicator.textContent = "⚠️ Local only - cloud save failed";
+          setTimeout(() => {
+            if (savedIndicator) savedIndicator.textContent = "";
+          }, 5000);
+        }
       }
-    } catch (err) {
-      console.error('Cloud save failed:', err);
-      if (savedIndicator) {
-        savedIndicator.textContent = '⚠️ Local only - cloud save failed';
-        setTimeout(() => { if (savedIndicator) savedIndicator.textContent = ''; }, 5000);
-      }
-    }
-  });
+    });
 
-
-
-  document.getElementById('sb-add-page')?.addEventListener('click', () => {
+  document.getElementById("sb-add-page")?.addEventListener("click", () => {
     bookPages.push(defaultBookPage());
     saveDraft();
     overlay.remove();
     openStoryboard();
     setTimeout(() => {
-      const trk = document.getElementById('sb-track');
+      const trk = document.getElementById("sb-track");
       if (trk) trk.scrollLeft = trk.scrollWidth;
     }, 60);
   });
 
   // SPARC checkpoint modal in storyboard
-  overlay.querySelector('#btn-sparc-checkpoint')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    openSparcModal();
-  });
+  overlay
+    .querySelector("#btn-sparc-checkpoint")
+    ?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openSparcModal();
+    });
 
   // Media in-card triggers
-  overlay.querySelectorAll('[data-sb-upload]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = btn.getAttribute('data-sb-upload');
-      const input = overlay.querySelector(`[data-sb-file="${idx}"]`) as HTMLInputElement;
+  overlay.querySelectorAll("[data-sb-upload]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = btn.getAttribute("data-sb-upload");
+      const input = overlay.querySelector(
+        `[data-sb-file="${idx}"]`,
+      ) as HTMLInputElement;
       input?.click();
     });
   });
 
-  overlay.querySelectorAll('[data-sb-change]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  overlay.querySelectorAll("[data-sb-change]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const idx = btn.getAttribute('data-sb-change');
-      const input = overlay.querySelector(`[data-sb-file="${idx}"]`) as HTMLInputElement;
+      const idx = btn.getAttribute("data-sb-change");
+      const input = overlay.querySelector(
+        `[data-sb-file="${idx}"]`,
+      ) as HTMLInputElement;
       input?.click();
     });
   });
 
-  overlay.querySelectorAll('[data-sb-remove]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  overlay.querySelectorAll("[data-sb-remove]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const idx = parseInt(btn.getAttribute('data-sb-remove') || '0');
+      const idx = parseInt(btn.getAttribute("data-sb-remove") || "0");
       bookPages[idx].image = null as any;
       saveDraft();
       overlay.remove();
@@ -4070,23 +5342,23 @@ function openStoryboard(): void {
     });
   });
 
-  overlay.querySelectorAll('[data-sb-file]').forEach(input => {
-    input.addEventListener('change', async (e) => {
+  overlay.querySelectorAll("[data-sb-file]").forEach((input) => {
+    input.addEventListener("change", async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-      const idx = parseInt(input.getAttribute('data-sb-file') || '0');
+      const idx = parseInt(input.getAttribute("data-sb-file") || "0");
 
       // Visual feedback: show uploading spinner on the active card
       const card = overlay.querySelector(`[data-sb-card="${idx}"]`);
-      const mediaWrap = card?.querySelector('.sb-card__media-wrap');
+      const mediaWrap = card?.querySelector(".sb-card__media-wrap");
       if (mediaWrap) {
-        const spin = document.createElement('div');
-        spin.className = 'sb-card__uploading-overlay';
+        const spin = document.createElement("div");
+        spin.className = "sb-card__uploading-overlay";
         spin.innerHTML = `<div class="sb-card__upload-spinner"></div><span>Uploading to Cloud...</span>`;
         mediaWrap.appendChild(spin);
       }
 
-      const res = await uploadMedia(file, 'stories');
+      const res = await uploadMedia(file, "stories");
       bookPages[idx].image = res.url;
       saveDraft();
       overlay.remove();
@@ -4095,38 +5367,46 @@ function openStoryboard(): void {
   });
 
   // Text editing
-  overlay.querySelectorAll('[data-sb-text]').forEach(ta => {
+  overlay.querySelectorAll("[data-sb-text]").forEach((ta) => {
     const handleInput = () => {
-      const idx = parseInt(ta.getAttribute('data-sb-text') || '0');
+      const idx = parseInt(ta.getAttribute("data-sb-text") || "0");
       bookPages[idx].text = (ta as HTMLTextAreaElement).value;
-      bookPages[idx].dialogueLines = parseScreenplayToDialogueLines((ta as HTMLTextAreaElement).value, bookPages[idx].dialogueLines);
+      bookPages[idx].dialogueLines = parseScreenplayToDialogueLines(
+        (ta as HTMLTextAreaElement).value,
+        bookPages[idx].dialogueLines,
+      );
       syncDialogText(idx);
       saveDraft();
     };
-    ta.addEventListener('input', handleInput);
-    ta.addEventListener('paste', () => setTimeout(handleInput, 0));
+    ta.addEventListener("input", handleInput);
+    ta.addEventListener("paste", () => setTimeout(handleInput, 0));
   });
 
   // Multi-character dialogue line events for storyboard
-  wireDialogueLineEvents(overlay, 'sbd', () => { overlay.remove(); openStoryboard(); });
-
+  wireDialogueLineEvents(overlay, "sbd", () => {
+    overlay.remove();
+    openStoryboard();
+  });
 
   // Deeper dive content
-  overlay.querySelectorAll('[data-sb-dd]').forEach(ta => {
+  overlay.querySelectorAll("[data-sb-dd]").forEach((ta) => {
     const handleInput = () => {
-      const idx = parseInt(ta.getAttribute('data-sb-dd') || '0');
+      const idx = parseInt(ta.getAttribute("data-sb-dd") || "0");
       bookPages[idx].deeperDiveContent = (ta as HTMLTextAreaElement).value;
       saveDraft();
     };
-    ta.addEventListener('input', handleInput);
-    ta.addEventListener('paste', () => setTimeout(handleInput, 0));
+    ta.addEventListener("input", handleInput);
+    ta.addEventListener("paste", () => setTimeout(handleInput, 0));
   });
 
   // Delete page
-  overlay.querySelectorAll('[data-sb-delete]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.getAttribute('data-sb-delete') || '0');
-      if (bookPages.length <= 1) { alert('At least one page must remain.'); return; }
+  overlay.querySelectorAll("[data-sb-delete]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-sb-delete") || "0");
+      if (bookPages.length <= 1) {
+        alert("At least one page must remain.");
+        return;
+      }
       if (!confirm(`Delete Page ${idx + 1}?`)) return;
       bookPages.splice(idx, 1);
       if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
@@ -4137,9 +5417,9 @@ function openStoryboard(): void {
   });
 
   // Move Up (Storyboard)
-  overlay.querySelectorAll('[data-sb-move-up]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.getAttribute('data-sb-move-up') || '0');
+  overlay.querySelectorAll("[data-sb-move-up]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-sb-move-up") || "0");
       if (idx <= 0) return;
       const temp = bookPages[idx];
       bookPages[idx] = bookPages[idx - 1];
@@ -4152,9 +5432,9 @@ function openStoryboard(): void {
   });
 
   // Move Down (Storyboard)
-  overlay.querySelectorAll('[data-sb-move-down]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.getAttribute('data-sb-move-down') || '0');
+  overlay.querySelectorAll("[data-sb-move-down]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-sb-move-down") || "0");
       if (idx >= bookPages.length - 1) return;
       const temp = bookPages[idx];
       bookPages[idx] = bookPages[idx + 1];
@@ -4166,66 +5446,60 @@ function openStoryboard(): void {
     });
   });
 
-  // Duplicate (Storyboard)
-  overlay.querySelectorAll('[data-sb-duplicate]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.getAttribute('data-sb-duplicate') || '0');
-      const src = bookPages[idx];
-      const clonedDialogue = (src.dialogueLines || []).map(line => ({
-        ...line,
-        id: 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      }));
-      const clonedPage: BookPage = {
-        ...src,
-        dialogueLines: clonedDialogue,
-      };
-      bookPages.splice(idx + 1, 0, clonedPage);
-      currentPage = idx + 1;
-      saveDraft();
-      overlay.remove();
-      openStoryboard();
-    });
-  });
+
 
   // Dialog text editing
-  overlay.querySelectorAll('[data-sb-dialog]').forEach(ta => {
+  overlay.querySelectorAll("[data-sb-dialog]").forEach((ta) => {
     const handleInput = () => {
-      const idx = parseInt(ta.getAttribute('data-sb-dialog') || '0');
+      const idx = parseInt(ta.getAttribute("data-sb-dialog") || "0");
       bookPages[idx].dialogText = (ta as HTMLTextAreaElement).value;
       saveDraft();
     };
-    ta.addEventListener('input', handleInput);
-    ta.addEventListener('paste', () => setTimeout(handleInput, 0));
+    ta.addEventListener("input", handleInput);
+    ta.addEventListener("paste", () => setTimeout(handleInput, 0));
   });
 
   // --- Audio source selector (video pages) ---
-  overlay.querySelectorAll('[data-audio-src]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const src = (btn as HTMLElement).getAttribute('data-audio-src') as 'native' | 'upload' | 'ai' | 'silent';
-      const pageIdx = parseInt((btn as HTMLElement).getAttribute('data-audio-src-page') || '0');
+  overlay.querySelectorAll("[data-audio-src]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const src = (btn as HTMLElement).getAttribute("data-audio-src") as
+        "native" | "upload" | "ai" | "silent";
+      const pageIdx = parseInt(
+        (btn as HTMLElement).getAttribute("data-audio-src-page") || "0",
+      );
       bookPages[pageIdx].audioSource = src;
       // Update active states
-      const selectorWrap = (btn as HTMLElement).closest('.sb-audio-source-selector');
+      const selectorWrap = (btn as HTMLElement).closest(
+        ".sb-audio-source-selector",
+      );
       if (selectorWrap) {
-        selectorWrap.querySelectorAll('.sb-audio-src-btn').forEach(b => b.classList.remove('sb-audio-src-btn--active'));
-        (btn as HTMLElement).classList.add('sb-audio-src-btn--active');
+        selectorWrap
+          .querySelectorAll(".sb-audio-src-btn")
+          .forEach((b) => b.classList.remove("sb-audio-src-btn--active"));
+        (btn as HTMLElement).classList.add("sb-audio-src-btn--active");
       }
       saveDraft();
     });
   });
 
   // --- Storyboard audio upload triggers (simple_upload mode) ---
-  overlay.querySelectorAll('[data-audio-upload-trigger]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = (btn as HTMLElement).getAttribute('data-audio-upload-trigger');
-      const input = overlay.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+  overlay.querySelectorAll("[data-audio-upload-trigger]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = (btn as HTMLElement).getAttribute(
+        "data-audio-upload-trigger",
+      );
+      const input = overlay.querySelector(
+        `[data-audio-file="${idx}"]`,
+      ) as HTMLInputElement;
       if (input) input.click();
     });
   });
 
-  overlay.querySelectorAll('[data-audio-file]').forEach(input => {
-    input.addEventListener('change', async () => {
-      const idx = parseInt((input as HTMLElement).getAttribute('data-audio-file') || '0');
+  overlay.querySelectorAll("[data-audio-file]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const idx = parseInt(
+        (input as HTMLElement).getAttribute("data-audio-file") || "0",
+      );
       const file = (input as HTMLInputElement).files?.[0];
       if (!file) return;
       // Use the existing upload handler from attachListenersGlobal context
@@ -4242,9 +5516,11 @@ function openStoryboard(): void {
     });
   });
 
-  overlay.querySelectorAll('[data-audio-remove]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-remove') || '0');
+  overlay.querySelectorAll("[data-audio-remove]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(
+        (btn as HTMLElement).getAttribute("data-audio-remove") || "0",
+      );
       bookPages[idx].audioUrl = null;
       bookPages[idx].audioFileName = null;
       saveDraft();
@@ -4253,42 +5529,48 @@ function openStoryboard(): void {
     });
   });
 
-  overlay.querySelectorAll('[data-audio-replace]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = (btn as HTMLElement).getAttribute('data-audio-replace');
-      const input = overlay.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+  overlay.querySelectorAll("[data-audio-replace]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = (btn as HTMLElement).getAttribute("data-audio-replace");
+      const input = overlay.querySelector(
+        `[data-audio-file="${idx}"]`,
+      ) as HTMLInputElement;
       if (input) input.click();
     });
   });
 
   // --- Drag and Drop reordering ---
   let dragSrcIdx: number | null = null;
-  const track = document.getElementById('sb-track');
-  const cards = overlay.querySelectorAll('.sb-card');
+  const track = document.getElementById("sb-track");
+  const cards = overlay.querySelectorAll(".sb-card");
 
-  cards.forEach(card => {
-    card.addEventListener('dragstart', (e: Event) => {
+  cards.forEach((card) => {
+    card.addEventListener("dragstart", (e: Event) => {
       const de = e as DragEvent;
-      dragSrcIdx = parseInt((card as HTMLElement).getAttribute('data-sb-card') || '0');
-      (card as HTMLElement).classList.add('sb-card--dragging');
-      de.dataTransfer!.effectAllowed = 'move';
-      de.dataTransfer!.setData('text/plain', String(dragSrcIdx));
+      dragSrcIdx = parseInt(
+        (card as HTMLElement).getAttribute("data-sb-card") || "0",
+      );
+      (card as HTMLElement).classList.add("sb-card--dragging");
+      de.dataTransfer!.effectAllowed = "move";
+      de.dataTransfer!.setData("text/plain", String(dragSrcIdx));
     });
 
-    card.addEventListener('dragover', (e: Event) => {
+    card.addEventListener("dragover", (e: Event) => {
       e.preventDefault();
-      (e as DragEvent).dataTransfer!.dropEffect = 'move';
-      (card as HTMLElement).classList.add('sb-card--drag-over');
+      (e as DragEvent).dataTransfer!.dropEffect = "move";
+      (card as HTMLElement).classList.add("sb-card--drag-over");
     });
 
-    card.addEventListener('dragleave', () => {
-      (card as HTMLElement).classList.remove('sb-card--drag-over');
+    card.addEventListener("dragleave", () => {
+      (card as HTMLElement).classList.remove("sb-card--drag-over");
     });
 
-    card.addEventListener('drop', (e: Event) => {
+    card.addEventListener("drop", (e: Event) => {
       e.preventDefault();
-      (card as HTMLElement).classList.remove('sb-card--drag-over');
-      const dropIdx = parseInt((card as HTMLElement).getAttribute('data-sb-card') || '0');
+      (card as HTMLElement).classList.remove("sb-card--drag-over");
+      const dropIdx = parseInt(
+        (card as HTMLElement).getAttribute("data-sb-card") || "0",
+      );
       if (dragSrcIdx !== null && dragSrcIdx !== dropIdx) {
         // Reorder bookPages
         const [movedPage] = bookPages.splice(dragSrcIdx, 1);
@@ -4299,9 +5581,11 @@ function openStoryboard(): void {
       }
     });
 
-    card.addEventListener('dragend', () => {
-      (card as HTMLElement).classList.remove('sb-card--dragging');
-      cards.forEach(c => (c as HTMLElement).classList.remove('sb-card--drag-over'));
+    card.addEventListener("dragend", () => {
+      (card as HTMLElement).classList.remove("sb-card--dragging");
+      cards.forEach((c) =>
+        (c as HTMLElement).classList.remove("sb-card--drag-over"),
+      );
       dragSrcIdx = null;
     });
   });
@@ -4310,20 +5594,39 @@ function openStoryboard(): void {
 // â”€â”€â”€ Voice Note (Speech-to-Text) â”€â”€â”€
 let activeRecognition: any = null;
 
-
-
-
 let attachListenersGlobal: () => void = () => {};
 
-// â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
+// â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â•
 //  DETAILS (shared by all formats)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function renderPhase(): string {
-  const formatLabel = selectedFormat === 'book' ? '📖 Illustrated Book' : '📜 Waterfall Storyboard';
+  const isEpPublished =
+    String(currentStoryStatus) === "published" ||
+    String(currentStoryStatus) === "live";
+  const formatLabel =
+    selectedFormat === "book"
+      ? "📖 Illustrated Book"
+      : "📜 Waterfall Storyboard";
+
+  const publishedBanner = isEpPublished
+    ? `
+    <div style="background: rgba(239,68,68,0.1); border: 1px solid var(--color-red); padding: 12px; border-radius: 8px; margin-bottom: 16px; color: var(--color-red); text-align: center;">
+      <strong>🔒 Episode Locked</strong><br>
+      This episode is published. Pages and Canvas settings cannot be edited.
+    </div>
+    <style>
+      .book-tile, .panel-tile { pointer-events: none; opacity: 0.6; }
+      [data-tile-upload], [data-tile-file] { display: none !important; }
+      #btn-dd-add-page, #btn-dd-add-panel, #btn-dd-batch-prerecord, .sb-card__audio-source, #btn-dd-storyboard, .canvas-toolbar__btn:not(#btn-toolbar-menu):not(#btn-toolbar-quit) { display: none; }
+    </style>
+  `
+    : "";
 
   // Episode context banner — shown when creating a new episode for an existing story
-  const episodeBanner = (episodeStoryGroupId && (episodeNumber > 1 || episodeParentTitle)) ? `
+  const episodeBanner =
+    episodeStoryGroupId && (episodeNumber > 1 || episodeParentTitle)
+      ? `
     <div style="
       background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(59,130,246,0.1));
       border: 1px solid rgba(16,185,129,0.3);
@@ -4354,17 +5657,22 @@ function renderPhase(): string {
         </div>
       </div>
     </div>
-  ` : '';
+  `
+      : "";
 
-  if (phase === 'canvas') {
-    return episodeBanner + (selectedFormat === 'book' ? renderBookCanvas() : renderScrollCanvas());
+  if (phase === "canvas") {
+    return (
+      episodeBanner +
+      publishedBanner +
+      (selectedFormat === "book" ? renderBookCanvas() : renderScrollCanvas())
+    );
   }
-  return episodeBanner;
+  return episodeBanner + publishedBanner;
 }
 
 export function render(): string {
   return `
-    <div class="view-create view-create--canvas" id="admin-create-container" style="--story-theme-color: ${storyThemeColor || '#141424'};">
+    <div class="view-create view-create--canvas" id="admin-create-container" style="--story-theme-color: ${storyThemeColor || "#141424"};">
       <div class="admin-create-wizard admin-create-wizard--canvas slide-up stagger-1" id="admin-admin-create-wizard">
         ${renderPhase()}
       </div>
@@ -4373,7 +5681,7 @@ export function render(): string {
 }
 
 export function init(): void {
-  const wizard = document.getElementById('admin-admin-create-wizard');
+  const wizard = document.getElementById("admin-admin-create-wizard");
   if (!wizard) return;
 
   const currentRoute = getCurrentRoute();
@@ -4386,7 +5694,10 @@ export function init(): void {
   const epNumMatch = window.location.hash.match(/episodeNumber=([^&]+)/);
   const titleMatch = window.location.hash.match(/storyTitle=([^&]+)/);
   if (groupIdMatch) episodeStoryGroupId = groupIdMatch[1];
-  if (epNumMatch) episodeNumber = parseInt(epNumMatch[1], 10) || 1;
+  if (epNumMatch) {
+    const parsedEpNum = parseFloat(epNumMatch[1]);
+    episodeNumber = !isNaN(parsedEpNum) && parsedEpNum > 0 ? parsedEpNum : 1;
+  }
   if (titleMatch) episodeParentTitle = decodeURIComponent(titleMatch[1]);
 
   let attachListeners: () => void = () => {};
@@ -4396,189 +5707,363 @@ export function init(): void {
       // Check for local draft first
       const existingDraft = getDraft();
       if (existingDraft && existingDraft.editStoryId === editId) {
-        // Local draft exists for this story — use it (preserves unsaved changes)
+        // Local draft exists for this story — use it (preserves unsaved page & episode-level changes),
+        // then sync shared Story Settings (cast, mute flags, voices, title, theme, etc.)
+        // in case they were updated in Admin > Story Settings.
         loadDraft(existingDraft);
-      } else {
-      
-      const stories = await fetchOfficialStories();
-      let storyToEdit = stories.find(s => s.id === editId);
-      if (!storyToEdit) {
         try {
-          const userStory = await fetchStoryByIdFromDb(editId);
-          if (userStory) storyToEdit = userStory as any;
+          const stories = await fetchOfficialStories();
+          const storyToEdit = stories.find((s) => s.id === editId);
+          if (storyToEdit) {
+            currentOfficialRecord = storyToEdit;
+            currentStoryStatus =
+              (storyToEdit as any).status ||
+              storyToEdit.officialStatus ||
+              currentStoryStatus ||
+              "draft";
+            if (storyToEdit.title) storyTitle = storyToEdit.title;
+            if (existingDraft.episodeTitle === undefined && storyToEdit.episodeTitle !== undefined) {
+              episodeTitle = storyToEdit.episodeTitle || "";
+            }
+            if (storyToEdit.genre) storyGenre = storyToEdit.genre;
+            if (storyToEdit.synopsis !== undefined)
+              storySynopsis = storyToEdit.synopsis;
+            if (storyToEdit.themeColor)
+              storyThemeColor = storyToEdit.themeColor;
+            if (!existingDraft.coverThumbnail && storyToEdit.coverImage) {
+              _coverThumbnail = storyToEdit.coverImage;
+            }
+            if (storyToEdit.coverVideo !== undefined)
+              storyCoverVideo = storyToEdit.coverVideo || "";
+            episodeStoryGroupId = storyToEdit.storyGroupId || storyToEdit.id;
+            if (existingDraft.episodeNumber === undefined) {
+              episodeNumber = storyToEdit.episodeNumber ?? episodeNumber ?? 1;
+            }
+            const ep1 = stories.find(
+              (s) =>
+                (s.storyGroupId || s.id) === episodeStoryGroupId &&
+                (s.episodeNumber ?? 1) === 1,
+            );
+            applySavedCast(storyToEdit.characters, {
+              narratorVoiceId:
+                storyToEdit.narratorVoiceId || "21m00Tcm4TlvDq8ikWAM",
+              narratorHighlightColor: storyToEdit.narratorHighlightColor,
+              manualNumbering:
+                storyToEdit.manualNumbering || ep1?.manualNumbering,
+            });
+            saveDraft();
+          }
         } catch {}
-      }
-      if (storyToEdit) {
-        currentStoryStatus = (storyToEdit as any).status || storyToEdit.officialStatus || 'draft';
-        currentRejectionReason = (storyToEdit as any).rejectionReason || (storyToEdit as any).rejection_reason;
-        editStoryId = storyToEdit.id;
-        storyTitle = storyToEdit.title;
-        storyGenre = storyToEdit.genre;
-        selectedFormat = storyToEdit.format;
-        storySynopsis = storyToEdit.synopsis;
-        storyAuthorName = storyToEdit.author;
-        _coverThumbnail = storyToEdit.coverImage;
-        storyContentRating = storyToEdit.contentRating || 'All Ages';
-        storyCoverVideo = storyToEdit.coverVideo || '';
-        _autoEpisodeThumbnail = storyToEdit.episodeThumbnail || '';
-        _autoSeriesCover = storyToEdit.seriesCoverImage || '';
-        // Load episode metadata from existing story
-        episodeStoryGroupId = storyToEdit.storyGroupId || storyToEdit.id;
-        episodeNumber = storyToEdit.episodeNumber || 1;
-        // Load characters and audio mode
-        storyAudioMode = storyToEdit.audioMode || 'make_audio';
-        applySavedCast(storyToEdit.characters, { narratorVoiceId: storyToEdit.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM', narratorHighlightColor: storyToEdit.narratorHighlightColor });
-        soloEpisodeCount = storyToEdit.soloEpisodeCount || 1;
-        storyThemeColor = storyToEdit.themeColor || '#141424';
-        if (storyToEdit.sparcPrompt) {
-          sparcPromptText = storyToEdit.sparcPrompt.text || '';
-          sparcPromptMediaUrls = storyToEdit.sparcPrompt.mediaUrls ? [...storyToEdit.sparcPrompt.mediaUrls] : [];
-        } else {
-          sparcPromptText = '';
-          sparcPromptMediaUrls = [];
+      } else {
+        const stories = await fetchOfficialStories();
+        let storyToEdit = stories.find((s) => s.id === editId);
+        if (!storyToEdit) {
+          try {
+            const userStory = await fetchStoryByIdFromDb(editId);
+            if (userStory) storyToEdit = userStory as any;
+          } catch {}
         }
+        if (storyToEdit) {
+          currentOfficialRecord = storyToEdit;
+          currentStoryStatus =
+            (storyToEdit as any).status ||
+            storyToEdit.officialStatus ||
+            "draft";
+          currentRejectionReason =
+            (storyToEdit as any).rejectionReason ||
+            (storyToEdit as any).rejection_reason;
+          editStoryId = storyToEdit.id;
+          storyTitle = storyToEdit.title;
+          episodeTitle = storyToEdit.episodeTitle || "";
+          storyGenre = storyToEdit.genre;
+          selectedFormat = storyToEdit.format;
+          storySynopsis = storyToEdit.synopsis;
+          storyAuthorName = storyToEdit.author;
+          _coverThumbnail = storyToEdit.coverImage;
+          storyContentRating = storyToEdit.contentRating || "All Ages";
+          storyCoverVideo = storyToEdit.coverVideo || "";
+          _autoEpisodeThumbnail = storyToEdit.episodeThumbnail || "";
+          _autoSeriesCover = storyToEdit.seriesCoverImage || "";
+          // Load episode metadata from existing story
+          episodeStoryGroupId = storyToEdit.storyGroupId || storyToEdit.id;
+          episodeNumber = storyToEdit.episodeNumber ?? 1;
+          // Load characters and audio mode
+          storyAudioMode = storyToEdit.audioMode || "make_audio";
+          const ep1 = stories.find(
+            (s) =>
+              (s.storyGroupId || s.id) === episodeStoryGroupId &&
+              (s.episodeNumber ?? 1) === 1,
+          );
+          applySavedCast(storyToEdit.characters, {
+            narratorVoiceId:
+              storyToEdit.narratorVoiceId || "21m00Tcm4TlvDq8ikWAM",
+            narratorHighlightColor: storyToEdit.narratorHighlightColor,
+            manualNumbering:
+              storyToEdit.manualNumbering || ep1?.manualNumbering,
+          });
+          soloEpisodeCount = storyToEdit.soloEpisodeCount || 1;
+          storyThemeColor = storyToEdit.themeColor || "#141424";
+          if (storyToEdit.sparcPrompt) {
+            sparcPromptText = storyToEdit.sparcPrompt.text || "";
+            sparcPromptMediaUrls = storyToEdit.sparcPrompt.mediaUrls
+              ? [...storyToEdit.sparcPrompt.mediaUrls]
+              : [];
+          } else {
+            sparcPromptText = "";
+            sparcPromptMediaUrls = [];
+          }
 
-        if (selectedFormat === 'book') {
-           bookPages = storyToEdit.panels.map((p, i) => ({
-             image: p, text: storyToEdit.pageScripts?.[i] || '', stability: 0.5, deeperDiveContent: '',
-             audioUrl: storyToEdit.pageAudio?.[i] || null,
-             audioFileName: null,
-             dialogText: '', dialogAudioUrl: null,
-             dialogueLines: storyToEdit.pageDialogue?.[i] || [],
-             focalPosition: (storyToEdit.pageFocalPositions?.[i] as 'top' | 'center' | 'bottom') || 'center',
-             audioSource: (storyToEdit.pageAudioSource?.[i] as 'native' | 'upload' | 'ai' | 'silent') || undefined,
-           }));
-        } else {
-           scrollPanels = storyToEdit.panels.map((p, i) => ({
-             image: p, notes: storyToEdit.pageScripts?.[i] || '', layout: 'single', tiles: [p], textOverlays: [[]], audioUrl: null
-           }));
+          if (selectedFormat === "book") {
+            bookPages = storyToEdit.panels.map((p, i) => ({
+              image: p,
+              text: storyToEdit.pageScripts?.[i] || "",
+              stability: 0.5,
+              deeperDiveContent: "",
+              audioUrl: storyToEdit.pageAudio?.[i] || null,
+              audioFileName: null,
+              dialogText: "",
+              dialogAudioUrl: null,
+              dialogueLines: storyToEdit.pageDialogue?.[i] || [],
+              focalPosition:
+                (storyToEdit.pageFocalPositions?.[i] as
+                  "top" | "center" | "bottom") || "center",
+              audioSource:
+                (storyToEdit.pageAudioSource?.[i] as
+                  "native" | "upload" | "ai" | "silent") || undefined,
+            }));
+            reparseAllBookPages();
+          } else {
+            scrollPanels = storyToEdit.panels.map((p, i) => ({
+              image: p,
+              notes: storyToEdit.pageScripts?.[i] || "",
+              layout: "single",
+              tiles: [p],
+              textOverlays: [[]],
+              audioUrl: null,
+            }));
+          }
         }
-      }
       }
     } else if (groupIdMatch) {
-      // Check for existing draft first — preserve work on page refresh
+      const isNewGroupEp =
+        window.location.hash.includes("new=true") ||
+        window.location.hash.includes("new=1");
+      if (isNewGroupEp) {
+        const cleanHash = window.location.hash
+          .replace(/[&?]new=true/g, "")
+          .replace(/[&?]new=1/g, "")
+          .replace(/\?&/, "?")
+          .replace(/\?$/, "");
+        history.replaceState(null, "", cleanHash || "#admin-create");
+      }
+
+      // Check for existing draft first — preserve work on page refresh or return from Story Settings
       const existingDraft = getDraft();
-      if (existingDraft 
-          && existingDraft.bookPages && existingDraft.bookPages.length > 1
-          && existingDraft.episodeStoryGroupId === episodeStoryGroupId
-          && existingDraft.episodeNumber === episodeNumber) {
-        // Draft has real content and matches episode — load it instead of resetting
+      if (
+        !isNewGroupEp &&
+        existingDraft &&
+        !existingDraft.editStoryId &&
+        existingDraft.episodeStoryGroupId === episodeStoryGroupId
+      ) {
+        // Draft matches this group's unsaved episode — load it instead of resetting
         loadDraft(existingDraft);
+        try {
+          const groupStories = await fetchOfficialStories();
+          const ep1 = groupStories.find(
+            (s) =>
+              (s.storyGroupId || s.id) === episodeStoryGroupId &&
+              (s.episodeNumber ?? 1) === 1,
+          );
+          if (ep1?.characters?.length) {
+            applySavedCast(ep1.characters, {
+              narratorVoiceId: ep1.narratorVoiceId,
+              narratorHighlightColor: ep1.narratorHighlightColor,
+              manualNumbering: ep1.manualNumbering,
+            });
+            saveDraft();
+          } else if (ep1?.manualNumbering !== undefined) {
+            storyManualNumbering = Boolean(ep1.manualNumbering);
+            saveDraft();
+          }
+        } catch {}
         updateView();
         return;
       }
       // Adding a brand new episode to an existing story group
-      // Only clear draft if user explicitly clicked "+ Add Episode" (new=true in URL)
-      // Don't clear when just loading an existing draft that happens to have storyGroupId
       editStoryId = null;
-      selectedFormat = (qFormat as StoryFormat) || 'book';
-      storyTitle = episodeParentTitle || '';
-      _coverThumbnail = '';
-      storyCoverVideo = '';
-      _autoEpisodeThumbnail = '';
-      _autoSeriesCover = '';
-      storySynopsis = '';
+      selectedFormat = (qFormat as StoryFormat) || "book";
+      storyTitle = episodeParentTitle || "";
+      episodeTitle = "";
+      _coverThumbnail = "";
+      storyCoverVideo = "";
+      _autoEpisodeThumbnail = "";
+      _autoSeriesCover = "";
+      storySynopsis = "";
       currentPage = 0;
 
       // Parse inherited settings from URL params
       const genreParam = window.location.hash.match(/genre=([^&]+)/);
       const ratingParam = window.location.hash.match(/contentRating=([^&]+)/);
       const audioModeParam = window.location.hash.match(/audioMode=([^&]+)/);
-      const voiceIdParam = window.location.hash.match(/narratorVoiceId=([^&]+)/);
-      const soloEpParam = window.location.hash.match(/soloEpisodeCount=([^&]+)/);
+      const voiceIdParam = window.location.hash.match(
+        /narratorVoiceId=([^&]+)/,
+      );
+      const soloEpParam = window.location.hash.match(
+        /soloEpisodeCount=([^&]+)/,
+      );
 
-      if (genreParam) storyGenre = decodeURIComponent(genreParam[1]) as typeof storyGenre;
-      if (ratingParam) storyContentRating = decodeURIComponent(ratingParam[1]) as typeof storyContentRating;
-      if (audioModeParam) storyAudioMode = decodeURIComponent(audioModeParam[1]) as typeof storyAudioMode;
-      if (voiceIdParam) storyNarratorVoiceId = decodeURIComponent(voiceIdParam[1]);
-      if (soloEpParam) soloEpisodeCount = parseInt(soloEpParam[1], 10) as 1 | 2 | 3;
+      if (genreParam)
+        storyGenre = decodeURIComponent(genreParam[1]) as typeof storyGenre;
+      if (ratingParam)
+        storyContentRating = decodeURIComponent(
+          ratingParam[1],
+        ) as typeof storyContentRating;
+      if (audioModeParam)
+        storyAudioMode = decodeURIComponent(
+          audioModeParam[1],
+        ) as typeof storyAudioMode;
+      if (voiceIdParam)
+        storyNarratorVoiceId = decodeURIComponent(voiceIdParam[1]);
+      if (soloEpParam)
+        soloEpisodeCount = parseInt(soloEpParam[1], 10) as 1 | 2 | 3;
 
       // Fetch characters from Episode 1 of this group
       try {
         const groupStories = await fetchOfficialStories();
-        const ep1 = groupStories.find(s => (s.storyGroupId || s.id) === episodeStoryGroupId && (s.episodeNumber || 1) === 1);
+        const ep1 = groupStories.find(
+          (s) =>
+            (s.storyGroupId || s.id) === episodeStoryGroupId &&
+            (s.episodeNumber ?? 1) === 1,
+        );
         if (ep1) {
           if (ep1.characters && ep1.characters.length > 0) {
             const keepNarrator = storyNarratorVoiceId;
-            applySavedCast(ep1.characters, { narratorVoiceId: ep1.narratorVoiceId });
+            applySavedCast(ep1.characters, {
+              narratorVoiceId: ep1.narratorVoiceId,
+              manualNumbering: ep1.manualNumbering,
+            });
             if (voiceIdParam) storyNarratorVoiceId = keepNarrator;
+          } else if (ep1.manualNumbering !== undefined) {
+            storyManualNumbering = Boolean(ep1.manualNumbering);
           }
           // Inherit genre/rating/etc from episode 1 if not already set via URL params
           if (!genreParam && ep1.genre) storyGenre = ep1.genre;
-          if (!ratingParam && ep1.contentRating) storyContentRating = ep1.contentRating;
+          if (!ratingParam && ep1.contentRating)
+            storyContentRating = ep1.contentRating;
           if (!audioModeParam && ep1.audioMode) storyAudioMode = ep1.audioMode;
-          if (!voiceIdParam && ep1.narratorVoiceId) storyNarratorVoiceId = ep1.narratorVoiceId;
-          if (!soloEpParam && ep1.soloEpisodeCount) soloEpisodeCount = ep1.soloEpisodeCount as 1 | 2 | 3;
+          if (!voiceIdParam && ep1.narratorVoiceId)
+            storyNarratorVoiceId = ep1.narratorVoiceId;
+          if (!soloEpParam && ep1.soloEpisodeCount)
+            soloEpisodeCount = ep1.soloEpisodeCount as 1 | 2 | 3;
           if (ep1.themeColor) storyThemeColor = ep1.themeColor;
         }
       } catch (err) {
-        console.warn('[AdminCreate] Could not fetch Episode 1 for settings inheritance:', err);
+        console.warn(
+          "[AdminCreate] Could not fetch Episode 1 for settings inheritance:",
+          err,
+        );
       }
 
-      if (selectedFormat === 'book') {
-        bookPages = [{
-          image: '', text: '', stability: 0.5, deeperDiveContent: '', audioUrl: null, dialogText: '', dialogAudioUrl: null, dialogueLines: [], focalPosition: 'center', audioFileName: null
-        }];
+      if (selectedFormat === "book") {
+        bookPages = [
+          {
+            image: "",
+            text: "",
+            stability: 0.5,
+            deeperDiveContent: "",
+            audioUrl: null,
+            dialogText: "",
+            dialogAudioUrl: null,
+            dialogueLines: [],
+            focalPosition: "center",
+            audioFileName: null,
+          },
+        ];
       } else {
-        scrollPanels = [{
-          image: '', notes: '', layout: 'single', tiles: [''], textOverlays: [[]], audioUrl: null
-        }];
+        scrollPanels = [
+          {
+            image: "",
+            notes: "",
+            layout: "single",
+            tiles: [""],
+            textOverlays: [[]],
+            audioUrl: null,
+          },
+        ];
       }
     } else {
-      const isNew = window.location.hash.includes('new=true') || window.location.hash.includes('new=1');
+      const isNew =
+        window.location.hash.includes("new=true") ||
+        window.location.hash.includes("new=1");
       if (isNew) {
         // Strip new=true/new=1 from URL IMMEDIATELY so subsequent re-renders
         // (auth token refresh, tab restore, F5) load the draft instead of wiping it.
         const cleanHash = window.location.hash
-          .replace(/[&?]new=true/g, '')
-          .replace(/[&?]new=1/g, '')
-          .replace(/\?&/, '?')       // fix orphaned ?& 
-          .replace(/\?$/, '');        // fix trailing ?
-        history.replaceState(null, '', cleanHash || '#admin-create');
+          .replace(/[&?]new=true/g, "")
+          .replace(/[&?]new=1/g, "")
+          .replace(/\?&/, "?") // fix orphaned ?&
+          .replace(/\?$/, ""); // fix trailing ?
+        history.replaceState(null, "", cleanHash || "#admin-create");
 
         clearDraft();
         editStoryId = null;
-        selectedFormat = (qFormat as StoryFormat) || 'book';
-        storyTitle = '';
-        _coverThumbnail = '';
-        storyCoverVideo = '';
-        _autoEpisodeThumbnail = '';
-        _autoSeriesCover = '';
-        storySynopsis = '';
+        selectedFormat = (qFormat as StoryFormat) || "book";
+        storyTitle = "";
+        episodeTitle = "";
+        _coverThumbnail = "";
+        storyCoverVideo = "";
+        _autoEpisodeThumbnail = "";
+        _autoSeriesCover = "";
+        storySynopsis = "";
         currentPage = 0;
         storyCharacters = [];
-        storyPlainTextVoiceId = '';
-        storyPlainTextColor = '';
-        if (selectedFormat === 'book') {
+        storyPlainTextVoiceId = "";
+        storyPlainTextColor = "";
+        storyNarratorMuted = false;
+        storyPlainTextMuted = false;
+        storyManualNumbering = false;
+        if (selectedFormat === "book") {
           bookPages = Array.from({ length: 5 }, () => defaultBookPage());
         } else {
-          scrollPanels = Array.from({ length: 5 }, () => ({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null }));
+          scrollPanels = Array.from({ length: 5 }, () => ({
+            image: null,
+            notes: "",
+            layout: "single",
+            tiles: [null],
+            textOverlays: [[]],
+            audioUrl: null,
+          }));
         }
       } else {
         const draft = getDraft();
         if (draft && (!qFormat || draft.selectedFormat === qFormat)) {
           loadDraft(draft);
         } else {
-          selectedFormat = (qFormat as StoryFormat) || 'book';
+          selectedFormat = (qFormat as StoryFormat) || "book";
         }
       }
     }
 
-    if (selectedFormat === 'book' && currentPage < 0) currentPage = 0;
+    if (selectedFormat === "book" && currentPage < 0) currentPage = 0;
 
     updateView = () => {
       saveDraft();
-      const container = document.getElementById('admin-create-container');
+      const container = document.getElementById("admin-create-container");
       if (container && storyThemeColor) {
-        container.style.setProperty('--story-theme-color', storyThemeColor);
+        container.style.setProperty("--story-theme-color", storyThemeColor);
       }
-      const wiz = document.getElementById('admin-admin-create-wizard');
+      const wiz = document.getElementById("admin-admin-create-wizard");
       if (wiz) {
         wiz.innerHTML = renderPhase();
         attachListeners();
+        document.querySelectorAll("textarea").forEach((ta) => {
+          if (ta.id !== "script-text-input" && ta.id !== "char-popup-desc") {
+            autoGrow(ta);
+          }
+        });
       }
-      if (selectedFormat === 'book' && isDesktopScreen()) {
-        activeEditorMode = 'storyboard';
+      if (selectedFormat === "book" && isDesktopScreen()) {
+        activeEditorMode = "storyboard";
         openStoryboard();
       }
     };
@@ -4587,10 +6072,10 @@ export function init(): void {
 
   attachListenersGlobal = () => attachListeners();
 
-  window.addEventListener('resize', () => {
-    if (!isDesktopScreen() && document.querySelector('.storyboard-overlay')) {
-      document.querySelector('.storyboard-overlay')?.remove();
-      activeEditorMode = 'mobile';
+  window.addEventListener("resize", () => {
+    if (!isDesktopScreen() && document.querySelector(".storyboard-overlay")) {
+      document.querySelector(".storyboard-overlay")?.remove();
+      activeEditorMode = "mobile";
       updateView();
       showDesktopRequiredModal();
     }
@@ -4598,29 +6083,29 @@ export function init(): void {
 
   loadData();
 
-
-
   attachListeners = () => {
     // ─── SHARED CANVAS TOOLBAR ───
-    if (phase === 'canvas') {
+    if (phase === "canvas") {
       // SPARC Checkpoint Challenge Authoring
       attachSparcAdminListeners(document);
 
       // Previous / Next Episode buttons in the toolbar menu
-      wireEpisodeNav(['btn-dd-prev-episode', 'btn-dd-next-episode']);
+      wireEpisodeNav(["btn-dd-prev-episode", "btn-dd-next-episode"]);
 
       // Auto-save and exit — with dropdown
-      document.getElementById('btn-toolbar-quit')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        // Remove any existing dropdown
-        document.getElementById('quit-dropdown')?.remove();
-        
-        const btn = e.currentTarget as HTMLElement;
-        const rect = btn.getBoundingClientRect();
-        
-        const dropdown = document.createElement('div');
-        dropdown.id = 'quit-dropdown';
-        dropdown.style.cssText = `
+      document
+        .getElementById("btn-toolbar-quit")
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          // Remove any existing dropdown
+          document.getElementById("quit-dropdown")?.remove();
+
+          const btn = e.currentTarget as HTMLElement;
+          const rect = btn.getBoundingClientRect();
+
+          const dropdown = document.createElement("div");
+          dropdown.id = "quit-dropdown";
+          dropdown.style.cssText = `
           position: fixed;
           top: ${rect.bottom + 8}px;
           left: 50%;
@@ -4635,8 +6120,8 @@ export function init(): void {
           overflow: hidden;
           font-family: var(--font-body);
         `;
-        
-        dropdown.innerHTML = `
+
+          dropdown.innerHTML = `
           <button id="quit-save" style="display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; border:none; background:none; color:var(--color-text-primary); cursor:pointer; font-size:0.88rem; text-align:left; font-family:var(--font-body);">
             <span style="font-size:1.1rem;">💾</span> Save & Quit
           </button>
@@ -4649,97 +6134,119 @@ export function init(): void {
             <span style="font-size:1.1rem;">←</span> Go Back
           </button>
         `;
-        
-        document.body.appendChild(dropdown);
-        
-        const exitTarget = isUserMode() ? 'library' : 'admin';
 
-        // Save & Quit
-        document.getElementById('quit-save')?.addEventListener('click', async () => {
-          dropdown.remove();
-          if (!storyTitle.trim()) storyTitle = 'Untitled';
-          getFormData();
-          saveDraft();
-          const story = buildStory('draft');
-          registerStory(story); // Keep in memory
-          try {
-            await preUploadBase64Images();
-          } catch (e) { console.warn('Pre-upload failed:', e); }
-          try {
-            await saveStoryForMode(story);
-          } catch (err: any) {
-            console.error('Cloud save failed on quit:', err);
-            alert('Warning: Story saved locally but cloud save failed. Error: ' + (err?.message || 'Unknown error'));
-          }
-          navigate(exitTarget);
+          document.body.appendChild(dropdown);
+
+          const exitTarget = isUserMode() ? "library" : "admin";
+
+          // Save & Quit
+          document
+            .getElementById("quit-save")
+            ?.addEventListener("click", async () => {
+              dropdown.remove();
+              if (!storyTitle.trim()) storyTitle = "Untitled";
+              getFormData();
+              saveDraft();
+              const story = buildStory("draft");
+              registerStory(story); // Keep in memory
+              try {
+                await preUploadBase64Images();
+              } catch (e) {
+                console.warn("Pre-upload failed:", e);
+              }
+              try {
+                await saveStoryForMode(story);
+              } catch (err: any) {
+                console.error("Cloud save failed on quit:", err);
+                alert(
+                  "Warning: Story saved locally but cloud save failed. Error: " +
+                    (err?.message || "Unknown error"),
+                );
+              }
+              navigate(exitTarget);
+            });
+
+          // Don't Save & Quit
+          document
+            .getElementById("quit-nosave")
+            ?.addEventListener("click", () => {
+              dropdown.remove();
+              navigate(exitTarget);
+            });
+
+          // Go Back (just close the dropdown)
+          document
+            .getElementById("quit-cancel")
+            ?.addEventListener("click", () => {
+              dropdown.remove();
+            });
+
+          // Close dropdown on outside click
+          const closeDropdown = (ev: MouseEvent) => {
+            if (!dropdown.contains(ev.target as Node)) {
+              dropdown.remove();
+              document.removeEventListener("click", closeDropdown);
+            }
+          };
+          setTimeout(
+            () => document.addEventListener("click", closeDropdown),
+            10,
+          );
         });
-        
-        // Don't Save & Quit
-        document.getElementById('quit-nosave')?.addEventListener('click', () => {
-          dropdown.remove();
-          navigate(exitTarget);
-        });
-        
-        // Go Back (just close the dropdown)
-        document.getElementById('quit-cancel')?.addEventListener('click', () => {
-          dropdown.remove();
-        });
-        
-        // Close dropdown on outside click
-        const closeDropdown = (ev: MouseEvent) => {
-          if (!dropdown.contains(ev.target as Node)) {
-            dropdown.remove();
-            document.removeEventListener('click', closeDropdown);
-          }
-        };
-        setTimeout(() => document.addEventListener('click', closeDropdown), 10);
-      });
 
       // Scroll-hide/show toolbar
-      const appContent = document.getElementById('app-content');
-      const toolbar = document.getElementById('canvas-toolbar');
+      const appContent = document.getElementById("app-content");
+      const toolbar = document.getElementById("canvas-toolbar");
       if (appContent && toolbar) {
         let lastScrollY = appContent.scrollTop;
-        appContent.addEventListener('scroll', () => {
-          const currentY = appContent.scrollTop;
-          if (currentY > lastScrollY && currentY > 60) {
-            toolbar.classList.add('canvas-toolbar--hidden');
-          } else {
-            toolbar.classList.remove('canvas-toolbar--hidden');
-          }
-          lastScrollY = currentY;
-        }, { passive: true });
+        appContent.addEventListener(
+          "scroll",
+          () => {
+            const currentY = appContent.scrollTop;
+            if (currentY > lastScrollY && currentY > 60) {
+              toolbar.classList.add("canvas-toolbar--hidden");
+            } else {
+              toolbar.classList.remove("canvas-toolbar--hidden");
+            }
+            lastScrollY = currentY;
+          },
+          { passive: true },
+        );
       }
     }
 
     // â”€â”€â”€ ENDLESS SCROLL CANVAS (CHARACTER SHEET STUDIO) â”€â”€â”€
-    if (phase === 'canvas' && selectedFormat === 'scroll') {
+    if (phase === "canvas" && selectedFormat === "scroll") {
       // Cleanup stale popup
-      document.getElementById('char-popup-overlay')?.remove();
+      document.getElementById("char-popup-overlay")?.remove();
 
       // Studio Toggle
-      document.getElementById('cs-studio-toggle')?.addEventListener('click', () => {
-        studioOpen = !studioOpen;
-        updateView();
-      });
+      document
+        .getElementById("cs-studio-toggle")
+        ?.addEventListener("click", () => {
+          studioOpen = !studioOpen;
+          updateView();
+        });
 
       // Character Tile Click â€” open popup
-      wizard.querySelectorAll('[data-char-idx]').forEach(tile => {
-        tile.addEventListener('click', () => {
-          activeCharPopup = parseInt(tile.getAttribute('data-char-idx') || '0');
+      wizard.querySelectorAll("[data-char-idx]").forEach((tile) => {
+        tile.addEventListener("click", () => {
+          activeCharPopup = parseInt(tile.getAttribute("data-char-idx") || "0");
           updateView();
         });
       });
 
       // Add Character
-      document.getElementById('btn-add-character')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (characters.length < 10) {
-          const nextLetter = String.fromCharCode(65 + characters.length);
-          characters.push({ name: nextLetter, image: null, description: '' });
-          updateView();
-        }
-      });
+      document
+        .getElementById("btn-add-character")
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (characters.length < 10) {
+            const nextLetter = String.fromCharCode(65 + characters.length);
+            characters.push({ name: nextLetter, image: null, description: "" });
+            updateView();
+          }
+        });
 
       // Character Popup — render as portal on document.body
       if (activeCharPopup !== null) {
@@ -4753,9 +6260,10 @@ export function init(): void {
                 <button id="char-popup-close" style="background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--color-text-muted);">✕</button>
               </div>
               <div class="char-popup__image-area" id="char-popup-image-area">
-                ${char.image 
-                  ? `<img src="${char.image}" alt="Character ${char.name}" />`
-                  : `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--color-text-muted);"><span style="font-size:1.5rem;">📷</span><span style="font-size:0.78rem;">Tap to upload</span></div>`
+                ${
+                  char.image
+                    ? `<img src="${char.image}" alt="Character ${char.name}" />`
+                    : `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--color-text-muted);"><span style="font-size:1.5rem;">📷</span><span style="font-size:0.78rem;">Tap to upload</span></div>`
                 }
                 <input type="file" id="char-popup-file" accept="image/*" hidden />
               </div>
@@ -4764,82 +6272,102 @@ export function init(): void {
               <div class="char-popup__actions">
                 <button class="char-popup__btn char-popup__btn--save" id="char-popup-save">Save</button>
               </div>
-              ${characters.length > 1 ? `<button class="char-popup__btn char-popup__btn--delete" id="char-popup-delete" style="margin-top:6px;width:100%;">Remove</button>` : ''}
+              ${characters.length > 1 ? `<button class="char-popup__btn char-popup__btn--delete" id="char-popup-delete" style="margin-top:6px;width:100%;">Remove</button>` : ""}
             </div>
           </div>
         `;
-        document.body.insertAdjacentHTML('beforeend', popupHtml);
+        document.body.insertAdjacentHTML("beforeend", popupHtml);
 
         // Close button
-        document.getElementById('char-popup-close')?.addEventListener('click', () => {
-          activeCharPopup = null;
-          document.getElementById('char-popup-overlay')?.remove();
-          updateView();
-        });
+        document
+          .getElementById("char-popup-close")
+          ?.addEventListener("click", () => {
+            activeCharPopup = null;
+            document.getElementById("char-popup-overlay")?.remove();
+            updateView();
+          });
 
         // Overlay click (outside popup)
-        document.getElementById('char-popup-overlay')?.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).id === 'char-popup-overlay') {
-            activeCharPopup = null;
-            document.getElementById('char-popup-overlay')?.remove();
-            updateView();
-          }
-        });
+        document
+          .getElementById("char-popup-overlay")
+          ?.addEventListener("click", (e) => {
+            if ((e.target as HTMLElement).id === "char-popup-overlay") {
+              activeCharPopup = null;
+              document.getElementById("char-popup-overlay")?.remove();
+              updateView();
+            }
+          });
 
         // Image area click — trigger file input
-        document.getElementById('char-popup-image-area')?.addEventListener('click', () => {
-          (document.getElementById('char-popup-file') as HTMLInputElement)?.click();
-        });
+        document
+          .getElementById("char-popup-image-area")
+          ?.addEventListener("click", () => {
+            (
+              document.getElementById("char-popup-file") as HTMLInputElement
+            )?.click();
+          });
 
         // File input change
-        (document.getElementById('char-popup-file') as HTMLInputElement)?.addEventListener('change', async (e) => {
+        (
+          document.getElementById("char-popup-file") as HTMLInputElement
+        )?.addEventListener("change", async (e) => {
           const file = (e.target as HTMLInputElement).files?.[0];
           if (file) {
             const dataUrl = await fileToDataUrl(file);
             characters[popupIdx].image = dataUrl;
-            document.getElementById('char-popup-overlay')?.remove();
+            document.getElementById("char-popup-overlay")?.remove();
             updateView();
           }
         });
 
         // Name input
-        const nameInput = document.getElementById('char-popup-name') as HTMLInputElement;
-        nameInput?.addEventListener('input', () => {
+        const nameInput = document.getElementById(
+          "char-popup-name",
+        ) as HTMLInputElement;
+        nameInput?.addEventListener("input", () => {
           characters[popupIdx].name = nameInput.value;
         });
 
         // Description input
-        const descInput = document.getElementById('char-popup-desc') as HTMLTextAreaElement;
-        descInput?.addEventListener('input', () => {
+        const descInput = document.getElementById(
+          "char-popup-desc",
+        ) as HTMLTextAreaElement;
+        descInput?.addEventListener("input", () => {
           characters[popupIdx].description = descInput.value;
         });
         // Save button
-        document.getElementById('char-popup-save')?.addEventListener('click', () => {
-          activeCharPopup = null;
-          document.getElementById('char-popup-overlay')?.remove();
-          saveDraft();
-          updateView();
-        });
+        document
+          .getElementById("char-popup-save")
+          ?.addEventListener("click", () => {
+            activeCharPopup = null;
+            document.getElementById("char-popup-overlay")?.remove();
+            saveDraft();
+            updateView();
+          });
 
         // Delete button
-        document.getElementById('char-popup-delete')?.addEventListener('click', () => {
-          characters.splice(popupIdx, 1);
-          activeCharPopup = null;
-          document.getElementById('char-popup-overlay')?.remove();
-          updateView();
-        });
+        document
+          .getElementById("char-popup-delete")
+          ?.addEventListener("click", () => {
+            characters.splice(popupIdx, 1);
+            activeCharPopup = null;
+            document.getElementById("char-popup-overlay")?.remove();
+            updateView();
+          });
       }
 
       // Script Button
-      document.getElementById('btn-open-script')?.addEventListener('click', () => {
-        showModal({
-          title: 'ðŸ“ Script',
-          content: `
+      document
+        .getElementById("btn-open-script")
+        ?.addEventListener("click", () => {
+          showModal({
+            title: "ðŸ“ Script",
+            content: `
             <div style="display:flex; flex-direction:column; gap:12px;">
               <div>
                 <label style="font-size:0.8rem; font-weight:600; display:block; margin-bottom:4px;">Upload Script (PDF)</label>
                 <div id="script-pdf-zone" style="border:2px dashed var(--color-border); border-radius:12px; padding:20px; text-align:center; cursor:pointer; color:var(--color-text-muted);">
-                  ${scriptPdfName ? `ðŸ“„ ${scriptPdfName}` : 'ðŸ“Ž Click to upload PDF'}
+                  ${scriptPdfName ? `ðŸ“„ ${scriptPdfName}` : "ðŸ“Ž Click to upload PDF"}
                 </div>
                 <input type="file" id="script-pdf-input" accept=".pdf" hidden />
               </div>
@@ -4850,56 +6378,73 @@ export function init(): void {
               </div>
             </div>
           `,
-          confirmText: 'Save Script',
-          cancelText: 'Cancel',
-          onConfirm: () => {
-            const textarea = document.getElementById('script-text-input') as HTMLTextAreaElement;
-            if (textarea) scriptText = textarea.value;
-            saveDraft();
-          },
-        });
-        // Wire up PDF zone click
-        setTimeout(() => {
-          const pdfZone = document.getElementById('script-pdf-zone');
-          const pdfInput = document.getElementById('script-pdf-input') as HTMLInputElement;
-          pdfZone?.addEventListener('click', () => pdfInput?.click());
-          pdfInput?.addEventListener('change', () => {
-            if (pdfInput.files?.[0]) {
-              scriptPdfName = pdfInput.files[0].name;
-              const zone = document.getElementById('script-pdf-zone');
-              if (zone) zone.innerHTML = `ðŸ“„ ${scriptPdfName}`;
-            }
+            confirmText: "Save Script",
+            cancelText: "Cancel",
+            onConfirm: () => {
+              const textarea = document.getElementById(
+                "script-text-input",
+              ) as HTMLTextAreaElement;
+              if (textarea) scriptText = textarea.value;
+              saveDraft();
+            },
           });
-        }, 100);
-      });
+          // Wire up PDF zone click
+          setTimeout(() => {
+            const pdfZone = document.getElementById("script-pdf-zone");
+            const pdfInput = document.getElementById(
+              "script-pdf-input",
+            ) as HTMLInputElement;
+            pdfZone?.addEventListener("click", () => pdfInput?.click());
+            pdfInput?.addEventListener("change", () => {
+              if (pdfInput.files?.[0]) {
+                scriptPdfName = pdfInput.files[0].name;
+                const zone = document.getElementById("script-pdf-zone");
+                if (zone) zone.innerHTML = `ðŸ“„ ${scriptPdfName}`;
+              }
+            });
+          }, 100);
+        });
 
       // Trigger Custom Upload button
-      wizard.querySelectorAll('[data-trigger-file]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt(btn.getAttribute('data-trigger-file') || '0');
-          const fileInput = wizard.querySelector(`[data-file="${idx}"]`) as HTMLInputElement;
+      wizard.querySelectorAll("[data-trigger-file]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(btn.getAttribute("data-trigger-file") || "0");
+          const fileInput = wizard.querySelector(
+            `[data-file="${idx}"]`,
+          ) as HTMLInputElement;
           fileInput?.click();
         });
       });
 
       // Upload click
-      wizard.querySelectorAll('[data-upload]').forEach(block => {
-        block.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).closest('[data-remove]') || (e.target as HTMLElement).closest('[data-gen-panel-ai]')) return;
-          const idx = parseInt(block.getAttribute('data-upload') || '0');
-          const input = wizard.querySelector(`[data-file="${idx}"]`) as HTMLInputElement;
+      wizard.querySelectorAll("[data-upload]").forEach((block) => {
+        block.addEventListener("click", (e) => {
+          if (
+            (e.target as HTMLElement).closest("[data-remove]") ||
+            (e.target as HTMLElement).closest("[data-gen-panel-ai]")
+          )
+            return;
+          const idx = parseInt(block.getAttribute("data-upload") || "0");
+          const input = wizard.querySelector(
+            `[data-file="${idx}"]`,
+          ) as HTMLInputElement;
           input?.click();
         });
 
         // Drag and drop
-        block.addEventListener('dragover', (e) => { e.preventDefault(); block.classList.add('drag-over'); });
-        block.addEventListener('dragleave', () => block.classList.remove('drag-over'));
-        block.addEventListener('drop', async (e) => {
+        block.addEventListener("dragover", (e) => {
           e.preventDefault();
-          block.classList.remove('drag-over');
-          const idx = parseInt(block.getAttribute('data-upload') || '0');
+          block.classList.add("drag-over");
+        });
+        block.addEventListener("dragleave", () =>
+          block.classList.remove("drag-over"),
+        );
+        block.addEventListener("drop", async (e) => {
+          e.preventDefault();
+          block.classList.remove("drag-over");
+          const idx = parseInt(block.getAttribute("data-upload") || "0");
           const file = (e as DragEvent).dataTransfer?.files[0];
-          if (file && file.type.startsWith('image/')) {
+          if (file && file.type.startsWith("image/")) {
             scrollPanels[idx].image = await fileToDataUrl(file);
             updateView();
           }
@@ -4907,9 +6452,9 @@ export function init(): void {
       });
 
       // File inputs
-      wizard.querySelectorAll('[data-file]').forEach(input => {
-        input.addEventListener('change', async () => {
-          const idx = parseInt(input.getAttribute('data-file') || '0');
+      wizard.querySelectorAll("[data-file]").forEach((input) => {
+        input.addEventListener("change", async () => {
+          const idx = parseInt(input.getAttribute("data-file") || "0");
           const file = (input as HTMLInputElement).files?.[0];
           if (file) {
             scrollPanels[idx].image = await fileToDataUrl(file);
@@ -4919,48 +6464,54 @@ export function init(): void {
       });
 
       // Remove image (X button on uploaded image)
-      wizard.querySelectorAll('[data-remove]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+      wizard.querySelectorAll("[data-remove]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const idx = parseInt(btn.getAttribute('data-remove') || '0');
+          const idx = parseInt(btn.getAttribute("data-remove") || "0");
           scrollPanels[idx].image = null;
           updateView();
         });
       });
 
       // Notes
-      wizard.querySelectorAll('[data-notes]').forEach(ta => {
+      wizard.querySelectorAll("[data-notes]").forEach((ta) => {
         const handleNotes = () => {
-          const idx = parseInt(ta.getAttribute('data-notes') || '0');
+          const idx = parseInt(ta.getAttribute("data-notes") || "0");
           scrollPanels[idx].notes = (ta as HTMLTextAreaElement).value;
           saveDraft();
         };
-        ta.addEventListener('input', handleNotes);
-        ta.addEventListener('paste', () => setTimeout(handleNotes, 0));
+        ta.addEventListener("input", handleNotes);
+        ta.addEventListener("paste", () => setTimeout(handleNotes, 0));
       });
 
       // Long-press to delete tile
-      wizard.querySelectorAll('[data-longpress]').forEach(row => {
+      wizard.querySelectorAll("[data-longpress]").forEach((row) => {
         let pressTimer: ReturnType<typeof setTimeout> | null = null;
-        const idx = parseInt(row.getAttribute('data-longpress') || '0');
+        const idx = parseInt(row.getAttribute("data-longpress") || "0");
 
         const startPress = (e: Event) => {
-          if ((e.target as HTMLElement).closest('input, textarea, button, select, [contenteditable="true"]')) return;
+          if (
+            (e.target as HTMLElement).closest(
+              'input, textarea, button, select, [contenteditable="true"]',
+            )
+          )
+            return;
           pressTimer = setTimeout(() => {
             pressTimer = null;
             if (scrollPanels.length <= 1) {
               showModal({
-                title: 'Cannot Delete',
-                content: '<p style="line-height:1.6;">At least one panel must remain in your scroll.</p>',
-                confirmText: 'OK',
+                title: "Cannot Delete",
+                content:
+                  '<p style="line-height:1.6;">At least one panel must remain in your scroll.</p>',
+                confirmText: "OK",
               });
               return;
             }
             showModal({
-              title: 'Delete Panel',
+              title: "Delete Panel",
               content: `<p style="line-height:1.6;">Remove <strong>Panel ${idx + 1}</strong> from your scroll? This cannot be undone.</p>`,
-              confirmText: 'Delete',
-              cancelText: 'Cancel',
+              confirmText: "Delete",
+              cancelText: "Cancel",
               onConfirm: () => {
                 scrollPanels.splice(idx, 1);
                 updateView();
@@ -4969,58 +6520,96 @@ export function init(): void {
           }, 600);
         };
         const cancelPress = () => {
-          if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+          if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+          }
         };
 
-        row.addEventListener('mousedown', startPress);
-        row.addEventListener('mouseup', cancelPress);
-        row.addEventListener('mouseleave', cancelPress);
-        row.addEventListener('touchstart', startPress, { passive: false });
-        row.addEventListener('touchend', cancelPress);
-        row.addEventListener('touchcancel', cancelPress);
+        row.addEventListener("mousedown", startPress);
+        row.addEventListener("mouseup", cancelPress);
+        row.addEventListener("mouseleave", cancelPress);
+        row.addEventListener("touchstart", startPress, { passive: false });
+        row.addEventListener("touchend", cancelPress);
+        row.addEventListener("touchcancel", cancelPress);
       });
 
       // Add tile (dotted placeholder)
-      document.getElementById('btn-add-tile')?.addEventListener('click', () => {
-        scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
+      document.getElementById("btn-add-tile")?.addEventListener("click", () => {
+        if (selectedFormat === "book") {
+          bookPages.push(defaultBookPage());
+          currentPage = bookPages.length - 1;
+        } else {
+          scrollPanels.push({
+            image: null,
+            notes: "",
+            layout: "single",
+            tiles: [null],
+            textOverlays: [[]],
+            audioUrl: null,
+          });
+          currentPage = scrollPanels.length - 1;
+        }
         updateView();
       });
 
       // Toolbar dropdown toggle (scroll mode)
-      const menuBtn = document.getElementById('btn-toolbar-menu');
-      const dropdown = document.getElementById('toolbar-dropdown');
-      menuBtn?.addEventListener('click', (e) => {
+      const menuBtn = document.getElementById("btn-toolbar-menu");
+      const dropdown = document.getElementById("toolbar-dropdown");
+      menuBtn?.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+        if (dropdown)
+          dropdown.style.display =
+            dropdown.style.display === "none" ? "flex" : "none";
       });
-      document.addEventListener('click', () => {
-        if (dropdown) dropdown.style.display = 'none';
+      document.addEventListener("click", () => {
+        if (dropdown) dropdown.style.display = "none";
       });
-      document.getElementById('btn-dd-story-settings')?.addEventListener('click', () => { getFormData();
-        openStorySettings();
-      });
-      document.getElementById('btn-dd-add-panel')?.addEventListener('click', () => {
-        scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
-        updateView();
-      });
-      document.getElementById('btn-dd-publish')?.addEventListener('click', () => {
-        if (dropdown) dropdown.style.display = 'none';
-        openPreflightPublishModal();
-      });
+      document
+        .getElementById("btn-dd-story-settings")
+        ?.addEventListener("click", () => {
+          getFormData();
+          openStorySettings();
+        });
+      document
+        .getElementById("btn-dd-add-panel")
+        ?.addEventListener("click", () => {
+          if (selectedFormat === "book") {
+            bookPages.push(defaultBookPage());
+            currentPage = bookPages.length - 1;
+          } else {
+            scrollPanels.push({
+              image: null,
+              notes: "",
+              layout: "single",
+              tiles: [null],
+              textOverlays: [[]],
+              audioUrl: null,
+            });
+            currentPage = scrollPanels.length - 1;
+          }
+          updateView();
+        });
+      document
+        .getElementById("btn-dd-publish")
+        ?.addEventListener("click", () => {
+          if (dropdown) dropdown.style.display = "none";
+          openPreflightPublishModal();
+        });
 
       // Panel gear icon clicks â†’ open layout overlay
-      document.querySelectorAll('[data-gear-panel]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+      document.querySelectorAll("[data-gear-panel]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const idx = parseInt(btn.getAttribute('data-gear-panel') || '0');
+          const idx = parseInt(btn.getAttribute("data-gear-panel") || "0");
           panelLayoutOverlay = panelLayoutOverlay === idx ? null : idx;
           updateView();
         });
       });
 
       // Close layout overlay
-      document.querySelectorAll('[data-close-overlay]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+      document.querySelectorAll("[data-close-overlay]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
           e.stopPropagation();
           panelLayoutOverlay = null;
           updateView();
@@ -5028,14 +6617,16 @@ export function init(): void {
       });
 
       // Layout option selection inside overlay
-      document.querySelectorAll('[data-set-layout]').forEach(opt => {
-        opt.addEventListener('click', (e) => {
+      document.querySelectorAll("[data-set-layout]").forEach((opt) => {
+        opt.addEventListener("click", (e) => {
           e.stopPropagation();
-          const layoutId = opt.getAttribute('data-set-layout') || 'single';
-          const panelIdx = parseInt(opt.getAttribute('data-for-panel') || '0');
+          const layoutId = opt.getAttribute("data-set-layout") || "single";
+          const panelIdx = parseInt(opt.getAttribute("data-for-panel") || "0");
           if (scrollPanels[panelIdx]) {
             const newTileCount = getTileCount(layoutId);
-            const oldTiles = scrollPanels[panelIdx].tiles || [scrollPanels[panelIdx].image];
+            const oldTiles = scrollPanels[panelIdx].tiles || [
+              scrollPanels[panelIdx].image,
+            ];
             // Preserve existing tile images, pad with nulls
             const newTiles: (string | null)[] = [];
             for (let t = 0; t < newTileCount; t++) {
@@ -5059,16 +6650,21 @@ export function init(): void {
       });
 
       // Remove tile image (X button)
-      document.querySelectorAll('.panel-tile__remove').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+      document.querySelectorAll(".panel-tile__remove").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const tileIdx = parseInt(btn.getAttribute('data-remove-tile') || '0');
-          const panelIdx = parseInt(btn.getAttribute('data-remove-panel') || '0');
+          const tileIdx = parseInt(btn.getAttribute("data-remove-tile") || "0");
+          const panelIdx = parseInt(
+            btn.getAttribute("data-remove-panel") || "0",
+          );
           if (scrollPanels[panelIdx]) {
             if (scrollPanels[panelIdx].tiles) {
               scrollPanels[panelIdx].tiles[tileIdx] = null;
               // Clear text overlays when image is removed
-              if (scrollPanels[panelIdx].textOverlays && scrollPanels[panelIdx].textOverlays[tileIdx]) {
+              if (
+                scrollPanels[panelIdx].textOverlays &&
+                scrollPanels[panelIdx].textOverlays[tileIdx]
+              ) {
                 scrollPanels[panelIdx].textOverlays[tileIdx] = [];
               }
             }
@@ -5078,259 +6674,345 @@ export function init(): void {
         });
       });
 
-// â”€â”€â”€ TEXT OVERLAY HANDLERS â”€â”€â”€
-// Add new text overlay
-document.querySelectorAll('[data-addtext-tile]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const tileIdx = parseInt(btn.getAttribute('data-addtext-tile') || '0');
-    const panelIdx = parseInt(btn.getAttribute('data-addtext-panel') || '0');
-    if (!scrollPanels[panelIdx]) return;
-    if (!scrollPanels[panelIdx].textOverlays) scrollPanels[panelIdx].textOverlays = [[]];
-    while (scrollPanels[panelIdx].textOverlays.length <= tileIdx) scrollPanels[panelIdx].textOverlays.push([]);
-    scrollPanels[panelIdx].textOverlays[tileIdx].push({
-      id: 'txt-' + Date.now(),
-      text: '',
-      x: 10,
-      y: 40,
-      locked: false,
-      fontSize: 14,
-      color: '#ffffff',
-    });
-    updateView();
-    // Auto-focus the new text box after render
-    setTimeout(() => {
-      const editables = document.querySelectorAll('.text-overlay--editing .text-overlay__content[contenteditable]');
-      const last = editables[editables.length - 1] as HTMLElement;
-      if (last) last.focus();
-    }, 50);
-  });
-});
-
-// Commit text overlay (checkmark)
-document.querySelectorAll('[data-commit-ov]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const ovId = btn.getAttribute('data-commit-ov');
-    const panelIdx = parseInt(btn.getAttribute('data-commit-panel') || '0');
-    const tileIdx = parseInt(btn.getAttribute('data-commit-tile') || '0');
-    const overlays = scrollPanels[panelIdx]?.textOverlays?.[tileIdx];
-    if (!overlays) return;
-    // Save text content from DOM before committing
-    const ovEl = document.querySelector(`[data-ov-id="${ovId}"] .text-overlay__content`) as HTMLElement;
-    const ov = overlays.find(o => o.id === ovId);
-    if (ov && ovEl) ov.text = ovEl.innerText.trim();
-    // Auto-delete empty overlays
-    if (ov && !ov.text) {
-      scrollPanels[panelIdx].textOverlays[tileIdx] = overlays.filter(o => o.id !== ovId);
-    } else if (ov) {
-      ov.locked = true;
-    }
-    updateView();
-  });
-});
-
-// Delete text overlay
-document.querySelectorAll('[data-del-ov]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const ovId = btn.getAttribute('data-del-ov');
-    const panelIdx = parseInt(btn.getAttribute('data-del-panel') || '0');
-    const tileIdx = parseInt(btn.getAttribute('data-del-tile') || '0');
-    const overlays = scrollPanels[panelIdx]?.textOverlays?.[tileIdx];
-    if (!overlays) return;
-    scrollPanels[panelIdx].textOverlays[tileIdx] = overlays.filter(o => o.id !== ovId);
-    updateView();
-  });
-});
-
-// Unlock (edit) locked text overlay
-document.querySelectorAll('[data-unlock-ov]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const ovId = btn.getAttribute('data-unlock-ov');
-    const panelIdx = parseInt(btn.getAttribute('data-unlock-panel') || '0');
-    const tileIdx = parseInt(btn.getAttribute('data-unlock-tile') || '0');
-    const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(o => o.id === ovId);
-    if (ov) { ov.locked = false; updateView(); }
-  });
-});
-
-// Double-click locked overlay to re-edit
-document.querySelectorAll('.text-overlay--locked').forEach(el => {
-  el.addEventListener('dblclick', (e) => {
-    e.stopPropagation();
-    const ovId = el.getAttribute('data-ov-id');
-    const panelIdx = parseInt(el.getAttribute('data-ov-panel') || '0');
-    const tileIdx = parseInt(el.getAttribute('data-ov-tile') || '0');
-    const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(o => o.id === ovId);
-    if (ov) { ov.locked = false; updateView(); }
-  });
-});
-
-// Drag text overlay
-document.querySelectorAll('[data-drag-ov]').forEach(handle => {
-  const startDrag = (startX: number, startY: number) => {
-    const ovId = handle.getAttribute('data-drag-ov');
-    const panelIdx = parseInt(handle.getAttribute('data-drag-panel') || '0');
-    const tileIdx = parseInt(handle.getAttribute('data-drag-tile') || '0');
-    const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(o => o.id === ovId);
-    if (!ov) return;
-    const ovEl = (handle as HTMLElement).closest('.text-overlay') as HTMLElement;
-    const tileEl = (handle as HTMLElement).closest('.panel-tile') as HTMLElement;
-    if (!ovEl || !tileEl) return;
-    const tileRect = tileEl.getBoundingClientRect();
-    const startOvX = ov.x;
-    const startOvY = ov.y;
-
-    const onMove = (cx: number, cy: number) => {
-      const dx = ((cx - startX) / tileRect.width) * 100;
-      const dy = ((cy - startY) / tileRect.height) * 100;
-      const newX = Math.max(0, Math.min(85, startOvX + dx));
-      const newY = Math.max(0, Math.min(90, startOvY + dy));
-      ovEl.style.left = newX + '%';
-      ovEl.style.top = newY + '%';
-      ov.x = newX;
-      ov.y = newY;
-    };
-
-    const onMouseMove = (ev: MouseEvent) => onMove(ev.clientX, ev.clientY);
-    const onTouchMove = (ev: TouchEvent) => { ev.preventDefault(); onMove(ev.touches[0].clientX, ev.touches[0].clientY); };
-    const onEnd = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onEnd);
-      document.removeEventListener('touchmove', onTouchMove);
-      document.removeEventListener('touchend', onEnd);
-    };
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onEnd);
-    document.addEventListener('touchmove', onTouchMove, { passive: false });
-    document.addEventListener('touchend', onEnd);
-  };
-
-  handle.addEventListener('mousedown', (e: Event) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const me = e as MouseEvent;
-    startDrag(me.clientX, me.clientY);
-  });
-  handle.addEventListener('touchstart', (e: Event) => {
-    e.stopPropagation();
-    const te = e as TouchEvent;
-    startDrag(te.touches[0].clientX, te.touches[0].clientY);
-  }, { passive: true });
-});
-
-// Save text content on input (debounced)
-document.querySelectorAll('[data-edit-ov]').forEach(el => {
-  el.addEventListener('input', () => {
-    const ovId = el.getAttribute('data-edit-ov');
-    const panelIdx = parseInt(el.getAttribute('data-edit-panel') || '0');
-    const tileIdx = parseInt(el.getAttribute('data-edit-tile') || '0');
-    const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(o => o.id === ovId);
-    if (ov) ov.text = (el as HTMLElement).innerText;
-  });
-  // Prevent tile click-to-upload when clicking inside text overlay
-  el.addEventListener('click', (e: Event) => e.stopPropagation());
-});
-
-// Cycle text overlay color
-const TEXT_COLORS = ['#ffffff', '#000000', '#ef4444', '#3b82f6', '#22c55e', '#eab308', '#f97316', '#34D399', '#06B6D4'];
-document.querySelectorAll('[data-color-ov]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const ovId = btn.getAttribute('data-color-ov');
-    const panelIdx = parseInt(btn.getAttribute('data-color-panel') || '0');
-    const tileIdx = parseInt(btn.getAttribute('data-color-tile') || '0');
-    const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(o => o.id === ovId);
-    if (ov) {
-      const idx = TEXT_COLORS.indexOf(ov.color);
-      ov.color = TEXT_COLORS[(idx + 1) % TEXT_COLORS.length];
-      // Update color in DOM immediately without full re-render
-      const ovEl = (btn as HTMLElement).closest('.text-overlay') as HTMLElement;
-      if (ovEl) ovEl.style.color = ov.color;
-      // Update the color swatch
-      const swatch = btn.querySelector('span') as HTMLElement;
-      if (swatch) swatch.style.background = ov.color;
-    }
-  });
-});
-
-
-// Pre-record button for waterfall dialogue
-document.querySelectorAll('[data-prerecord-scroll]').forEach(btn => {
-  btn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const idx = parseInt(btn.getAttribute('data-prerecord-scroll') || '0');
-    const text = scrollPanels[idx]?.notes;
-    if (!text || !text.trim()) {
-      showModal({ title: 'No Dialogue', content: '<p>Write some dialogue text first before pre-recording.</p>', confirmText: 'OK' });
-      return;
-    }
-    if (scrollPanels[idx].audioUrl) {
-      showModal({
-        title: 'Re-record Audio',
-        content: '<p style="line-height:1.6;">Would you like to re-record the dialogue audio? This will replace the existing recording.</p>',
-        confirmText: 'Yes, Re-record',
-        cancelText: 'Cancel',
-        onConfirm: async () => {
-          hideModal();
-          await doPrerecordScroll(idx, btn as HTMLButtonElement);
-        }
+      // â”€â”€â”€ TEXT OVERLAY HANDLERS â”€â”€â”€
+      // Add new text overlay
+      document.querySelectorAll("[data-addtext-tile]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const tileIdx = parseInt(
+            btn.getAttribute("data-addtext-tile") || "0",
+          );
+          const panelIdx = parseInt(
+            btn.getAttribute("data-addtext-panel") || "0",
+          );
+          if (!scrollPanels[panelIdx]) return;
+          if (!scrollPanels[panelIdx].textOverlays)
+            scrollPanels[panelIdx].textOverlays = [[]];
+          while (scrollPanels[panelIdx].textOverlays.length <= tileIdx)
+            scrollPanels[panelIdx].textOverlays.push([]);
+          scrollPanels[panelIdx].textOverlays[tileIdx].push({
+            id: "txt-" + Date.now(),
+            text: "",
+            x: 10,
+            y: 40,
+            locked: false,
+            fontSize: 14,
+            color: "#ffffff",
+          });
+          updateView();
+          // Auto-focus the new text box after render
+          setTimeout(() => {
+            const editables = document.querySelectorAll(
+              ".text-overlay--editing .text-overlay__content[contenteditable]",
+            );
+            const last = editables[editables.length - 1] as HTMLElement;
+            if (last) last.focus();
+          }, 50);
+        });
       });
-      return;
-    }
-    await doPrerecordScroll(idx, btn as HTMLButtonElement);
-  });
-});
 
-async function doPrerecordScroll(idx: number, btn: HTMLButtonElement) {
-  const text = scrollPanels[idx].notes;
-  const span = btn.querySelector('span');
-  btn.setAttribute('disabled', 'true');
-  if (span) span.textContent = 'Recording...';
-  try {
-    const audioUrl = await preRecordAudio(text, 0.5);
-    scrollPanels[idx].audioUrl = audioUrl;
-    saveDraft();
-  } catch (err: any) {
-    showModal({ title: 'Pre-record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
-  } finally {
-    btn.removeAttribute('disabled');
-    updateView();
-  }
-}
+      // Commit text overlay (checkmark)
+      document.querySelectorAll("[data-commit-ov]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const ovId = btn.getAttribute("data-commit-ov");
+          const panelIdx = parseInt(
+            btn.getAttribute("data-commit-panel") || "0",
+          );
+          const tileIdx = parseInt(btn.getAttribute("data-commit-tile") || "0");
+          const overlays = scrollPanels[panelIdx]?.textOverlays?.[tileIdx];
+          if (!overlays) return;
+          // Save text content from DOM before committing
+          const ovEl = document.querySelector(
+            `[data-ov-id="${ovId}"] .text-overlay__content`,
+          ) as HTMLElement;
+          const ov = overlays.find((o) => o.id === ovId);
+          if (ov && ovEl) ov.text = ovEl.innerText.trim();
+          // Auto-delete empty overlays
+          if (ov && !ov.text) {
+            scrollPanels[panelIdx].textOverlays[tileIdx] = overlays.filter(
+              (o) => o.id !== ovId,
+            );
+          } else if (ov) {
+            ov.locked = true;
+          }
+          updateView();
+        });
+      });
 
-// Play pre-recorded waterfall audio
-document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const idx = parseInt(btn.getAttribute('data-prerecord-play-scroll') || '0');
-    const audioUrl = scrollPanels[idx]?.audioUrl;
-    if (audioUrl) {
-      if (isSpeaking()) { stopSpeaking(); } else { playAudioUrl(audioUrl); }
-    }
-  });
-});
+      // Delete text overlay
+      document.querySelectorAll("[data-del-ov]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const ovId = btn.getAttribute("data-del-ov");
+          const panelIdx = parseInt(btn.getAttribute("data-del-panel") || "0");
+          const tileIdx = parseInt(btn.getAttribute("data-del-tile") || "0");
+          const overlays = scrollPanels[panelIdx]?.textOverlays?.[tileIdx];
+          if (!overlays) return;
+          scrollPanels[panelIdx].textOverlays[tileIdx] = overlays.filter(
+            (o) => o.id !== ovId,
+          );
+          updateView();
+        });
+      });
+
+      // Unlock (edit) locked text overlay
+      document.querySelectorAll("[data-unlock-ov]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const ovId = btn.getAttribute("data-unlock-ov");
+          const panelIdx = parseInt(
+            btn.getAttribute("data-unlock-panel") || "0",
+          );
+          const tileIdx = parseInt(btn.getAttribute("data-unlock-tile") || "0");
+          const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(
+            (o) => o.id === ovId,
+          );
+          if (ov) {
+            ov.locked = false;
+            updateView();
+          }
+        });
+      });
+
+      // Double-click locked overlay to re-edit
+      document.querySelectorAll(".text-overlay--locked").forEach((el) => {
+        el.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          const ovId = el.getAttribute("data-ov-id");
+          const panelIdx = parseInt(el.getAttribute("data-ov-panel") || "0");
+          const tileIdx = parseInt(el.getAttribute("data-ov-tile") || "0");
+          const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(
+            (o) => o.id === ovId,
+          );
+          if (ov) {
+            ov.locked = false;
+            updateView();
+          }
+        });
+      });
+
+      // Drag text overlay
+      document.querySelectorAll("[data-drag-ov]").forEach((handle) => {
+        const startDrag = (startX: number, startY: number) => {
+          const ovId = handle.getAttribute("data-drag-ov");
+          const panelIdx = parseInt(
+            handle.getAttribute("data-drag-panel") || "0",
+          );
+          const tileIdx = parseInt(
+            handle.getAttribute("data-drag-tile") || "0",
+          );
+          const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(
+            (o) => o.id === ovId,
+          );
+          if (!ov) return;
+          const ovEl = (handle as HTMLElement).closest(
+            ".text-overlay",
+          ) as HTMLElement;
+          const tileEl = (handle as HTMLElement).closest(
+            ".panel-tile",
+          ) as HTMLElement;
+          if (!ovEl || !tileEl) return;
+          const tileRect = tileEl.getBoundingClientRect();
+          const startOvX = ov.x;
+          const startOvY = ov.y;
+
+          const onMove = (cx: number, cy: number) => {
+            const dx = ((cx - startX) / tileRect.width) * 100;
+            const dy = ((cy - startY) / tileRect.height) * 100;
+            const newX = Math.max(0, Math.min(85, startOvX + dx));
+            const newY = Math.max(0, Math.min(90, startOvY + dy));
+            ovEl.style.left = newX + "%";
+            ovEl.style.top = newY + "%";
+            ov.x = newX;
+            ov.y = newY;
+          };
+
+          const onMouseMove = (ev: MouseEvent) =>
+            onMove(ev.clientX, ev.clientY);
+          const onTouchMove = (ev: TouchEvent) => {
+            ev.preventDefault();
+            onMove(ev.touches[0].clientX, ev.touches[0].clientY);
+          };
+          const onEnd = () => {
+            document.removeEventListener("mousemove", onMouseMove);
+            document.removeEventListener("mouseup", onEnd);
+            document.removeEventListener("touchmove", onTouchMove);
+            document.removeEventListener("touchend", onEnd);
+          };
+          document.addEventListener("mousemove", onMouseMove);
+          document.addEventListener("mouseup", onEnd);
+          document.addEventListener("touchmove", onTouchMove, {
+            passive: false,
+          });
+          document.addEventListener("touchend", onEnd);
+        };
+
+        handle.addEventListener("mousedown", (e: Event) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const me = e as MouseEvent;
+          startDrag(me.clientX, me.clientY);
+        });
+        handle.addEventListener(
+          "touchstart",
+          (e: Event) => {
+            e.stopPropagation();
+            const te = e as TouchEvent;
+            startDrag(te.touches[0].clientX, te.touches[0].clientY);
+          },
+          { passive: true },
+        );
+      });
+
+      // Save text content on input (debounced)
+      document.querySelectorAll("[data-edit-ov]").forEach((el) => {
+        el.addEventListener("input", () => {
+          const ovId = el.getAttribute("data-edit-ov");
+          const panelIdx = parseInt(el.getAttribute("data-edit-panel") || "0");
+          const tileIdx = parseInt(el.getAttribute("data-edit-tile") || "0");
+          const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(
+            (o) => o.id === ovId,
+          );
+          if (ov) ov.text = (el as HTMLElement).innerText;
+        });
+        // Prevent tile click-to-upload when clicking inside text overlay
+        el.addEventListener("click", (e: Event) => e.stopPropagation());
+      });
+
+      // Cycle text overlay color
+      const TEXT_COLORS = [
+        "#ffffff",
+        "#000000",
+        "#ef4444",
+        "#3b82f6",
+        "#22c55e",
+        "#eab308",
+        "#f97316",
+        "#34D399",
+        "#06B6D4",
+      ];
+      document.querySelectorAll("[data-color-ov]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const ovId = btn.getAttribute("data-color-ov");
+          const panelIdx = parseInt(
+            btn.getAttribute("data-color-panel") || "0",
+          );
+          const tileIdx = parseInt(btn.getAttribute("data-color-tile") || "0");
+          const ov = scrollPanels[panelIdx]?.textOverlays?.[tileIdx]?.find(
+            (o) => o.id === ovId,
+          );
+          if (ov) {
+            const idx = TEXT_COLORS.indexOf(ov.color);
+            ov.color = TEXT_COLORS[(idx + 1) % TEXT_COLORS.length];
+            // Update color in DOM immediately without full re-render
+            const ovEl = (btn as HTMLElement).closest(
+              ".text-overlay",
+            ) as HTMLElement;
+            if (ovEl) ovEl.style.color = ov.color;
+            // Update the color swatch
+            const swatch = btn.querySelector("span") as HTMLElement;
+            if (swatch) swatch.style.background = ov.color;
+          }
+        });
+      });
+
+      // Pre-record button for waterfall dialogue
+      document.querySelectorAll("[data-prerecord-scroll]").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const idx = parseInt(
+            btn.getAttribute("data-prerecord-scroll") || "0",
+          );
+          const text = scrollPanels[idx]?.notes;
+          if (!text || !text.trim()) {
+            showModal({
+              title: "No Dialogue",
+              content:
+                "<p>Write some dialogue text first before pre-recording.</p>",
+              confirmText: "OK",
+            });
+            return;
+          }
+          if (scrollPanels[idx].audioUrl) {
+            showModal({
+              title: "Re-record Audio",
+              content:
+                '<p style="line-height:1.6;">Would you like to re-record the dialogue audio? This will replace the existing recording.</p>',
+              confirmText: "Yes, Re-record",
+              cancelText: "Cancel",
+              onConfirm: async () => {
+                hideModal();
+                await doPrerecordScroll(idx, btn as HTMLButtonElement);
+              },
+            });
+            return;
+          }
+          await doPrerecordScroll(idx, btn as HTMLButtonElement);
+        });
+      });
+
+      async function doPrerecordScroll(idx: number, btn: HTMLButtonElement) {
+        const text = scrollPanels[idx].notes;
+        const span = btn.querySelector("span");
+        btn.setAttribute("disabled", "true");
+        if (span) span.textContent = "Recording...";
+        try {
+          const audioUrl = await preRecordAudio(text, 0.5);
+          scrollPanels[idx].audioUrl = audioUrl;
+          saveDraft();
+        } catch (err: any) {
+          showModal({
+            title: "Pre-record Failed",
+            content: `<p>${err.message || "Something went wrong."}</p>`,
+            confirmText: "OK",
+          });
+        } finally {
+          btn.removeAttribute("disabled");
+          updateView();
+        }
+      }
+
+      // Play pre-recorded waterfall audio
+      document
+        .querySelectorAll("[data-prerecord-play-scroll]")
+        .forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const idx = parseInt(
+              btn.getAttribute("data-prerecord-play-scroll") || "0",
+            );
+            const audioUrl = scrollPanels[idx]?.audioUrl;
+            if (audioUrl) {
+              if (isSpeaking()) {
+                stopSpeaking();
+              } else {
+                playAudioUrl(audioUrl);
+              }
+            }
+          });
+        });
 
       // Tile click to upload (delegate from tile grid)
-      document.querySelectorAll('.panel-tile').forEach(tile => {
-        tile.addEventListener('click', (e) => {
-          const tileIdx = parseInt(tile.getAttribute('data-tile') || '0');
-          const panelIdx = parseInt(tile.getAttribute('data-panel') || '0');
+      document.querySelectorAll(".panel-tile").forEach((tile) => {
+        tile.addEventListener("click", (e) => {
+          const tileIdx = parseInt(tile.getAttribute("data-tile") || "0");
+          const panelIdx = parseInt(tile.getAttribute("data-panel") || "0");
           // Create a temporary file input for this specific tile
-          const fileInput = document.createElement('input');
-          fileInput.type = 'file';
-          fileInput.accept = 'image/*';
-          fileInput.style.display = 'none';
-          fileInput.addEventListener('change', () => {
+          const fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = "image/*";
+          fileInput.style.display = "none";
+          fileInput.addEventListener("change", () => {
             const file = fileInput.files?.[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = (ev) => {
               const url = ev.target?.result as string;
               if (scrollPanels[panelIdx]) {
-                if (!scrollPanels[panelIdx].tiles) scrollPanels[panelIdx].tiles = [null];
+                if (!scrollPanels[panelIdx].tiles)
+                  scrollPanels[panelIdx].tiles = [null];
                 scrollPanels[panelIdx].tiles[tileIdx] = url;
                 if (tileIdx === 0) scrollPanels[panelIdx].image = url;
               }
@@ -5345,239 +7027,317 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Bottom action buttons
-      document.getElementById('btn-save-exit')?.addEventListener('click', async () => {
-        if (!storyTitle.trim()) storyTitle = 'Untitled';
-        saveDraft();
-        try { await saveStoryForMode(buildStory('draft')); } catch {}
-        navigate(isUserMode() ? 'library' : 'admin');
-      });
-      document.getElementById('btn-submit-review')?.addEventListener('click', () => {
-        getFormData();
-        openPreflightPublishModal();
-      });
+      document
+        .getElementById("btn-save-exit")
+        ?.addEventListener("click", async () => {
+          if (!storyTitle.trim()) storyTitle = "Untitled";
+          saveDraft();
+          try {
+            await saveStoryForMode(buildStory("draft"));
+          } catch {}
+          navigate(isUserMode() ? "library" : "admin");
+        });
+      document
+        .getElementById("btn-submit-review")
+        ?.addEventListener("click", () => {
+          getFormData();
+          openPreflightPublishModal();
+        });
     }
 
-
     // ─── ILLUSTRATED BOOK CANVAS (single page view) ───
-    if (phase === 'canvas' && selectedFormat === 'book') {
+    if (phase === "canvas" && selectedFormat === "book") {
       const i = currentPage;
 
       // Toolbar dropdown toggle
-      const menuBtn = document.getElementById('btn-toolbar-menu');
-      const dropdown = document.getElementById('toolbar-dropdown');
-      menuBtn?.addEventListener('click', (e) => {
+      const menuBtn = document.getElementById("btn-toolbar-menu");
+      const dropdown = document.getElementById("toolbar-dropdown");
+      menuBtn?.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+        if (dropdown)
+          dropdown.style.display =
+            dropdown.style.display === "none" ? "flex" : "none";
       });
       // Close dropdown when clicking outside
-      document.addEventListener('click', () => {
-        if (dropdown) dropdown.style.display = 'none';
+      document.addEventListener("click", () => {
+        if (dropdown) dropdown.style.display = "none";
       });
 
       // Dropdown actions
-      document.getElementById('btn-dd-story-settings')?.addEventListener('click', () => { getFormData();
-        openStorySettings();
-      });
-      document.getElementById('btn-dd-add-page')?.addEventListener('click', () => {
-        bookPages.push(defaultBookPage());
-        currentPage = bookPages.length - 1;
-        updateView();
-      });
+      document
+        .getElementById("btn-dd-story-settings")
+        ?.addEventListener("click", () => {
+          getFormData();
+          openStorySettings();
+        });
+      document
+        .getElementById("btn-dd-add-page")
+        ?.addEventListener("click", () => {
+          bookPages.push(defaultBookPage());
+          currentPage = bookPages.length - 1;
+          updateView();
+        });
       const handleOpenStoryboard = () => {
         if (isDesktopScreen()) {
-          activeEditorMode = 'storyboard';
+          activeEditorMode = "storyboard";
           openStoryboard();
         } else {
           showDesktopRequiredModal();
         }
       };
-      document.getElementById('btn-dd-storyboard')?.addEventListener('click', handleOpenStoryboard);
-      document.getElementById('btn-dd-preview')?.addEventListener('click', () => {
-        if (dropdown) dropdown.style.display = 'none';
-        openInEditorPreview(currentPage);
-      });
-      document.getElementById('btn-dd-batch-prerecord')?.addEventListener('click', () => {
-        if (dropdown) dropdown.style.display = 'none';
-        openBatchPreRecordModal();
-      });
-      document.getElementById('btn-dd-publish')?.addEventListener('click', () => {
-        if (dropdown) dropdown.style.display = 'none';
-        openPreflightPublishModal();
-      });
+      document
+        .getElementById("btn-dd-storyboard")
+        ?.addEventListener("click", handleOpenStoryboard);
+      document
+        .getElementById("btn-dd-preview")
+        ?.addEventListener("click", () => {
+          if (dropdown) dropdown.style.display = "none";
+          openInEditorPreview(currentPage);
+        });
+      document
+        .getElementById("btn-dd-batch-prerecord")
+        ?.addEventListener("click", () => {
+          if (dropdown) dropdown.style.display = "none";
+          openBatchPreRecordModal();
+        });
+      document
+        .getElementById("btn-dd-publish")
+        ?.addEventListener("click", () => {
+          if (dropdown) dropdown.style.display = "none";
+          openPreflightPublishModal();
+        });
       // Arrow navigation (desktop only — hidden on mobile)
-      document.getElementById('btn-book-prev')?.addEventListener('click', () => {
-        if (currentPage > 0) { currentPage--; updateView(); }
-      });
-      document.getElementById('btn-book-next')?.addEventListener('click', () => {
-        if (currentPage < bookPages.length - 1) { currentPage++; updateView(); }
-      });
+      document
+        .getElementById("btn-book-prev")
+        ?.addEventListener("click", () => {
+          if (currentPage > 0) {
+            currentPage--;
+            updateView();
+          }
+        });
+      document
+        .getElementById("btn-book-next")
+        ?.addEventListener("click", () => {
+          if (currentPage < bookPages.length - 1) {
+            currentPage++;
+            updateView();
+          }
+        });
 
       // ─── Mobile Swipe Gesture Navigation ───
-      const bookSingleView = document.querySelector('.book-single-view') as HTMLElement | null;
+      const bookSingleView = document.querySelector(
+        ".book-single-view",
+      ) as HTMLElement | null;
       if (bookSingleView) {
         let swStartX = 0;
         let swStartY = 0;
         let swStartTime = 0;
         let swDeltaX = 0;
-        let swLocked: 'h' | 'v' | null = null;
+        let swLocked: "h" | "v" | null = null;
         let swActive = false;
         // True when the current touch began on an interactive element (textarea, button…).
         // touchmove/touchend must bail out too, otherwise they run with a stale start
         // position and slide the whole page card sideways while scrolling in the text box.
         let swIgnore = false;
-        const SW_LOCK = 6;      // px dead zone
-        const SW_DIST = 60;     // px to commit
-        const SW_VEL = 0.3;     // px/ms to commit via flick
+        const SW_LOCK = 6; // px dead zone
+        const SW_DIST = 60; // px to commit
+        const SW_VEL = 0.3; // px/ms to commit via flick
 
-        bookSingleView.addEventListener('touchstart', (e: TouchEvent) => {
-          const target = e.target as HTMLElement;
-          if (target.closest('button, input, textarea, select, a, [contenteditable="true"]')) {
-            swIgnore = true;
-            return;
-          }
-          swIgnore = false;
-          const t = e.touches[0];
-          swStartX = t.clientX;
-          swStartY = t.clientY;
-          swStartTime = Date.now();
-          swDeltaX = 0;
-          swLocked = null;
-          swActive = false;
-          bookSingleView.style.transition = 'none';
-        }, { passive: true });
-
-        bookSingleView.addEventListener('touchmove', (e: TouchEvent) => {
-          if (swIgnore) return;
-          if (swLocked === 'v') return;
-          const t = e.touches[0];
-          const dx = t.clientX - swStartX;
-          const dy = t.clientY - swStartY;
-
-          if (!swLocked) {
-            if (Math.abs(dx) < SW_LOCK && Math.abs(dy) < SW_LOCK) return;
-            if (Math.abs(dx) > Math.abs(dy) * 1.0) {
-              swLocked = 'h';
-              swActive = true;
-            } else {
-              swLocked = 'v';
+        bookSingleView.addEventListener(
+          "touchstart",
+          (e: TouchEvent) => {
+            const target = e.target as HTMLElement;
+            if (
+              target.closest(
+                'button, input, textarea, select, a, [contenteditable="true"]',
+              )
+            ) {
+              swIgnore = true;
               return;
             }
-          }
+            swIgnore = false;
+            const t = e.touches[0];
+            swStartX = t.clientX;
+            swStartY = t.clientY;
+            swStartTime = Date.now();
+            swDeltaX = 0;
+            swLocked = null;
+            swActive = false;
+            bookSingleView.style.transition = "none";
+          },
+          { passive: true },
+        );
 
-          if (swLocked === 'h') {
-            e.preventDefault();
-            // Dampen at edges
-            const atStart = currentPage === 0 && dx > 0;
-            const atEnd = currentPage >= bookPages.length - 1 && dx < 0;
-            swDeltaX = (atStart || atEnd) ? dx * 0.2 : dx;
-            bookSingleView.style.transform = `translateX(${swDeltaX}px)`;
-          }
-        }, { passive: false });
+        bookSingleView.addEventListener(
+          "touchmove",
+          (e: TouchEvent) => {
+            if (swIgnore) return;
+            if (swLocked === "v") return;
+            const t = e.touches[0];
+            const dx = t.clientX - swStartX;
+            const dy = t.clientY - swStartY;
 
-        bookSingleView.addEventListener('touchend', () => {
-          if (swIgnore) { swIgnore = false; return; }
-          if (!swActive) {
-            bookSingleView.style.transition = '';
-            bookSingleView.style.transform = '';
-            return;
-          }
+            if (!swLocked) {
+              if (Math.abs(dx) < SW_LOCK && Math.abs(dy) < SW_LOCK) return;
+              if (Math.abs(dx) > Math.abs(dy) * 1.0) {
+                swLocked = "h";
+                swActive = true;
+              } else {
+                swLocked = "v";
+                return;
+              }
+            }
 
-          const elapsed = Date.now() - swStartTime;
-          const velocity = Math.abs(swDeltaX) / Math.max(1, elapsed);
-          const commit = Math.abs(swDeltaX) > SW_DIST || velocity > SW_VEL;
+            if (swLocked === "h") {
+              e.preventDefault();
+              // Dampen at edges
+              const atStart = currentPage === 0 && dx > 0;
+              const atEnd = currentPage >= bookPages.length - 1 && dx < 0;
+              swDeltaX = atStart || atEnd ? dx * 0.2 : dx;
+              bookSingleView.style.transform = `translateX(${swDeltaX}px)`;
+            }
+          },
+          { passive: false },
+        );
 
-          bookSingleView.style.transition = 'transform 0.22s cubic-bezier(0.22, 0.68, 0, 1.0)';
+        bookSingleView.addEventListener(
+          "touchend",
+          () => {
+            if (swIgnore) {
+              swIgnore = false;
+              return;
+            }
+            if (!swActive) {
+              bookSingleView.style.transition = "";
+              bookSingleView.style.transform = "";
+              return;
+            }
 
-          if (commit && swDeltaX < 0 && currentPage < bookPages.length - 1) {
-            bookSingleView.style.transform = 'translateX(-100%)';
-            setTimeout(() => {
-              bookSingleView.style.transition = 'none';
-              bookSingleView.style.transform = '';
-              currentPage++;
-              updateView();
-            }, 220);
-          } else if (commit && swDeltaX > 0 && currentPage > 0) {
-            bookSingleView.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-              bookSingleView.style.transition = 'none';
-              bookSingleView.style.transform = '';
-              currentPage--;
-              updateView();
-            }, 220);
-          } else {
-            bookSingleView.style.transform = 'translateX(0)';
-            setTimeout(() => {
-              bookSingleView.style.transition = '';
-              bookSingleView.style.transform = '';
-            }, 220);
-          }
+            const elapsed = Date.now() - swStartTime;
+            const velocity = Math.abs(swDeltaX) / Math.max(1, elapsed);
+            const commit = Math.abs(swDeltaX) > SW_DIST || velocity > SW_VEL;
 
-          swActive = false;
-          swLocked = null;
-          swDeltaX = 0;
-        }, { passive: true });
+            bookSingleView.style.transition =
+              "transform 0.22s cubic-bezier(0.22, 0.68, 0, 1.0)";
 
-        bookSingleView.addEventListener('touchcancel', () => {
-          bookSingleView.style.transition = '';
-          bookSingleView.style.transform = '';
-          swActive = false;
-          swLocked = null;
-          swDeltaX = 0;
-        }, { passive: true });
+            if (commit && swDeltaX < 0 && currentPage < bookPages.length - 1) {
+              bookSingleView.style.transform = "translateX(-100%)";
+              setTimeout(() => {
+                bookSingleView.style.transition = "none";
+                bookSingleView.style.transform = "";
+                currentPage++;
+                updateView();
+              }, 220);
+            } else if (commit && swDeltaX > 0 && currentPage > 0) {
+              bookSingleView.style.transform = "translateX(100%)";
+              setTimeout(() => {
+                bookSingleView.style.transition = "none";
+                bookSingleView.style.transform = "";
+                currentPage--;
+                updateView();
+              }, 220);
+            } else {
+              bookSingleView.style.transform = "translateX(0)";
+              setTimeout(() => {
+                bookSingleView.style.transition = "";
+                bookSingleView.style.transform = "";
+              }, 220);
+            }
+
+            swActive = false;
+            swLocked = null;
+            swDeltaX = 0;
+          },
+          { passive: true },
+        );
+
+        bookSingleView.addEventListener(
+          "touchcancel",
+          () => {
+            bookSingleView.style.transition = "";
+            bookSingleView.style.transform = "";
+            swActive = false;
+            swLocked = null;
+            swDeltaX = 0;
+          },
+          { passive: true },
+        );
       }
 
       // SPARC checkpoint button → opens modal
-      document.getElementById('btn-sparc-checkpoint')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        openSparcModal();
-      });
+      document
+        .getElementById("btn-sparc-checkpoint")
+        ?.addEventListener("click", (e) => {
+          e.preventDefault();
+          openSparcModal();
+        });
 
-      wizard.querySelectorAll('[data-dot]').forEach(dot => {
-        dot.addEventListener('click', () => {
-          currentPage = parseInt(dot.getAttribute('data-dot') || '0');
+      wizard.querySelectorAll("[data-dot]").forEach((dot) => {
+        dot.addEventListener("click", () => {
+          currentPage = parseInt(dot.getAttribute("data-dot") || "0");
           updateView();
         });
       });
 
       // Upload click — video clicks play/pause, other clicks trigger upload
       const uploadArea = wizard.querySelector(`[data-tile-upload="${i}"]`);
-      uploadArea?.addEventListener('click', (e) => {
+      uploadArea?.addEventListener("click", (e) => {
         const target = e.target as HTMLElement;
-        if (target.closest('[data-tile-remove-img]') || target.closest('[data-tile-redo]')) return;
+        if (
+          target.closest("[data-tile-remove-img]") ||
+          target.closest("[data-tile-redo]")
+        )
+          return;
         // If clicking a video element, toggle play/pause instead of uploading
-        const videoEl = target.closest('video') || (target.tagName === 'VIDEO' ? target : null);
+        const videoEl =
+          target.closest("video") ||
+          (target.tagName === "VIDEO" ? target : null);
         if (videoEl) {
           const vid = videoEl as HTMLVideoElement;
-          if (vid.paused) { vid.muted = false; vid.play(); }
-          else { vid.pause(); }
+          if (vid.paused) {
+            vid.muted = false;
+            vid.play();
+          } else {
+            vid.pause();
+          }
           return;
         }
-        const input = wizard.querySelector(`[data-tile-file="${i}"]`) as HTMLInputElement;
+        const input = wizard.querySelector(
+          `[data-tile-file="${i}"]`,
+        ) as HTMLInputElement;
         input?.click();
       });
 
       // File change — with loading spinner
-      const fileInput = wizard.querySelector(`[data-tile-file="${i}"]`) as HTMLInputElement;
-      fileInput?.addEventListener('change', async () => {
+      const fileInput = wizard.querySelector(
+        `[data-tile-file="${i}"]`,
+      ) as HTMLInputElement;
+      fileInput?.addEventListener("change", async () => {
         const file = fileInput.files?.[0];
         if (file) {
           // Show loading spinner
-          const tileEl = wizard.querySelector(`[data-tile-upload="${i}"]`) as HTMLElement;
+          const tileEl = wizard.querySelector(
+            `[data-tile-upload="${i}"]`,
+          ) as HTMLElement;
           let spinner: HTMLElement | null = null;
           if (tileEl) {
-            spinner = document.createElement('div');
-            spinner.className = 'upload-spinner-overlay';
+            spinner = document.createElement("div");
+            spinner.className = "upload-spinner-overlay";
             spinner.innerHTML = `<div class="upload-spinner"></div><span style="color:#e2e8f0;font-size:0.8rem;margin-top:8px;">Uploading...</span>`;
-            spinner.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);border-radius:8px;z-index:10;';
-            tileEl.style.position = 'relative';
+            spinner.style.cssText =
+              "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);border-radius:8px;z-index:10;";
+            tileEl.style.position = "relative";
             tileEl.appendChild(spinner);
           }
           try {
-            const res = await uploadMedia(file, 'stories');
+            const res = await uploadMedia(file, "stories");
             bookPages[i].image = res.url;
             updateView();
           } catch (err: any) {
-            alert('Upload failed: ' + (err?.message || 'Please check your connection and try again.'));
+            alert(
+              "Upload failed: " +
+                (err?.message || "Please check your connection and try again."),
+            );
           } finally {
             spinner?.remove();
           }
@@ -5585,17 +7345,20 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Remove image
-      wizard.querySelector(`[data-tile-remove-img="${i}"]`)?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        bookPages[i].image = null;
-        updateView();
-      });
+      wizard
+        .querySelector(`[data-tile-remove-img="${i}"]`)
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          bookPages[i].image = null;
+          updateView();
+        });
 
       // Focal position selector
-      wizard.querySelectorAll(`[data-set-focal="${i}"]`).forEach(btn => {
-        btn.addEventListener('click', (e) => {
+      wizard.querySelectorAll(`[data-set-focal="${i}"]`).forEach((btn) => {
+        btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const val = (btn as HTMLElement).getAttribute('data-focal-val') as 'top' | 'center' | 'bottom';
+          const val = (btn as HTMLElement).getAttribute("data-focal-val") as
+            "top" | "center" | "bottom";
           bookPages[i].focalPosition = val;
           saveDraft();
           updateView();
@@ -5603,81 +7366,108 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Audio source selector (video pages)
-      wizard.querySelectorAll(`[data-audio-src-page="${i}"]`).forEach(btn => {
-        btn.addEventListener('click', (e) => {
+      wizard.querySelectorAll(`[data-audio-src-page="${i}"]`).forEach((btn) => {
+        btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const src = (btn as HTMLElement).getAttribute('data-audio-src') as 'native' | 'upload' | 'ai' | 'silent';
+          const src = (btn as HTMLElement).getAttribute("data-audio-src") as
+            "native" | "upload" | "ai" | "silent";
           bookPages[i].audioSource = src;
-          const wrap = (btn as HTMLElement).closest('.sb-audio-source-selector');
+          const wrap = (btn as HTMLElement).closest(
+            ".sb-audio-source-selector",
+          );
           if (wrap) {
-            wrap.querySelectorAll('.sb-audio-src-btn').forEach(b => b.classList.remove('sb-audio-src-btn--active'));
-            (btn as HTMLElement).classList.add('sb-audio-src-btn--active');
+            wrap
+              .querySelectorAll(".sb-audio-src-btn")
+              .forEach((b) => b.classList.remove("sb-audio-src-btn--active"));
+            (btn as HTMLElement).classList.add("sb-audio-src-btn--active");
           }
           saveDraft();
         });
       });
 
       // Save story text
-      const tileText = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
+      const tileText = wizard.querySelector(
+        `[data-tile-text="${i}"]`,
+      ) as HTMLTextAreaElement | null;
       const handleTileText = () => {
         if (tileText) {
           bookPages[i].text = tileText.value;
-          bookPages[i].dialogueLines = parseScreenplayToDialogueLines(tileText.value, bookPages[i].dialogueLines);
+          bookPages[i].dialogueLines = parseScreenplayToDialogueLines(
+            tileText.value,
+            bookPages[i].dialogueLines,
+          );
           syncDialogText(i);
         }
         saveDraft();
       };
-      tileText?.addEventListener('input', handleTileText);
-      tileText?.addEventListener('paste', () => setTimeout(handleTileText, 0));
+      tileText?.addEventListener("input", handleTileText);
+      tileText?.addEventListener("paste", () => setTimeout(handleTileText, 0));
 
       // Wire multi-character dialogue line events for mobile canvas
-      wireDialogueLineEvents(wizard, 'mob', () => updateView());
+      wireDialogueLineEvents(wizard, "mob", () => updateView());
 
       // --- Simple Audio Upload handlers ---
       // Upload trigger
-      wizard.querySelectorAll('[data-audio-upload-trigger]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-upload-trigger') || '0');
-          const fileInput = wizard.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+      wizard.querySelectorAll("[data-audio-upload-trigger]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(
+            (btn as HTMLElement).getAttribute("data-audio-upload-trigger") ||
+              "0",
+          );
+          const fileInput = wizard.querySelector(
+            `[data-audio-file="${idx}"]`,
+          ) as HTMLInputElement;
           fileInput?.click();
         });
       });
       // Replace trigger
-      wizard.querySelectorAll('[data-audio-replace]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-replace') || '0');
-          const fileInput = wizard.querySelector(`[data-audio-file="${idx}"]`) as HTMLInputElement;
+      wizard.querySelectorAll("[data-audio-replace]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(
+            (btn as HTMLElement).getAttribute("data-audio-replace") || "0",
+          );
+          const fileInput = wizard.querySelector(
+            `[data-audio-file="${idx}"]`,
+          ) as HTMLInputElement;
           fileInput?.click();
         });
       });
       // File input change
-      wizard.querySelectorAll('[data-audio-file]').forEach(input => {
-        input.addEventListener('change', async () => {
-          const idx = parseInt((input as HTMLElement).getAttribute('data-audio-file') || '0');
+      wizard.querySelectorAll("[data-audio-file]").forEach((input) => {
+        input.addEventListener("change", async () => {
+          const idx = parseInt(
+            (input as HTMLElement).getAttribute("data-audio-file") || "0",
+          );
           const file = (input as HTMLInputElement).files?.[0];
           if (!file) return;
           try {
-            const storyId = editStoryId || activeDraftId || 'draft';
+            const storyId = editStoryId || activeDraftId || "draft";
             // Extract audio track if video was uploaded
             const extracted = await extractAudioFromMediaFile(file);
-            const cdnUrl = await uploadAudioData(extracted.blob, storyId, 'page_' + idx);
+            const cdnUrl = await uploadAudioData(
+              extracted.blob,
+              storyId,
+              "page_" + idx,
+            );
             bookPages[idx].audioUrl = cdnUrl;
             bookPages[idx].audioFileName = extracted.fileName;
             saveDraft();
             updateView();
           } catch (err: any) {
-            console.error('Audio upload failed:', err);
-            alert('Audio upload failed: ' + (err?.message || 'Unknown error'));
+            console.error("Audio upload failed:", err);
+            alert("Audio upload failed: " + (err?.message || "Unknown error"));
           }
         });
       });
       // Pre-load audio duration for preview
-      wizard.querySelectorAll('[data-audio-duration]').forEach(durSpan => {
-        const idx = parseInt(durSpan.getAttribute('data-audio-duration') || '0');
+      wizard.querySelectorAll("[data-audio-duration]").forEach((durSpan) => {
+        const idx = parseInt(
+          durSpan.getAttribute("data-audio-duration") || "0",
+        );
         const url = bookPages[idx]?.audioUrl;
         if (url) {
           const preAudio = new Audio(url);
-          preAudio.addEventListener('loadedmetadata', () => {
+          preAudio.addEventListener("loadedmetadata", () => {
             if (preAudio.duration && !isNaN(preAudio.duration)) {
               durSpan.textContent = formatTime(preAudio.duration);
             }
@@ -5686,97 +7476,120 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
       });
 
       // Play / Pause with scrubber sync
-      wizard.querySelectorAll('[data-audio-play]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-play') || '0');
+      wizard.querySelectorAll("[data-audio-play]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(
+            (btn as HTMLElement).getAttribute("data-audio-play") || "0",
+          );
           const url = bookPages[idx]?.audioUrl;
           if (!url) return;
 
           const playBtn = btn as HTMLButtonElement;
-          const slider = wizard.querySelector(`[data-audio-scrubber="${idx}"]`) as HTMLInputElement | null;
+          const slider = wizard.querySelector(
+            `[data-audio-scrubber="${idx}"]`,
+          ) as HTMLInputElement | null;
           const curSpan = wizard.querySelector(`[data-audio-current="${idx}"]`);
-          const durSpan = wizard.querySelector(`[data-audio-duration="${idx}"]`);
+          const durSpan = wizard.querySelector(
+            `[data-audio-duration="${idx}"]`,
+          );
 
           if (isSpeaking()) {
             stopSpeaking();
-            playBtn.textContent = '▶ Play';
+            playBtn.textContent = "▶ Play";
           } else {
-            playBtn.textContent = '⏸ Pause';
+            playBtn.textContent = "⏸ Pause";
             playAudioUrl(
               url,
               () => {
-                playBtn.textContent = '▶ Play';
-                if (slider) slider.value = '0';
-                if (curSpan) curSpan.textContent = '0:00';
+                playBtn.textContent = "▶ Play";
+                if (slider) slider.value = "0";
+                if (curSpan) curSpan.textContent = "0:00";
               },
               (current, duration) => {
                 if (slider && duration > 0) {
                   slider.value = ((current / duration) * 100).toFixed(1);
                 }
                 if (curSpan) curSpan.textContent = formatTime(current);
-                if (durSpan && duration > 0) durSpan.textContent = formatTime(duration);
-              }
+                if (durSpan && duration > 0)
+                  durSpan.textContent = formatTime(duration);
+              },
             );
           }
         });
       });
 
       // Restart from start
-      wizard.querySelectorAll('[data-audio-restart]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-restart') || '0');
+      wizard.querySelectorAll("[data-audio-restart]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(
+            (btn as HTMLElement).getAttribute("data-audio-restart") || "0",
+          );
           const url = bookPages[idx]?.audioUrl;
           if (!url) return;
 
-          const playBtn = wizard.querySelector(`[data-audio-play="${idx}"]`) as HTMLButtonElement | null;
-          const slider = wizard.querySelector(`[data-audio-scrubber="${idx}"]`) as HTMLInputElement | null;
+          const playBtn = wizard.querySelector(
+            `[data-audio-play="${idx}"]`,
+          ) as HTMLButtonElement | null;
+          const slider = wizard.querySelector(
+            `[data-audio-scrubber="${idx}"]`,
+          ) as HTMLInputElement | null;
           const curSpan = wizard.querySelector(`[data-audio-current="${idx}"]`);
-          const durSpan = wizard.querySelector(`[data-audio-duration="${idx}"]`);
+          const durSpan = wizard.querySelector(
+            `[data-audio-duration="${idx}"]`,
+          );
 
           stopSpeaking();
-          if (playBtn) playBtn.textContent = '⏸ Pause';
-          if (slider) slider.value = '0';
-          if (curSpan) curSpan.textContent = '0:00';
+          if (playBtn) playBtn.textContent = "⏸ Pause";
+          if (slider) slider.value = "0";
+          if (curSpan) curSpan.textContent = "0:00";
 
           playAudioUrl(
             url,
             () => {
-              if (playBtn) playBtn.textContent = '▶ Play';
-              if (slider) slider.value = '0';
-              if (curSpan) curSpan.textContent = '0:00';
+              if (playBtn) playBtn.textContent = "▶ Play";
+              if (slider) slider.value = "0";
+              if (curSpan) curSpan.textContent = "0:00";
             },
             (current, duration) => {
               if (slider && duration > 0) {
                 slider.value = ((current / duration) * 100).toFixed(1);
               }
               if (curSpan) curSpan.textContent = formatTime(current);
-              if (durSpan && duration > 0) durSpan.textContent = formatTime(duration);
-            }
+              if (durSpan && duration > 0)
+                durSpan.textContent = formatTime(duration);
+            },
           );
         });
       });
 
       // Scrubber range input seeking
-      wizard.querySelectorAll('[data-audio-scrubber]').forEach(slider => {
+      wizard.querySelectorAll("[data-audio-scrubber]").forEach((slider) => {
         const inputEl = slider as HTMLInputElement;
-        const idx = parseInt(inputEl.getAttribute('data-audio-scrubber') || '0');
+        const idx = parseInt(
+          inputEl.getAttribute("data-audio-scrubber") || "0",
+        );
 
-        inputEl.addEventListener('input', () => {
+        inputEl.addEventListener("input", () => {
           const audio = getCurrentAudio();
           const curSpan = wizard.querySelector(`[data-audio-current="${idx}"]`);
-          const durSpan = wizard.querySelector(`[data-audio-duration="${idx}"]`);
+          const durSpan = wizard.querySelector(
+            `[data-audio-duration="${idx}"]`,
+          );
           const duration = audio?.duration || 0;
           const targetTime = (parseFloat(inputEl.value) / 100) * duration;
 
           seekAudio(targetTime);
           if (curSpan) curSpan.textContent = formatTime(targetTime);
-          if (durSpan && duration > 0) durSpan.textContent = formatTime(duration);
+          if (durSpan && duration > 0)
+            durSpan.textContent = formatTime(duration);
         });
       });
       // Remove
-      wizard.querySelectorAll('[data-audio-remove]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt((btn as HTMLElement).getAttribute('data-audio-remove') || '0');
+      wizard.querySelectorAll("[data-audio-remove]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(
+            (btn as HTMLElement).getAttribute("data-audio-remove") || "0",
+          );
           bookPages[idx].audioUrl = null;
           bookPages[idx].audioFileName = null;
           saveDraft();
@@ -5784,175 +7597,218 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         });
       });
       // Manual captions
-      wizard.querySelectorAll('[data-simple-captions]').forEach(ta => {
+      wizard.querySelectorAll("[data-simple-captions]").forEach((ta) => {
         const handler = () => {
-          const idx = parseInt((ta as HTMLElement).getAttribute('data-simple-captions') || '0');
+          const idx = parseInt(
+            (ta as HTMLElement).getAttribute("data-simple-captions") || "0",
+          );
           bookPages[idx].dialogText = (ta as HTMLTextAreaElement).value;
           saveDraft();
         };
-        ta.addEventListener('input', handler);
-        ta.addEventListener('paste', () => setTimeout(handler, 0));
+        ta.addEventListener("input", handler);
+        ta.addEventListener("paste", () => setTimeout(handler, 0));
       });
 
       // Pre-record Audio for book page
       const doPrerecordBookPage = async (pageIdx: number) => {
-        const text = (bookPages[pageIdx].dialogText || bookPages[pageIdx].text || '').trim();
-        const btn = wizard?.querySelector(`[data-prerecord-book="${pageIdx}"]`) as HTMLButtonElement | null;
-        const span = btn?.querySelector('span');
-        if (btn) btn.setAttribute('disabled', 'true');
-        if (span) span.textContent = 'Recording...';
+        const text = (
+          bookPages[pageIdx].dialogText ||
+          bookPages[pageIdx].text ||
+          ""
+        ).trim();
+        const btn = wizard?.querySelector(
+          `[data-prerecord-book="${pageIdx}"]`,
+        ) as HTMLButtonElement | null;
+        const span = btn?.querySelector("span");
+        if (btn) btn.setAttribute("disabled", "true");
+        if (span) span.textContent = "Recording...";
         try {
-          const audioUrl = await preRecordAudio(text, bookPages[pageIdx].stability ?? 0.5);
+          const audioUrl = await preRecordAudio(
+            text,
+            bookPages[pageIdx].stability ?? 0.5,
+          );
           bookPages[pageIdx].audioUrl = audioUrl;
           saveDraft();
         } catch (err: any) {
-          console.error('[Pre-record] Failed:', err);
-          showModal({ title: 'Pre-record Failed', content: `<p>${err.message || 'Something went wrong.'}</p>`, confirmText: 'OK' });
+          console.error("[Pre-record] Failed:", err);
+          showModal({
+            title: "Pre-record Failed",
+            content: `<p>${err.message || "Something went wrong."}</p>`,
+            confirmText: "OK",
+          });
         } finally {
-          if (btn) btn.removeAttribute('disabled');
+          if (btn) btn.removeAttribute("disabled");
           updateView();
         }
       };
 
-      wizard.querySelector(`[data-prerecord-book="${i}"]`)?.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const text = (bookPages[i].dialogText || bookPages[i].text || '').trim();
-        if (!text) {
-          showModal({ title: 'No Dialogue or Story Text', content: '<p>Write some dialogue or story text first before pre-recording.</p>', confirmText: 'OK' });
-          return;
-        }
-        if (bookPages[i].audioUrl) {
-          showModal({
-            title: 'Re-record Audio',
-            content: '<p style="line-height:1.6;">Would you like to re-record the audio? This will replace the existing recording.</p>',
-            confirmText: 'Yes, Re-record',
-            cancelText: 'Cancel',
-            onConfirm: async () => {
-              hideModal();
-              await doPrerecordBookPage(i);
-            }
-          });
-          return;
-        }
-        await doPrerecordBookPage(i);
-      });
+      wizard
+        .querySelector(`[data-prerecord-book="${i}"]`)
+        ?.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const text = (
+            bookPages[i].dialogText ||
+            bookPages[i].text ||
+            ""
+          ).trim();
+          if (!text) {
+            showModal({
+              title: "No Dialogue or Story Text",
+              content:
+                "<p>Write some dialogue or story text first before pre-recording.</p>",
+              confirmText: "OK",
+            });
+            return;
+          }
+          if (bookPages[i].audioUrl) {
+            showModal({
+              title: "Re-record Audio",
+              content:
+                '<p style="line-height:1.6;">Would you like to re-record the audio? This will replace the existing recording.</p>',
+              confirmText: "Yes, Re-record",
+              cancelText: "Cancel",
+              onConfirm: async () => {
+                hideModal();
+                await doPrerecordBookPage(i);
+              },
+            });
+            return;
+          }
+          await doPrerecordBookPage(i);
+        });
 
       // Play pre-recorded book audio
-      wizard.querySelector(`[data-prerecord-play-book="${i}"]`)?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const audioUrl = bookPages[i]?.audioUrl;
-        if (audioUrl) {
-          if (isSpeaking()) { stopSpeaking(); } else { playAudioUrl(audioUrl); }
-        }
-      });
+      wizard
+        .querySelector(`[data-prerecord-play-book="${i}"]`)
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const audioUrl = bookPages[i]?.audioUrl;
+          if (audioUrl) {
+            if (isSpeaking()) {
+              stopSpeaking();
+            } else {
+              playAudioUrl(audioUrl);
+            }
+          }
+        });
 
       // Deeper Dive toggle
-      wizard.querySelector(`[data-tile-dd-toggle="${i}"]`)?.addEventListener('click', (e) => {
-        e.preventDefault();
-        const panel = wizard.querySelector(`[data-tile-dd-panel="${i}"]`) as HTMLElement;
-        const chevron = (e.currentTarget as HTMLElement).querySelector('.book-tile__dd-chevron') as HTMLElement;
-        if (panel) {
-          const isOpen = panel.style.display !== 'none';
-          panel.style.display = isOpen ? 'none' : 'block';
-          if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
-          if (!isOpen) {
-            setTimeout(() => {
-              panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }, 50);
+      wizard
+        .querySelector(`[data-tile-dd-toggle="${i}"]`)
+        ?.addEventListener("click", (e) => {
+          e.preventDefault();
+          const panel = wizard.querySelector(
+            `[data-tile-dd-panel="${i}"]`,
+          ) as HTMLElement;
+          const chevron = (e.currentTarget as HTMLElement).querySelector(
+            ".book-tile__dd-chevron",
+          ) as HTMLElement;
+          if (panel) {
+            const isOpen = panel.style.display !== "none";
+            panel.style.display = isOpen ? "none" : "block";
+            if (chevron)
+              chevron.style.transform = isOpen ? "" : "rotate(90deg)";
+            if (!isOpen) {
+              setTimeout(() => {
+                panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              }, 50);
+            }
           }
-        }
-      });
+        });
 
       // Deeper Dive content
-      const tileDd = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
+      const tileDd = wizard.querySelector(
+        `[data-tile-dd-content="${i}"]`,
+      ) as HTMLTextAreaElement | null;
       const handleTileDd = () => {
         if (tileDd) bookPages[i].deeperDiveContent = tileDd.value;
         saveDraft();
       };
-      tileDd?.addEventListener('input', handleTileDd);
-      tileDd?.addEventListener('paste', () => setTimeout(handleTileDd, 0));
-
-
+      tileDd?.addEventListener("input", handleTileDd);
+      tileDd?.addEventListener("paste", () => setTimeout(handleTileDd, 0));
 
       // Page Reordering & Duplication
-      wizard.querySelector(`[data-page-move-up="${i}"]`)?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (i <= 0) return;
-        const textEl = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
-        if (textEl) bookPages[i].text = textEl.value;
-        const ddEl = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
-        if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
+      wizard
+        .querySelector(`[data-page-move-up="${i}"]`)
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (i <= 0) return;
+          const textEl = wizard.querySelector(
+            `[data-tile-text="${i}"]`,
+          ) as HTMLTextAreaElement | null;
+          if (textEl) bookPages[i].text = textEl.value;
+          const ddEl = wizard.querySelector(
+            `[data-tile-dd-content="${i}"]`,
+          ) as HTMLTextAreaElement | null;
+          if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
 
-        const temp = bookPages[i];
-        bookPages[i] = bookPages[i - 1];
-        bookPages[i - 1] = temp;
-        currentPage = i - 1;
-        saveDraft();
-        updateView();
-      });
+          const temp = bookPages[i];
+          bookPages[i] = bookPages[i - 1];
+          bookPages[i - 1] = temp;
+          currentPage = i - 1;
+          saveDraft();
+          updateView();
+        });
 
-      wizard.querySelector(`[data-page-move-down="${i}"]`)?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (i >= bookPages.length - 1) return;
-        const textEl = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
-        if (textEl) bookPages[i].text = textEl.value;
-        const ddEl = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
-        if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
+      wizard
+        .querySelector(`[data-page-move-down="${i}"]`)
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (i >= bookPages.length - 1) return;
+          const textEl = wizard.querySelector(
+            `[data-tile-text="${i}"]`,
+          ) as HTMLTextAreaElement | null;
+          if (textEl) bookPages[i].text = textEl.value;
+          const ddEl = wizard.querySelector(
+            `[data-tile-dd-content="${i}"]`,
+          ) as HTMLTextAreaElement | null;
+          if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
 
-        const temp = bookPages[i];
-        bookPages[i] = bookPages[i + 1];
-        bookPages[i + 1] = temp;
-        currentPage = i + 1;
-        saveDraft();
-        updateView();
-      });
+          const temp = bookPages[i];
+          bookPages[i] = bookPages[i + 1];
+          bookPages[i + 1] = temp;
+          currentPage = i + 1;
+          saveDraft();
+          updateView();
+        });
 
-      wizard.querySelector(`[data-page-duplicate="${i}"]`)?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const textEl = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
-        if (textEl) bookPages[i].text = textEl.value;
-        const ddEl = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
-        if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
 
-        const src = bookPages[i];
-        const clonedDialogue = (src.dialogueLines || []).map(line => ({
-          ...line,
-          id: 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        }));
-        const clonedPage: BookPage = {
-          ...src,
-          dialogueLines: clonedDialogue,
-        };
-        bookPages.splice(i + 1, 0, clonedPage);
-        currentPage = i + 1;
-        saveDraft();
-        updateView();
-      });
 
       // Maximize
-      wizard.querySelector(`[data-tile-maximize="${i}"]`)?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openPageFullscreen(i);
-      });
+      wizard
+        .querySelector(`[data-tile-maximize="${i}"]`)
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openPageFullscreen(i);
+        });
 
       // Direct delete button click
-      wizard.querySelector(`[data-page-delete="${i}"]`)?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (bookPages.length <= 1) {
-          showModal({ title: 'Cannot Delete', content: '<p style="line-height:1.6;">At least one page must remain.</p>', confirmText: 'OK' });
-          return;
-        }
-        showModal({
-          title: 'Delete Page',
-          content: `<p style="line-height:1.6;">Remove <strong>Page ${i + 1}</strong>? This cannot be undone.</p>`,
-          confirmText: 'Delete', cancelText: 'Cancel',
-          onConfirm: () => {
-            bookPages.splice(i, 1);
-            if (currentPage >= bookPages.length) currentPage = bookPages.length - 1;
-            updateView();
-          },
+      wizard
+        .querySelector(`[data-page-delete="${i}"]`)
+        ?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (bookPages.length <= 1) {
+            showModal({
+              title: "Cannot Delete",
+              content:
+                '<p style="line-height:1.6;">At least one page must remain.</p>',
+              confirmText: "OK",
+            });
+            return;
+          }
+          showModal({
+            title: "Delete Page",
+            content: `<p style="line-height:1.6;">Remove <strong>Page ${i + 1}</strong>? This cannot be undone.</p>`,
+            confirmText: "Delete",
+            cancelText: "Cancel",
+            onConfirm: () => {
+              bookPages.splice(i, 1);
+              if (currentPage >= bookPages.length)
+                currentPage = bookPages.length - 1;
+              updateView();
+            },
+          });
         });
-      });
     }
   };
 
@@ -5969,67 +7825,78 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
   // Sync all storyboard textareas back into bookPages[] state.
   // Called before any save operation to ensure DOM edits aren't lost.
   function syncStoryboardToState(): void {
-    const overlay = document.querySelector('.storyboard-overlay');
+    const overlay = document.querySelector(".storyboard-overlay");
     if (!overlay) return;
-    overlay.querySelectorAll<HTMLTextAreaElement>('[data-sb-text]').forEach(ta => {
-      const idx = parseInt(ta.getAttribute('data-sb-text') || '0');
-      if (bookPages[idx]) {
-        bookPages[idx].text = ta.value;
-        bookPages[idx].dialogueLines = parseScreenplayToDialogueLines(ta.value, bookPages[idx].dialogueLines);
-        syncDialogText(idx);
-      }
-    });
-    overlay.querySelectorAll<HTMLTextAreaElement>('[data-sb-dd]').forEach(ta => {
-      const idx = parseInt(ta.getAttribute('data-sb-dd') || '0');
-      if (bookPages[idx]) bookPages[idx].deeperDiveContent = ta.value;
-    });
+    overlay
+      .querySelectorAll<HTMLTextAreaElement>("[data-sb-text]")
+      .forEach((ta) => {
+        const idx = parseInt(ta.getAttribute("data-sb-text") || "0");
+        if (bookPages[idx]) {
+          bookPages[idx].text = ta.value;
+          bookPages[idx].dialogueLines = parseScreenplayToDialogueLines(
+            ta.value,
+            bookPages[idx].dialogueLines,
+          );
+          syncDialogText(idx);
+        }
+      });
+    overlay
+      .querySelectorAll<HTMLTextAreaElement>("[data-sb-dd]")
+      .forEach((ta) => {
+        const idx = parseInt(ta.getAttribute("data-sb-dd") || "0");
+        if (bookPages[idx]) bookPages[idx].deeperDiveContent = ta.value;
+      });
   }
 
   // Auto-save when user switches tabs, minimises, or locks screen.
   // This is the critical safety net — if the browser tab goes to sleep and
   // Supabase fires a session-restore event, the draft is already persisted.
   const handleVisibilityChange = () => {
-    if (document.visibilityState === 'hidden') {
+    if (document.visibilityState === "hidden") {
       syncStoryboardToState();
       getFormData();
       saveDraft();
     }
   };
-  document.addEventListener('visibilitychange', handleVisibilityChange);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
   // Save on page unload
   const handleBeforeUnload = () => {
     syncStoryboardToState();
     getFormData();
-    if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === 'untitled') {
-      storyTitle = 'Untitled Draft';
+    if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === "untitled") {
+      storyTitle = "Untitled Draft";
     }
     saveDraft();
   };
-  window.addEventListener('beforeunload', handleBeforeUnload);
+  window.addEventListener("beforeunload", handleBeforeUnload);
 
   // Cleanup on navigation away
   const handleHashChange = async () => {
     syncStoryboardToState();
     getFormData();
-    if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === 'untitled') {
-      storyTitle = 'Untitled Draft';
+    if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === "untitled") {
+      storyTitle = "Untitled Draft";
     }
     saveDraft();
     clearInterval(autoSaveInterval);
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-    window.removeEventListener('beforeunload', handleBeforeUnload);
-    window.removeEventListener('hashchange', handleHashChange);
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.removeEventListener("hashchange", handleHashChange);
     // Best-effort cloud save on navigation
     try {
-      if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === 'untitled') storyTitle = 'Untitled Draft';
+      if (!storyTitle.trim() || storyTitle.trim().toLowerCase() === "untitled")
+        storyTitle = "Untitled Draft";
       const story = buildStoryKeepingLiveState();
       registerStory(story);
       await preUploadBase64Images();
       await saveStoryForMode(story);
     } catch (err) {
-      console.warn('[AdminCreate] Best-effort cloud save on navigate failed:', err);
+      console.warn(
+        "[AdminCreate] Best-effort cloud save on navigate failed:",
+        err,
+      );
     }
   };
-  window.addEventListener('hashchange', handleHashChange, { once: true });
+  window.addEventListener("hashchange", handleHashChange, { once: true });
 }

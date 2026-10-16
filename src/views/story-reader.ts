@@ -3,8 +3,8 @@ import { readAutoplayPref, writeAutoplayPref } from '../lib/autoplay-pref.ts';
 import { trackStoryReading, updateTrackedStoryStatus } from '../lib/reading-tracker.ts';
 import { getRouteParam, navigate } from '../router.ts';
 import { leaveReader } from '../lib/reader-origin.ts';
-import { isPreviewStory, isAdminSkipActive, activateAdminSkip } from '../lib/reader-mode.ts';
-import { adminSkipToNextEpisode, adminSkipButtonHtml } from '../lib/admin-skip.ts';
+import { isPreviewStory } from '../lib/reader-mode.ts';
+
 import { getStoryById, registerStory } from '../data/stories.ts';
 import { fetchStoryByIdFromDb, fetchOfficialStories, hasAdminPrivileges } from '../lib/db.ts';
 import { isEpisodeLive, canViewerOpenEpisode } from '../lib/episode-visibility.ts';
@@ -15,7 +15,8 @@ import {
 import { stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence, getCurrentAlignment, setWordHighlightCallback } from '../lib/tts.ts';
 import { KaraokeController, type WordTimestamp } from '../lib/karaoke.ts';
 import { getSettings } from '../lib/settings.ts';
-import { isNarrationLine, narrationColorFor } from '../lib/cast-voices.ts';
+import { isNarrationLine, narrationColorFor, isLineMuted, areAllLinesMuted, buildAudiblePageWordMap, getSilentRangeAction } from '../lib/cast-voices.ts';
+import { resolveSpeakerColor } from '../lib/screenplay.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { getSoloEpisodeCount, getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
 import { getSquadSession } from '../lib/db.ts';
@@ -33,7 +34,26 @@ import {
 
 /** Per-episode auto-play toggle. OFF by default; reset every time an episode opens. */
 let episodeAutoplay = readAutoplayPref(); // remembered globally (see lib/autoplay-pref.ts); re-read on every reader render
+
+/** True if a story page has audible (non-muted) audio to play. */
+function doesStoryPageHaveAudibleAudio(s: any, pageIdx: number): boolean {
+  if (!s || typeof pageIdx !== 'number' || pageIdx < 0 || pageIdx >= (s.panels?.length || 0)) return false;
+  const src = s.pageAudioSource?.[pageIdx];
+  const mode = src || (s.audioMode === 'simple_upload' ? 'upload' : 'ai');
+  if (mode === 'silent' || mode === 'native') return false;
+  const lines: any[] = s.pageDialogue?.[pageIdx] || [];
+  const scriptText: string = s.pageScripts?.[pageIdx] || '';
+  const chars = s.characters || [];
+  if (mode !== 'upload' && areAllLinesMuted(lines, chars, scriptText)) {
+    return false;
+  }
+  const hasAudibleLineUrl = lines.some((l: any) => !!l.audioUrl && !isLineMuted(l, chars));
+  return !!s.pageAudio?.[pageIdx] || hasAudibleLineUrl;
+}
 const AUTOPLAY_DELAY_MS = 1000; // wait after a page appears before audio starts (audio then plays at full volume, no fade)
+
+/** Tracks if the user has physically interacted with the reader yet in this SPA session, used to force a tap for iOS audio unlock. */
+let readerInteracted = false;
 
 // ─── SVG Icons ───
 const ICON = {
@@ -108,7 +128,6 @@ function renderGateInfoPage(format: 'book' | 'scroll', soloEpCount: number): str
           <polyline points="12 5 19 12 12 19"></polyline>
         </svg>
       </button>
-      ${adminSkipButtonHtml(btnId + '-admin')}
     </div>
   `;
 }
@@ -122,7 +141,6 @@ function renderSparcPreviewCard(
   format: 'book' | 'scroll',
   prompt: { text?: string; mediaUrls?: string[] },
   hasNextEpisode: boolean,
-  mode: 'preview' | 'admin' = 'preview',
 ): string {
   const btnId = format === 'book' ? 'btn-book-sparc-preview-skip' : 'btn-waterfall-sparc-preview-skip';
   const media = (prompt.mediaUrls || [])
@@ -135,22 +153,22 @@ function renderSparcPreviewCard(
 
       <div class="reader__info-badge">
         <span class="squad-gate-badge-dot" style="background:var(--color-purple);"></span>
-        <span>${mode === 'admin' ? 'ADMIN SKIP - SQUAD CHECKPOINT' : 'SPARC CHECKPOINT - PREVIEW'}</span>
+        <span>SPARC CHECKPOINT - PREVIEW</span>
       </div>
 
-      <h2 class="reader__info-title">${mode === 'admin' ? 'Squad Gate Skipped' : 'Squad Challenge Prompt'}</h2>
+      <h2 class="reader__info-title">Squad Challenge Prompt</h2>
 
       <div class="reader__info-card" style="text-align:left; padding:20px;">
-        <p style="font-size:0.95rem; color:var(--color-text-primary); line-height:1.6; margin:0; white-space:pre-wrap;">${escapeCardText(prompt.text?.trim() || (mode === 'admin' ? 'No SPARC prompt on this episode. As an admin you are reading solo.' : 'Reflect on what you just read.'))}</p>
+        <p style="font-size:0.95rem; color:var(--color-text-primary); line-height:1.6; margin:0; white-space:pre-wrap;">${escapeCardText(prompt.text?.trim() || 'Reflect on what you just read.')}</p>
         ${media}
       </div>
 
       <p class="reader__info-closing">
-        ${mode === 'admin' ? 'Admin skip is on: no squad, no timer, nothing is saved. Continue to read solo.' : 'This is how squads see the checkpoint. Previewing is solo, so there is no timer and nothing is saved.'}
+        This is how squads see the checkpoint. Previewing is solo, so there is no timer and nothing is saved.
       </p>
 
       <button class="reader__info-btn" id="${btnId}">
-        <span>${hasNextEpisode ? 'Skip to Next Episode' : (mode === 'admin' ? 'Finish' : 'Skip &amp; Finish Preview')}</span>
+        <span>${hasNextEpisode ? 'Skip to Next Episode' : 'Skip &amp; Finish Preview'}</span>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="5" y1="12" x2="19" y2="12"></line>
           <polyline points="12 5 19 12 12 19"></polyline>
@@ -193,7 +211,6 @@ function renderSparcTransitionCard(format: 'book' | 'scroll'): string {
           <polyline points="12 5 19 12 12 19"></polyline>
         </svg>
       </button>
-      ${adminSkipButtonHtml(btnId + '-admin')}
     </div>
   `;
 }
@@ -352,12 +369,7 @@ export function render(): string {
         ${story.panels.map((panel: string, i: number) => {
           const isVideo = isVideoMedia(panel) || !!(story.pageVideos && story.pageVideos[i]);
           const mediaUrl = (story.pageVideos && story.pageVideos[i]) || panel;
-          const pageAudioSrc = story.pageAudioSource?.[i];
-          const effectiveAudioMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
-          const hasAudio = effectiveAudioMode !== 'silent' && effectiveAudioMode !== 'native' && (
-            !!story.pageAudio?.[i] ||
-            !!(story.pageDialogue?.[i]?.some((l: any) => !!l.audioUrl))
-          );
+          const hasAudio = doesStoryPageHaveAudibleAudio(story, i);
           return `
           <div class="reader__panel reader__panel--loading" data-panel-index="${i}">
             ${isVideo
@@ -378,12 +390,7 @@ export function render(): string {
     `;
   } else if (story.format === 'book') {
     const page0Media = (story.pageVideos && story.pageVideos[0]) || (story.panels && story.panels[0]) || '';
-    const pageAudioSrc = story.pageAudioSource?.[0];
-    const effectiveAudioMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
-    const hasAudio = effectiveAudioMode !== 'silent' && effectiveAudioMode !== 'native' && (
-      !!story.pageAudio?.[0] ||
-      !!(story.pageDialogue?.[0]?.some((l: any) => !!l.audioUrl))
-    );
+    const hasAudio = doesStoryPageHaveAudibleAudio(story, 0);
     // No bare <img>/<video> here: updatePage() mounts page 1 through mountPageMedia()
     // right after render, so the first thing readers see is the spinner, then a fade-in.
     const firstPageMedia = page0Media
@@ -406,8 +413,20 @@ export function render(): string {
 
   const themeColor = story.themeColor || (story as any).theme_color || '#141424';
 
+  let startOverlayHtml = '';
+  // Check if we need a mandatory "tap to start" overlay for autoplay context unlock
+  if (!readerInteracted) {
+    startOverlayHtml = `
+      <div id="reader-start-overlay" class="reader__start-overlay" style="position: fixed; inset: 0; z-index: 9999; background: ${themeColor}; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: #fff; transition: opacity 0.3s ease;">
+        <div style="font-size: 3.5rem; margin-bottom: 16px;">📖</div>
+        <div style="font-size: 1.3rem; font-weight: 700;">Tap to start reading</div>
+      </div>
+    `;
+  }
+
   return `
     <div class="reader" id="reader-container" data-story-id="${storyId}" style="--story-theme-color: ${themeColor}; background: ${themeColor} !important;">
+      ${startOverlayHtml}
 
       <!-- Progress bar -->
       <div class="reader__progress-track">
@@ -537,6 +556,33 @@ export async function init(): Promise<void> {
   const contentEl = document.getElementById('reader-content');
   if (contentEl) contentEl.style.setProperty('background', themeColor, 'important');
 
+  const startOverlay = document.getElementById('reader-start-overlay');
+  if (startOverlay) {
+    startOverlay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      readerInteracted = true;
+      ensureAutoplayAudio();
+      
+      startOverlay.style.opacity = '0';
+      setTimeout(() => startOverlay.remove(), 300);
+
+      if (story!.format === 'book') {
+        const stillPlaying = !!activeKaraokeCtrl && !activeKaraokeCtrl.paused;
+        if (!stillPlaying) scheduleAutoplay(currentPage);
+        
+        const initialBookVideo = document.getElementById('book-video') as HTMLVideoElement | null;
+        if (initialBookVideo && initialBookVideo.paused) {
+          initialBookVideo.play().catch(() => {});
+        }
+      } else {
+        autoplayKick?.();
+        document.querySelectorAll<HTMLVideoElement>('.reader__panel-video').forEach(vid => {
+          if (vid.paused) vid.play().catch(() => {});
+        });
+      }
+    });
+  }
+
   let siblingEpisodes: { id: string; episodeNumber: number }[] = [];
   if (story.storyGroupId) {
     const allStories = await fetchOfficialStories();
@@ -649,40 +695,25 @@ export async function init(): Promise<void> {
   // Preview (owner/admin looking at non-live or explicitly previewed content) is solo:
   // no squad gate, no squad timer. SPARC is shown as a skippable card instead.
   const previewMode = isPreviewStory(story);
-  // Admin skip: an admin chose to read this story solo past the squad gate / SPARC barriers.
-  // Honored only while the user is an admin (see reader-mode.ts). Preview already is solo, so it wins.
-  const adminSkipActive = !previewMode && isAdminSkipActive(storyGroupId);
-  const soloMode = previewMode || adminSkipActive;
+  const soloMode = previewMode;
   let isPostGateEpisode = !soloMode && episodeNumber > soloEpCount;
   let isGateEpisode = !soloMode && episodeNumber === soloEpCount;
   const previewSparcPrompt = soloMode ? story.sparcPrompt : undefined;
   const hasPromptContent = !!previewSparcPrompt && (!!previewSparcPrompt.text?.trim() || !!previewSparcPrompt.mediaUrls?.length);
-  // Solo checkpoint card: preview shows it when the episode has a SPARC prompt;
-  // admin skip shows it at every gate/post-gate episode so there is always a way to continue.
-  const previewSparc = (previewMode && hasPromptContent) || (adminSkipActive && episodeNumber >= soloEpCount);
+  // Solo checkpoint card: preview shows it when the episode has a SPARC prompt
+  const previewSparc = previewMode && hasPromptContent;
   const showEndCard = isGateEpisode || isPostGateEpisode || previewSparc;
-  const soloCardMode: 'preview' | 'admin' = adminSkipActive ? 'admin' : 'preview';
 
   // Skip the solo checkpoint card: go to the next episode of this story, or leave the reader after the last one
   const previewSkip = () => {
     stopSpeaking();
-    if (adminSkipActive) {
-      adminSkipToNextEpisode(storyGroupId, episodeNumber);
-      return;
-    }
     const idx = siblingEpisodes.findIndex(e => e.episodeNumber === episodeNumber);
     const next = idx >= 0 && idx < siblingEpisodes.length - 1 ? siblingEpisodes[idx + 1] : null;
     if (next) navigate('story/' + next.id);
     else leaveReader();
   };
 
-  // Admin-only "Admin skip" on the real barriers (same as a user sees, plus this button)
-  const wireAdminSkip = (buttonId: string) => {
-    document.getElementById(buttonId)?.addEventListener('click', () => {
-      stopSpeaking();
-      adminSkipToNextEpisode(storyGroupId, episodeNumber);
-    });
-  };
+
   // Re-renders the scroll-format end card (assigned further down) when the gate flags flip
   let refreshScrollEndCard: (() => void) | null = null;
 
@@ -704,15 +735,9 @@ export async function init(): Promise<void> {
           This episode is part of a squad reading experience. Join or create a squad to continue the story together.
         </p>
         <button id="gate-guard-btn" class="btn btn--primary" style="padding:12px 28px; font-weight:700;">Open Squad Gate</button>
-        ${adminSkipButtonHtml('gate-guard-admin-skip')}
         <button class="btn btn--secondary" onclick="window.__driveLeaveReader ? window.__driveLeaveReader() : (window.location.hash = 'home')" style="padding:8px 20px;">← Back</button>
       </div>
     `;
-    document.getElementById('gate-guard-admin-skip')?.addEventListener('click', () => {
-      // Read the rest of this story solo; reload so the reader re-evaluates with admin skip on
-      activateAdminSkip(storyGroupId);
-      window.location.reload();
-    });
     document.getElementById('gate-guard-btn')?.addEventListener('click', () => {
       openSquadGateModal({
         storyId: story!.id,
@@ -977,7 +1002,7 @@ export async function init(): Promise<void> {
           if (isGateEpisode) {
             // Squad Gate info page
             pageContainer.innerHTML = renderGateInfoPage('book', soloEpCount);
-            wireAdminSkip('btn-book-lets-begin-admin');
+
             document.getElementById('btn-book-lets-begin')?.addEventListener('click', () => {
               stopSpeaking();
               openSquadGateModal({
@@ -995,7 +1020,7 @@ export async function init(): Promise<void> {
           } else if (isPostGateEpisode) {
             // SPARC transition page
             pageContainer.innerHTML = renderSparcTransitionCard('book');
-            wireAdminSkip('btn-book-sparc-transition-admin');
+
             document.getElementById('btn-book-sparc-transition')?.addEventListener('click', () => {
               stopSpeaking();
               navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
@@ -1003,7 +1028,7 @@ export async function init(): Promise<void> {
           } else if (previewSparc) {
             // Preview: show the prompt as a skippable card (no squad, no timer, nothing saved)
             const idx = siblingEpisodes.findIndex(e => e.episodeNumber === episodeNumber);
-            pageContainer.innerHTML = renderSparcPreviewCard('book', previewSparcPrompt || {}, idx >= 0 && idx < siblingEpisodes.length - 1, soloCardMode);
+            pageContainer.innerHTML = renderSparcPreviewCard('book', previewSparcPrompt || {}, idx >= 0 && idx < siblingEpisodes.length - 1);
             document.getElementById('btn-book-sparc-preview-skip')?.addEventListener('click', previewSkip);
           }
         } else {
@@ -1014,12 +1039,7 @@ export async function init(): Promise<void> {
           // Render regular book panel
           const currentMedia = (story.pageVideos && story.pageVideos[currentPage]) || (story.panels && story.panels[currentPage]) || '';
           const isVideo = isVideoMedia(currentMedia) || !!(story.pageVideos && story.pageVideos[currentPage]);
-          const pageAudioSrc = story.pageAudioSource?.[currentPage];
-          const effectiveAudioMode = pageAudioSrc || (story.audioMode === 'simple_upload' ? 'upload' : 'ai');
-          const hasAudio = effectiveAudioMode !== 'silent' && effectiveAudioMode !== 'native' && (
-            !!story.pageAudio?.[currentPage] ||
-            !!(story.pageDialogue?.[currentPage]?.some((l: any) => !!l.audioUrl))
-          );
+          const hasAudio = pageHasAudio(currentPage);
           const focalPos = story.pageFocalPositions?.[currentPage];
           const objPosStyle = focalPos && focalPos !== 'center' ? `object-position:center ${focalPos};` : '';
 
@@ -1342,7 +1362,7 @@ export async function init(): Promise<void> {
           document.querySelectorAll('[data-audio-panel]').forEach(b => {
             (b as HTMLElement).innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
           });
-          const audioUrl = story.pageAudio![idx];
+          const audioUrl = doesStoryPageHaveAudibleAudio(story, idx) ? story.pageAudio![idx] : undefined;
           if (audioUrl) {
             playAudioUrl(audioUrl);
             currentPlayingPanel = idx;
@@ -1361,6 +1381,7 @@ export async function init(): Promise<void> {
       waterfallTimer = setTimeout(async () => {
         waterfallTimer = null;
         if (!episodeAutoplay || !visiblePanels.has(idx) || idx === currentPlayingPanel) return;
+        if (!doesStoryPageHaveAudibleAudio(story, idx)) return;
         const url = story.pageAudio![idx];
         if (!url) return;
         stopSpeaking();
@@ -1386,7 +1407,7 @@ export async function init(): Promise<void> {
         if (idx < 0) return;
         if (entry.isIntersecting) {
           visiblePanels.add(idx);
-          if (episodeAutoplay && idx !== currentPlayingPanel && story.pageAudio![idx]) {
+          if (episodeAutoplay && idx !== currentPlayingPanel && doesStoryPageHaveAudibleAudio(story, idx) && story.pageAudio![idx]) {
             startPanelAutoplay(idx);
           }
         } else {
@@ -1402,7 +1423,7 @@ export async function init(): Promise<void> {
     // When the toggle is switched on, start with whatever panel is already on screen
     autoplayKick = () => {
       const idx = [...visiblePanels].sort((a, b) => a - b)[0];
-      if (idx !== undefined && story.pageAudio![idx]) startPanelAutoplay(idx);
+      if (idx !== undefined && doesStoryPageHaveAudibleAudio(story, idx) && story.pageAudio![idx]) startPanelAutoplay(idx);
     };
     autoplayCancel = () => {
       if (waterfallTimer !== null) { clearTimeout(waterfallTimer); waterfallTimer = null; }
@@ -1416,7 +1437,7 @@ export async function init(): Promise<void> {
       if (!scrollEndCard) return;
       if (isGateEpisode) {
         scrollEndCard.innerHTML = renderGateInfoPage('scroll', soloEpCount);
-        wireAdminSkip('btn-waterfall-lets-begin-admin');
+
         document.getElementById('btn-waterfall-lets-begin')?.addEventListener('click', () => {
           openSquadGateModal({
             storyId: story.id,
@@ -1430,14 +1451,14 @@ export async function init(): Promise<void> {
         });
       } else if (isPostGateEpisode) {
         scrollEndCard.innerHTML = renderSparcTransitionCard('scroll');
-        wireAdminSkip('btn-waterfall-sparc-transition-admin');
+
         document.getElementById('btn-waterfall-sparc-transition')?.addEventListener('click', () => {
           stopSpeaking();
           navigate(`sparc/${squadId}/${storyGroupId}/${episodeNumber}`);
         });
       } else if (previewSparc) {
         const idx = siblingEpisodes.findIndex(e => e.episodeNumber === episodeNumber);
-        scrollEndCard.innerHTML = renderSparcPreviewCard('scroll', previewSparcPrompt || {}, idx >= 0 && idx < siblingEpisodes.length - 1, soloCardMode);
+        scrollEndCard.innerHTML = renderSparcPreviewCard('scroll', previewSparcPrompt || {}, idx >= 0 && idx < siblingEpisodes.length - 1);
         document.getElementById('btn-waterfall-sparc-preview-skip')?.addEventListener('click', previewSkip);
       }
     };
@@ -1561,18 +1582,12 @@ export async function init(): Promise<void> {
   /** Does this book page have playable story audio? */
   function pageHasAudio(pageIdx: number): boolean {
     const s = story || getStoryById(storyId);
-    if (!s || typeof pageIdx !== 'number' || pageIdx < 0 || pageIdx >= (s.panels?.length || 0)) return false;
-    const src = s.pageAudioSource?.[pageIdx];
-    const mode = src || (s.audioMode === 'simple_upload' ? 'upload' : 'ai');
-    return mode !== 'silent' && mode !== 'native' && (
-      !!s.pageAudio?.[pageIdx] ||
-      !!(s.pageDialogue?.[pageIdx]?.some((l: any) => !!l.audioUrl))
-    );
+    return doesStoryPageHaveAudibleAudio(s, pageIdx);
   }
 
   function playAudioForPage(pageIdx: number, startWordIdx?: number, opts?: { autoplay?: boolean }) {
     const s = story || getStoryById(storyId);
-    if (!s) return;
+    if (!s || !doesStoryPageHaveAudibleAudio(s, pageIdx)) return;
     const pageAudioUrl = s.pageAudio?.[pageIdx];
     const dialogueLines = s.pageDialogue?.[pageIdx] || [];
     const scriptText = s.pageScripts?.[pageIdx] || '';
@@ -1597,38 +1612,57 @@ export async function init(): Promise<void> {
     // Determine audio URL
     let audioUrlToPlay: string | undefined = pageAudioUrl || undefined;
     if (!audioUrlToPlay && dialogueLines.length > 0) {
-      const lineWithAudio = dialogueLines.find((l: any) => !!l.audioUrl);
+      const lineWithAudio = dialogueLines.find((l: any) => !!l.audioUrl && !isLineMuted(l, s.characters));
       if (lineWithAudio && lineWithAudio.audioUrl) audioUrlToPlay = lineWithAudio.audioUrl;
     }
 
     if (audioUrlToPlay) {
       stopSpeaking();
 
-      // Build word map. Word numbers follow the DISPLAYED text (what the cc-word spans are numbered by).
-      const displayWordCount = dialogueLines.length > 0
-        ? dialogueLines.reduce((n: number, l: any) => n + String(l.text || '').split(/\s+/).filter(Boolean).length, 0)
-        : String(scriptText).split(/\s+/).filter(Boolean).length;
-      let wordMap: WordTimestamp[] = [];
-      let estimatedMap = false;
-      if (dialogueLines.length > 0) {
-        // Real alignment where it exists; lines with a known audio length but no usable alignment are
-        // spread over their own audio window. Includes the silence joined between lines.
-        wordMap = KaraokeController.buildMultiLineWordMap(dialogueLines);
-      }
-      if (wordMap.length < displayWordCount || displayWordCount === 0) {
-        // Not every word could be timed (e.g. uploaded audio with no alignment): spread ALL words over the
-        // real audio length (fitted as soon as the browser knows it) instead of a flat guess per word.
-        const allText = dialogueLines.length > 0
-          ? dialogueLines.map((l: any) => l.text).join(' ')
-          : scriptText;
-        const words = allText.split(/\s+/).filter(Boolean);
-        const est = KaraokeController.estimateWordTimes(words, 0, words.length * 0.35);
-        wordMap = est.map((w, i) => ({ wordIdx: i, lineIdx: 0, startTime: w.startTime, endTime: w.endTime }));
-        estimatedMap = true;
-      }
+      const { wordMap, estimatedMap, silentRanges } = buildAudiblePageWordMap(
+        dialogueLines,
+        scriptText,
+        s.characters
+      );
+
       // When auto-play is armed, reuse the pre-unlocked element (iOS needs this). Always full volume.
       const sharedAudioEl = getAutoplayAudio();
       if (sharedAudioEl) resetAudioLevel();
+
+      const finishPageAudio = () => {
+        const overlay = document.getElementById('reader-captions-overlay');
+        overlay?.querySelectorAll('.cc-word--active').forEach(span => span.classList.remove('cc-word--active'));
+        updateAllPlayButtons(false);
+        if (getSettings().autoAdvance && currentPage < s.panels.length - 1) {
+          setTimeout(() => {
+            document.getElementById('book-next')?.click();
+          }, 650);
+        }
+      };
+
+      const skipSilentRanges = (ctrl: KaraokeController, cur: number = ctrl.currentTime) => {
+        const action = getSilentRangeAction(cur, silentRanges, wordMap, ctrl.duration);
+        if (!action) return;
+        const rawAudio = (ctrl as any).audio as HTMLAudioElement | undefined;
+        if (action.type === 'finish') {
+          ctrl.pause();
+          const resetTo = wordMap[0]?.startTime || 0;
+          if (ctrl.duration > 0) {
+            ctrl.seekToTime(resetTo);
+          } else if (rawAudio) {
+            try { rawAudio.currentTime = resetTo; } catch {}
+          }
+          finishPageAudio();
+          return;
+        }
+        if (typeof action.seekTo === 'number') {
+          if (ctrl.duration > 0) {
+            ctrl.seekToTime(action.seekTo);
+          } else if (rawAudio) {
+            try { rawAudio.currentTime = action.seekTo; } catch {}
+          }
+        }
+      };
 
       activeKaraokeCtrl = new KaraokeController(audioUrlToPlay, wordMap, {
         onWordChange: (wordIdx) => {
@@ -1656,21 +1690,30 @@ export async function init(): Promise<void> {
             }
           }
         },
+        onTimeUpdate: () => {
+          if (activeKaraokeCtrl) skipSilentRanges(activeKaraokeCtrl, activeKaraokeCtrl.currentTime);
+        },
         onFinish: () => {
-          updateAllPlayButtons(false);
-          if (getSettings().autoAdvance && currentPage < s.panels.length - 1) {
-            setTimeout(() => {
-              document.getElementById('book-next')?.click();
-            }, 650);
-          }
+          finishPageAudio();
         },
       }, sharedAudioEl, { fitToAudioDuration: estimatedMap });
 
       if (typeof startWordIdx === 'number') {
-        activeKaraokeCtrl.seekToWord(startWordIdx);
+        const targetWord =
+          wordMap.find(w => w.wordIdx === startWordIdx) ??
+          wordMap.find(w => w.wordIdx >= startWordIdx) ??
+          wordMap[0];
+        if (targetWord) {
+          activeKaraokeCtrl.seekToWord(targetWord.wordIdx);
+        } else {
+          skipSilentRanges(activeKaraokeCtrl, 0);
+          activeKaraokeCtrl.play();
+        }
+        skipSilentRanges(activeKaraokeCtrl);
       } else if (sharedAudioEl && opts?.autoplay) {
         // Auto-play: starts straight away at full volume (no fade)
         const ctrl = activeKaraokeCtrl;
+        skipSilentRanges(ctrl, 0);
         ctrl.tryPlay().then(ok => {
           if (!ok) {
             if (activeKaraokeCtrl === ctrl) {
@@ -1680,12 +1723,13 @@ export async function init(): Promise<void> {
           }
         });
       } else {
+        skipSilentRanges(activeKaraokeCtrl, 0);
         activeKaraokeCtrl.play();
       }
       updateAllPlayButtons(true);
     } else {
       // Fallback: sequence audio if separate line URLs exist
-      const audioUrls = dialogueLines.map((l: any) => l.audioUrl || null);
+      const audioUrls = dialogueLines.map((l: any) => isLineMuted(l, s.characters) ? null : (l.audioUrl || null));
       if (audioUrls.some((u: any) => !!u)) {
         stopSpeaking();
         playAudioSequence(audioUrls, (idx) => {
@@ -1701,9 +1745,10 @@ export async function init(): Promise<void> {
   function renderCaptionsOverlay(story: any, pageIdx: number) {
     const existing = document.getElementById('reader-captions-overlay');
     if (existing) existing.remove();
+    const hasAudiblePageAudio = pageHasAudio(pageIdx);
     // The Play / Restart buttons live in this panel (the button over the video was removed), so a book
     // page with audio still gets the controls when captions are off or the page has no text.
-    const controlsOnlyAllowed = story.format === 'book' && pageHasAudio(pageIdx);
+    const controlsOnlyAllowed = story.format === 'book' && hasAudiblePageAudio;
     if (!captionsOpen && !controlsOnlyAllowed) return;
 
     const dialogueLines = captionsOpen ? (story.pageDialogue?.[pageIdx] || []) : [];
@@ -1724,29 +1769,37 @@ export async function init(): Promise<void> {
     if (dialogueLines.length > 0) {
       content = dialogueLines.map((line: any, idx: number) => {
         const isNarrator = isNarrationLine(line);
+        const isMuted = isLineMuted(line, story.characters);
+        const mutedClass = isMuted ? ' reader-dialogue-row--muted' : '';
+        const mutedAttr = isMuted ? ' data-muted="true"' : '';
         const matchedChar = isNarrator ? null : (story.characters || []).find((c: any) => c.id === line.characterId || c.name?.toLowerCase() === line.characterName?.toLowerCase());
-        const charColor = isNarrator ? narrationColorFor(line, story) : (matchedChar?.color || '#3b82f6');
+        const charColor = isNarrator
+          ? narrationColorFor(line, story)
+          : (matchedChar?.color || resolveSpeakerColor(line.characterId !== 'unknown' ? line.characterId : line.characterName, { storyCharacters: story.characters || [], narratorColor }));
         const wordsHtml = wrapWords(line.text, idx, charColor);
 
         if (isNarrator) {
           return `
-            <div class="reader-dialogue-row reader-dialogue-row--narrator" data-line-idx="${idx}">
+            <div class="reader-dialogue-row reader-dialogue-row--narrator${mutedClass}" data-line-idx="${idx}"${mutedAttr}>
               <div class="reader-dialogue-text">${wordsHtml}</div>
             </div>
           `;
         } else {
           return `
-            <div class="reader-dialogue-row" data-line-idx="${idx}">
-              <div class="reader-dialogue-speaker" style="color:${charColor};" title="${escapeHtml(line.characterName)}">${escapeHtml(line.characterName)}:</div>
+            <div class="reader-dialogue-row${mutedClass}" data-line-idx="${idx}"${mutedAttr}>
+              <div class="reader-dialogue-speaker" style="color:var(--color-text-muted);" title="${escapeHtml(line.characterName)}">${escapeHtml(line.characterName)}:</div>
               <div class="reader-dialogue-text">${wordsHtml}</div>
             </div>
           `;
         }
       }).join('');
     } else if (scriptText) {
+      const isMuted = areAllLinesMuted([], story.characters, scriptText);
+      const mutedClass = isMuted ? ' reader-dialogue-row--muted' : '';
+      const mutedAttr = isMuted ? ' data-muted="true"' : '';
       const wordsHtml = wrapWords(scriptText, 0, narratorColor);
       content = `
-        <div class="reader-dialogue-row reader-dialogue-row--narrator" data-line-idx="0">
+        <div class="reader-dialogue-row reader-dialogue-row--narrator${mutedClass}" data-line-idx="0"${mutedAttr}>
           <div class="reader-dialogue-text">${wordsHtml}</div>
         </div>
       `;
@@ -1764,7 +1817,7 @@ export async function init(): Promise<void> {
           <span class="reader-text-dot"></span>
           <span class="reader-text-tag-label">${controlsOnly ? 'Story Audio' : 'Story Text'}</span>
         </div>
-        <div class="reader-text-controls__actions">
+        <div class="reader-text-controls__actions"${hasAudiblePageAudio ? '' : ' style="display:none;"'}>
           <button type="button" class="reader-text-ctrl-btn" id="reader-text-restart" title="Restart page audio">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
             <span>Restart</span>
@@ -1801,17 +1854,17 @@ export async function init(): Promise<void> {
     overlay.querySelector('#reader-text-restart')?.addEventListener('click', (e) => {
       e.stopPropagation();
       if (activeKaraokeCtrl) {
-        activeKaraokeCtrl.restart();
-        updateAllPlayButtons(true);
-      } else {
-        playAudioForPage(pageIdx, 0);
+        activeKaraokeCtrl.destroy();
+        activeKaraokeCtrl = null;
       }
+      playAudioForPage(pageIdx);
     });
 
-    // Click on any word to seek and play
+    // Click on any word to seek and play (ignore muted lines)
     overlay.querySelectorAll('.cc-word').forEach(wordEl => {
       wordEl.addEventListener('click', (e) => {
         e.stopPropagation();
+        if ((wordEl as HTMLElement).closest('.reader-dialogue-row--muted')) return;
         const wIdx = parseInt((wordEl as HTMLElement).getAttribute('data-word-idx') || '0');
         playAudioForPage(pageIdx, wIdx);
       });

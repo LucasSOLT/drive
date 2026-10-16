@@ -12,6 +12,10 @@ export interface StoryCharacter {
   name: string;
   voiceId: string;
   color?: string;
+  /** When true this character's dialogue is silent (not read aloud). Omitted/false = audible. */
+  muted?: boolean;
+  /** Stored on the reserved narrator entry when manual episode numbering is enabled for the story. */
+  manualNumbering?: boolean;
 }
 
 export interface DialogueLine {
@@ -63,6 +67,7 @@ export interface Story {
   episodeThumbnail?: string;             // Per-episode thumbnail for episode list
   episodeTitle?: string;                 // Custom episode title (e.g., 'Hidden Inventory')
   themeColor?: string;                   // Custom background / atmosphere color (e.g. #000000, #141424)
+  manualNumbering?: boolean;             // Whether to manually number episodes within the story group
   // ─── Soft delete (Deleted tab / 30-day cleanup) ───
   deletedAt?: string;                    // ISO timestamp when an admin moved it to Deleted
   deletedBy?: string;                    // user id of the admin who deleted it

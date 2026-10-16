@@ -1,9 +1,9 @@
-import type { UserStory, Story } from '../types.ts';
+import type { Story } from '../types.ts';
 import { getTrackedStories, removeTrackedStory, cleanupOrphanedTrackedStories, type TrackedStory } from '../lib/reading-tracker.ts';
-import { isLibraryUnlocked, unlockLibrary, activatePlan, getUserStories, deleteUserStory, getUserPlan, getUserSubscription, canCreateStory, getTokensRemaining, getCreditsBalance, getBookmarkedStoryIds, isBookmarked, toggleBookmark } from '../state.ts';
+import { isLibraryUnlocked, activatePlan, getUserPlan, getUserSubscription, getTokensRemaining, getCreditsBalance, getBookmarkedStoryIds } from '../state.ts';
 import { navigate } from '../router.ts';
 import { showModal, hideModal } from '../components/modal.ts';
-import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory, moveLocalAdminDraftToDeleted, getUserSquads, getSquadMembers } from '../lib/db.ts';
+import { hasAdminPrivileges, fetchOfficialStories, deleteOfficialStory, moveLocalAdminDraftToDeleted, getUserSquads } from '../lib/db.ts';
 import { getEpisodeTimeRemaining, formatTimeRemaining } from '../lib/squad-engine.ts';
 import { MONSTER_AVATARS } from '../data/avatars.ts';
 import { getUserId } from '../lib/auth.ts';
@@ -18,72 +18,6 @@ const ICON = {
   eye: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
 };
 
-function renderUserStoryCard(story: UserStory): string {
-  const statusColors: Record<string, string> = {
-    'draft': '#9CA3AF',
-    'under-review': '#F59E0B',
-    'published': '#22C55E',
-    'denied': '#EF4444',
-  };
-  const statusColor = statusColors[story.status] || '#9CA3AF';
-  const isDraft = story.status === 'draft';
-  const canView = story.status === 'under-review' || story.status === 'published';
-  const isDenied = story.status === 'denied';
-  const rawVideo = (story.coverVideo && isVideoMedia(story.coverVideo))
-    ? story.coverVideo
-    : (story.coverImage && isVideoMedia(story.coverImage))
-      ? story.coverImage
-      : (story.pages?.[0]?.image && isVideoMedia(story.pages[0].image))
-        ? story.pages[0].image
-        : (story.live_pages?.[0]?.image && isVideoMedia(story.live_pages[0].image))
-          ? story.live_pages[0].image
-          : null;
-
-  const rawImage = (!isVideoMedia(story.coverImage) && story.coverImage)
-    || (!isVideoMedia(story.pages?.[0]?.image) && story.pages?.[0]?.image)
-    || (!isVideoMedia(story.live_pages?.[0]?.image) && story.live_pages?.[0]?.image)
-    || '';
-
-  return `
-    <div class="lib-card slide-up" data-story-id="${story.id}">
-      <div class="lib-card__cover">
-        ${rawVideo
-          ? `<video class="lib-card__cover-img" src="${rawVideo}"${rawImage ? ` poster="${rawImage}"` : ''} autoplay loop muted playsinline webkit-playsinline style="width:100%;height:100%;object-fit:cover;"></video>`
-          : rawImage
-            ? `<img class="lib-card__cover-img" src="${rawImage}" alt="${story.title}">`
-            : `<div class="lib-card__cover-empty">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
-                </svg>
-              </div>`
-        }
-        <span class="lib-card__format">${story.format}</span>
-      </div>
-      <div class="lib-card__body">
-        <h3 class="lib-card__title">${story.title}</h3>
-        <div class="lib-card__meta">
-          <span class="lib-card__status" style="color:${statusColor}; font-weight:700;">● ${story.status.replace('-', ' ')}</span>
-          <span class="lib-card__date">${new Date(story.createdAt).toLocaleDateString()}</span>
-        </div>
-
-        ${isDenied && story.rejectionReason ? `
-          <div class="lib-rejection-box" style="margin:8px 0; padding:8px 12px; background:rgba(239,68,68,0.12); border-left:3px solid #EF4444; border-radius:4px; font-size:0.8rem; color:#FCA5A5;">
-            <strong>Developer Review Feedback:</strong><br>
-            "${story.rejectionReason}"
-          </div>
-        ` : ''}
-
-        <div class="lib-card__actions">
-          ${isDraft ? `<button class="lib-card__btn lib-card__btn--edit" data-edit-user="${story.id}" style="background:#10B981; color:white;" title="Edit Draft">✏️ Edit</button>` : ''}
-          ${canView ? `<button class="lib-card__btn lib-card__btn--view" data-view="${story.id}" title="View">${ICON.eye} View</button>` : ''}
-          ${isDenied ? `<button class="lib-card__btn" data-resubmit="${story.id}" style="background:#10B981; color:white;" title="Resubmit">🔄 Edit & Resubmit</button>` : ''}
-          <button class="lib-card__btn lib-card__btn--share" data-share="${story.id}" title="Share">${ICON.share}</button>
-          <button class="lib-card__btn lib-card__btn--delete" data-delete="${story.id}" title="Delete">${ICON.trash}</button>
-        </div>
-      </div>
-    </div>
-  `;
-}
 
 function renderAdminDraftCard(story: Story): string {
   const rawVideo = (story.coverVideo && isVideoMedia(story.coverVideo))
@@ -504,8 +438,6 @@ export function render(): string {
     `;
   }
 
-  const userStories = getUserStories();
-
   return `
     <div class="view-library fade-in" id="library-container">
       <div class="library-unlocked" style="padding: 1.5rem;">
@@ -596,26 +528,7 @@ export function render(): string {
           })()}
         </div>
 
-        <!-- Section 3: My Created Stories -->
-        <div class="section__header slide-up stagger-3" style="display: flex; justify-content: space-between; align-items: center; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:1.2rem;">✍️</span>
-            <h2 class="section__title" style="margin: 0;">My Creations</h2>
-          </div>
-          <button class="btn btn--primary btn--sm" id="create-new-btn" style="border-radius: 20px; padding: 0.5rem 1rem;">+ Create New</button>
-        </div>
-        
-        <div class="library-unlocked__content slide-up stagger-4" style="margin-top: 1rem;">
-          ${userStories.length > 0 
-            ? `<div class="lib-grid">${userStories.map(s => renderUserStoryCard(s)).join('')}</div>`
-            : `
-            <div class="library-empty text-center" style="padding: 1.75rem 1.5rem; background: var(--color-surface); border-radius: var(--radius-xl); border: 1px dashed var(--color-border);">
-              <h3 style="font-family: var(--font-heading); margin-bottom: 0.25rem; color: var(--color-text-primary); font-size: 0.95rem;">Your creations will appear here</h3>
-              <p class="text-muted" style="font-size: 0.8rem; margin: 0;">Tap Create New to build your own interactive story</p>
-            </div>
-            `
-          }
-        </div>
+
 
         ${hasAdminPrivileges() ? `
           <div class="admin-drafts-section slide-up stagger-3" style="margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
@@ -907,22 +820,8 @@ export function init(): void {
     });
   });
 
-  const createBtn = document.getElementById('create-new-btn');
-  if (createBtn) {
-    createBtn.addEventListener('click', () => {
-      navigate('admin-create?mode=user&format=book&new=true');
-    });
-  }
 
-  // Edit user story draft
-  container.querySelectorAll('[data-edit-user]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const storyId = btn.getAttribute('data-edit-user');
-      if (storyId) {
-        navigate(`admin-create/${storyId}?mode=user`);
-      }
-    });
-  });
+
 
   // If admin, load and wire official drafts
   if (hasAdminPrivileges()) {
@@ -1131,91 +1030,6 @@ export function init(): void {
     });
   });
 
-  // Resubmit denied story buttons
-  container.querySelectorAll('[data-resubmit]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const storyId = btn.getAttribute('data-resubmit');
-      if (!storyId) return;
-      
-      const { resubmitStoryUser } = await import('../lib/db.ts');
-      await resubmitStoryUser(storyId);
-      
-      showModal({
-        title: 'Story Resubmitted! 🚀',
-        content: '<p style="line-height:1.6;">Your story has been resubmitted to the developer review queue (<strong>Under Review</strong>).</p>',
-        confirmText: 'Awesome',
-        onConfirm: () => {
-          const viewContainer = document.getElementById('view-container');
-          if (viewContainer) {
-            viewContainer.innerHTML = render();
-            init();
-          }
-        },
-      });
-    });
-  });
-
-  // Share story buttons
-  container.querySelectorAll('[data-share]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const storyId = btn.getAttribute('data-share');
-      if (!storyId) return;
-      const story = getUserStories().find(s => s.id === storyId);
-      if (!story) return;
-
-      const shareUrl = `${window.location.origin}${window.location.pathname}#shared/${storyId}`;
-      const shareData = {
-        title: `${story.title} — DRiVE`,
-        text: story.synopsis || `Check out "${story.title}" on DRiVE!`,
-        url: shareUrl,
-      };
-
-      try {
-        if (navigator.share) {
-          await navigator.share(shareData);
-        } else {
-          await navigator.clipboard.writeText(shareUrl);
-          showModal({
-            title: 'Link Copied!',
-            content: '<p style="line-height:1.6;">The share link has been copied to your clipboard.</p>',
-            confirmText: 'OK',
-          });
-        }
-      } catch (err) {
-        console.log('Share cancelled or failed:', err);
-      }
-    });
-  });
-
-  // Delete story buttons
-  container.querySelectorAll('[data-delete]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const storyId = btn.getAttribute('data-delete');
-      if (!storyId) return;
-      const story = getUserStories().find(s => s.id === storyId);
-      if (!story) return;
-
-      const submittedNote = story.wasSubmitted
-        ? ' Because it was submitted for review, the DRiVE team keeps a copy.'
-        : '';
-      showModal({
-        title: 'Delete Story',
-        content: `<p style="line-height:1.6;">This removes <strong>“${story.title}”</strong> from your library.${submittedNote}</p>`,
-        confirmText: 'Delete',
-        cancelText: 'Cancel',
-        onConfirm: () => {
-          // Remove from screen instantly (cache is also updated synchronously inside deleteUserStory)
-          btn.closest('.lib-card')?.remove();
-          deleteUserStory(storyId);
-          const viewContainer = document.getElementById('view-container');
-          if (viewContainer) {
-            viewContainer.innerHTML = render();
-            init();
-          }
-        },
-      });
-    });
-  });
 
   // Ensure playback for all video covers in library
   container.querySelectorAll<HTMLVideoElement>('video.lib-card__cover-img').forEach(v => {

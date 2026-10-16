@@ -525,7 +525,7 @@ function renderCanvasToolbar(formatLabel: string): string {
           ${isBook ? `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Page
+              + Add Page
             </button>
             ${!isDesktopScreen() ? `
               <button class="canvas-toolbar__dd-item" id="btn-dd-storyboard">
@@ -536,7 +536,7 @@ function renderCanvasToolbar(formatLabel: string): string {
           ` : `
             <button class="canvas-toolbar__dd-item" id="btn-dd-add-panel">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Panel
+              + Add Page
             </button>
           `}
         </div>
@@ -670,7 +670,7 @@ function renderScrollCanvas(): string {
         <div class="create-add-tile" id="btn-add-tile">
           <div class="create-add-tile__inner">
             ${ICON.add}
-            <span>Add Panel</span>
+            <span>+ Add Page</span>
           </div>
         </div>
 
@@ -1007,9 +1007,7 @@ function renderBookCanvas(): string {
           <button type="button" class="book-tile__action-btn book-tile__action-btn--move-down" data-page-move-down="${i}" title="Move Page Down" ${i === bookPages.length - 1 ? 'disabled' : ''}>
             ▼
           </button>
-          <button type="button" class="book-tile__action-btn book-tile__action-btn--duplicate" data-page-duplicate="${i}" title="Duplicate Page">
-            📋
-          </button>
+
           <button class="book-tile__maximize" data-tile-maximize="${i}" title="Expand page">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
@@ -1377,7 +1375,7 @@ function openStoryboard(): void {
         <div style="display:flex; align-items:center; gap:2px; margin-left:auto;">
           <button class="sb-card__ctrl-btn" data-sb-move-up="${i}" title="Move page up" type="button" ${i === 0 ? 'disabled' : ''}>▲</button>
           <button class="sb-card__ctrl-btn" data-sb-move-down="${i}" title="Move page down" type="button" ${i === bookPages.length - 1 ? 'disabled' : ''}>▼</button>
-          <button class="sb-card__ctrl-btn" data-sb-duplicate="${i}" title="Duplicate page" type="button">📋</button>
+
           <button class="sb-card__delete" data-sb-delete="${i}" title="Delete page">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
@@ -1708,26 +1706,7 @@ function openStoryboard(): void {
     });
   });
 
-  // Duplicate (Storyboard)
-  overlay.querySelectorAll('[data-sb-duplicate]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.getAttribute('data-sb-duplicate') || '0');
-      const src = bookPages[idx];
-      const clonedDialogue = (src.dialogueLines || []).map(line => ({
-        ...line,
-        id: 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      }));
-      const clonedPage: BookPage = {
-        ...src,
-        dialogueLines: clonedDialogue,
-      };
-      bookPages.splice(idx + 1, 0, clonedPage);
-      currentPage = idx + 1;
-      saveDraft();
-      overlay.remove();
-      openStoryboard();
-    });
-  });
+
 
   // Wire multi-character dialogue line events for storyboard
   wireDialogueLineEvents(overlay, 'sbd', () => {
@@ -2936,6 +2915,7 @@ export function init(): void {
       // Add tile (dotted placeholder)
       document.getElementById('btn-add-tile')?.addEventListener('click', () => {
         scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
+        currentPage = scrollPanels.length - 1;
         updateView();
       });
 
@@ -2954,6 +2934,7 @@ export function init(): void {
       });
       document.getElementById('btn-dd-add-panel')?.addEventListener('click', () => {
         scrollPanels.push({ image: null, notes: '', layout: 'single', tiles: [null], textOverlays: [[]], audioUrl: null });
+        currentPage = scrollPanels.length - 1;
         updateView();
       });
 
@@ -3682,27 +3663,7 @@ document.querySelectorAll('[data-prerecord-play-scroll]').forEach(btn => {
         updateView();
       });
 
-      wizard.querySelector(`[data-page-duplicate="${i}"]`)?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const textEl = wizard.querySelector(`[data-tile-text="${i}"]`) as HTMLTextAreaElement | null;
-        if (textEl) bookPages[i].text = textEl.value;
-        const ddEl = wizard.querySelector(`[data-tile-dd-content="${i}"]`) as HTMLTextAreaElement | null;
-        if (ddEl) bookPages[i].deeperDiveContent = ddEl.value;
 
-        const src = bookPages[i];
-        const clonedDialogue = (src.dialogueLines || []).map(line => ({
-          ...line,
-          id: 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        }));
-        const clonedPage: BookPage = {
-          ...src,
-          dialogueLines: clonedDialogue,
-        };
-        bookPages.splice(i + 1, 0, clonedPage);
-        currentPage = i + 1;
-        saveDraft();
-        updateView();
-      });
 
       // Maximize
       wizard.querySelector(`[data-tile-maximize="${i}"]`)?.addEventListener('click', (e) => {

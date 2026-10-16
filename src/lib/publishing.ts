@@ -12,7 +12,7 @@
  */
 
 import type { UserStory, StoryCharacter, DialogueLine, StoryAudioMode } from '../types.ts';
-import { realCharacters } from './cast-voices.ts';
+import { realCharacters, areAllLinesMuted, isLineMuted } from './cast-voices.ts';
 
 // ─── Pre-flight Check Types ───
 
@@ -135,28 +135,45 @@ export function runPreflightChecks(story: {
   // ── Advisory: Audio Presence ──
   const pageAudio = story.pageAudio || {};
   const pageDialogue = story.pageDialogue || {};
+  const pageScripts = story.pageScripts || {};
   let pagesWithAudio = 0;
+  let pagesMutedOnly = 0;
   for (let i = 0; i < pageCount; i++) {
-    const hasPageAudio = !!pageAudio[i];
-    const hasDialogueAudio = (pageDialogue[i] || []).some(l => !!l.audioUrl);
-    if (hasPageAudio || hasDialogueAudio) pagesWithAudio++;
+    const pageObj = (story.pages || [])[i] as {
+      text?: string;
+      audioUrl?: string;
+      dialogAudioUrl?: string;
+      dialogueLines?: DialogueLine[];
+    } | undefined;
+    const lines = pageDialogue[i] || pageObj?.dialogueLines || [];
+    const script = pageScripts[i] ?? pageObj?.text ?? '';
+    const pageMuted = areAllLinesMuted(lines, story.characters, script);
+    const hasPageAudio = !pageMuted && !!(pageAudio[i] || pageObj?.audioUrl || pageObj?.dialogAudioUrl);
+    const hasDialogueAudio = lines.some(l => !!l.audioUrl && !isLineMuted(l, story.characters));
+    if (hasPageAudio || hasDialogueAudio) {
+      pagesWithAudio++;
+    } else if (pageMuted) {
+      pagesMutedOnly++;
+    }
   }
   const audioPercent = pageCount > 0 ? Math.round((pagesWithAudio / pageCount) * 100) : 0;
   checks.push({
     id: 'audio',
     label: 'Audio / Narration',
-    status: pagesWithAudio > 0 ? 'pass' : 'warn',
+    status: pagesWithAudio > 0 || pagesMutedOnly > 0 ? 'pass' : 'warn',
     detail: pagesWithAudio > 0
       ? `${pagesWithAudio}/${pageCount} pages have audio (${audioPercent}%)`
-      : 'No audio recorded yet. Stories with narration get 3× more engagement!',
+      : pagesMutedOnly > 0
+        ? 'All dialogue lines are muted (silent mode)'
+        : 'No audio recorded yet. Stories with narration get 3× more engagement!',
   });
 
   // ── Advisory: Dialogue / Script ──
-  const pageScripts = story.pageScripts || {};
   let pagesWithText = 0;
   for (let i = 0; i < pageCount; i++) {
-    const hasScript = !!(pageScripts[i] && pageScripts[i].trim());
-    const hasDialogue = (pageDialogue[i] || []).length > 0;
+    const pageObj = (story.pages || [])[i] as { text?: string; dialogueLines?: DialogueLine[] } | undefined;
+    const hasScript = !!((pageScripts[i] && pageScripts[i].trim()) || (pageObj?.text && pageObj.text.trim()));
+    const hasDialogue = (pageDialogue[i] || pageObj?.dialogueLines || []).length > 0;
     if (hasScript || hasDialogue) pagesWithText++;
   }
   checks.push({
@@ -170,15 +187,17 @@ export function runPreflightChecks(story: {
 
   // ── Advisory: Character Voices ──
   const characters = realCharacters(story.characters);
-  const totalDialogueLines = Object.values(pageDialogue).flat().length;
+  const totalDialogueLines =
+    Object.values(pageDialogue).flat().length +
+    (story.pages || []).reduce((sum, p: any) => sum + ((p?.dialogueLines || []).length), 0);
   if (totalDialogueLines > 0 && characters.length > 0) {
-    const charsWithoutVoice = characters.filter(c => !c.voiceId);
+    const charsWithoutVoice = characters.filter(c => !c.voiceId && !c.muted);
     checks.push({
       id: 'voices',
       label: 'Character Voices Assigned',
       status: charsWithoutVoice.length === 0 ? 'pass' : 'warn',
       detail: charsWithoutVoice.length === 0
-        ? `All ${characters.length} characters have voices`
+        ? `All ${characters.length} characters have voices or are muted`
         : `${charsWithoutVoice.map(c => c.name).join(', ')} ${charsWithoutVoice.length === 1 ? 'needs' : 'need'} a voice assigned.`,
     });
   }

@@ -3,6 +3,7 @@ import { getUser, isAuthenticated, getUserId } from './auth.ts';
 import type { Story, UserStory, UserSubscription, UserPlan, SquadSession, SparcPost } from '../types.ts';
 import { isVideoMedia } from './media.ts';
 import { removeTrackedStory } from './reading-tracker.ts';
+import { readReservedVoices, realCharacters } from './cast-voices.ts';
 
 // ═══════════════════════════════════════════════════════════
 // DRiVE Database Service Layer
@@ -954,7 +955,10 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     isOfficial: true,
     officialStatus: forcedStatus || s.status || 'draft',
     storyGroupId: s.story_group_id || s.id,
-    episodeNumber: s.episode_number || 1,
+    episodeNumber: (() => {
+      const dec = Number(s.page_focal_positions?.__episodeNumber);
+      return !isNaN(dec) && dec > 0 ? dec : (s.episode_number || 1);
+    })(),
     audioMode: (s.audio_mode || 'make_audio') as any,
     narratorVoiceId: s.narrator_voice_id || undefined,
     pageFocalPositions: s.page_focal_positions || undefined,
@@ -965,6 +969,7 @@ function mapOfficialStoryRecord(s: any, forcedStatus?: 'draft' | 'live'): Story 
     seriesCoverImage: s.series_cover_image || '',
     episodeThumbnail: s.episode_thumbnail || '',
     episodeTitle: s.episode_title || '',
+    manualNumbering: Boolean(s.manual_numbering || readReservedVoices(s.characters).manualNumbering),
     deletedAt: s.deleted_at || undefined,
     deletedBy: s.deleted_by || undefined,
   };
@@ -1110,7 +1115,15 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
     story_group_id: storyGroupId,
     episode_number: story.episodeNumber || 1,
     audio_mode: story.audioMode || 'make_audio',
-    page_focal_positions: story.pageFocalPositions || {},
+    page_focal_positions: (() => {
+      const fp: Record<string, any> = { ...(story.pageFocalPositions || {}) };
+      if (story.episodeNumber !== undefined && !Number.isInteger(story.episodeNumber)) {
+        fp.__episodeNumber = story.episodeNumber;
+      } else {
+        delete fp.__episodeNumber;
+      }
+      return fp;
+    })(),
     solo_episode_count: story.soloEpisodeCount || 1,
     sparc_prompt: story.sparcPrompt || null,
     theme_color: story.themeColor || '#141424',
@@ -1150,6 +1163,18 @@ export async function saveOfficialStory(story: Partial<Story> & { id: string }):
       const badCol = colMatch[1];
       console.warn(`[DB] Column '${badCol}' not in DB, stripping and retrying (attempt ${attempts})...`);
       delete payload[badCol];
+      continue;
+    }
+
+    // If episode_number is an integer column in Postgres and story.episodeNumber is decimal, fall back to integer column + jsonb metadata
+    if (
+      error.message?.includes('invalid input syntax for type integer') &&
+      typeof payload.episode_number === 'number' &&
+      !Number.isInteger(payload.episode_number)
+    ) {
+      console.warn(`[DB] episode_number column is integer; storing decimal ${payload.episode_number} in page_focal_positions.__episodeNumber and flooring column.`);
+      payload.page_focal_positions = { ...(payload.page_focal_positions || {}), __episodeNumber: payload.episode_number };
+      payload.episode_number = Math.floor(payload.episode_number) || 1;
       continue;
     }
 
@@ -1461,13 +1486,16 @@ export async function unarchiveOfficialStory(storyId: string): Promise<void> {
   try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
 }
 
-/** Update shared story settings across ALL episodes within a story group (Supabase & localStorage drafts) */
+/**
+ * Update shared story settings across ALL episodes within a story group (Supabase & localStorage drafts).
+ * Resolves true when at least one remote row was updated. Existing callers may ignore the result.
+ */
 export async function updateSharedStorySettings(
   storyGroupId: string,
   settings: Partial<Story>,
   isUserMode: boolean = false
-): Promise<void> {
-  if (!storyGroupId) return;
+): Promise<boolean> {
+  if (!storyGroupId) return false;
 
   const sharedPayload: Record<string, any> = {
     updated_at: new Date().toISOString(),
@@ -1488,17 +1516,24 @@ export async function updateSharedStorySettings(
   if (settings.seriesCoverImage !== undefined) sharedPayload.series_cover_image = settings.seriesCoverImage;
 
   // 1. Update all matching rows in Supabase
+  let remoteUpdated = false;
   try {
     const table = isUserMode ? 'user_stories' : 'official_stories';
-    const { error } = await supabase
-      .from(table)
-      .update(sharedPayload)
-      .eq('story_group_id', storyGroupId);
+    let query = supabase.from(table).update(sharedPayload);
+    // Older official episodes may have no story_group_id; their group id is the episode's own id.
+    // `id` is a uuid column, so only match on it for a real uuid (anything else would make Postgres
+    // reject the whole statement).
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(storyGroupId);
+    query = isUserMode || !isUuid
+      ? query.eq('story_group_id', storyGroupId)
+      : query.or(`story_group_id.eq.${storyGroupId},id.eq.${storyGroupId}`);
+    const { data, error } = await query.select('id');
 
     if (error) {
       console.warn('[DB] Supabase error updating shared story settings:', error.message);
     } else {
-      console.log(`[DB] Successfully synced shared settings to all episodes in group ${storyGroupId}`);
+      remoteUpdated = (data?.length ?? 0) > 0;
+      console.log(`[DB] Synced shared settings to ${data?.length ?? 0} episode(s) in group ${storyGroupId}`);
     }
   } catch (err) {
     console.warn('[DB] Exception updating shared story settings on Supabase:', err);
@@ -1530,9 +1565,45 @@ export async function updateSharedStorySettings(
     console.warn('[DB] Error syncing shared settings to local drafts:', err);
   }
 
+  // 2b. The episode editor keeps one working draft and prefers it over the database,
+  // so apply the same shared fields there or the old values would come back on the next save.
+  try {
+    const raw = localStorage.getItem('drive_admin_create_draft');
+    if (raw) {
+      const draft = JSON.parse(raw);
+      if (draft && (draft.episodeStoryGroupId === storyGroupId || draft.editStoryId === storyGroupId)) {
+        if (settings.title !== undefined) draft.storyTitle = settings.title;
+        if (settings.synopsis !== undefined) draft.storySynopsis = settings.synopsis;
+        if (settings.genre !== undefined) draft.storyGenre = settings.genre;
+        if (settings.coverVideo !== undefined) draft.storyCoverVideo = settings.coverVideo;
+        if (settings.themeColor !== undefined) draft.storyThemeColor = settings.themeColor;
+        if (settings.manualNumbering !== undefined) draft.manualNumbering = settings.manualNumbering;
+        if (settings.characters !== undefined) {
+          const v = readReservedVoices(settings.characters, { narratorVoiceId: settings.narratorVoiceId });
+          draft.storyCharacters = realCharacters(settings.characters);
+          const resolvedManual = !!(settings.manualNumbering ?? v.manualNumbering);
+          draft.manualNumbering = resolvedManual;
+          draft.castVoices = {
+            narratorVoiceId: v.narratorVoiceId,
+            narratorColor: v.narratorColor,
+            plainTextVoiceId: v.plainTextVoiceId,
+            plainTextColor: v.plainTextColor,
+            narratorMuted: !!v.narratorMuted,
+            plainTextMuted: !!v.plainTextMuted,
+            manualNumbering: resolvedManual,
+          };
+        }
+        localStorage.setItem('drive_admin_create_draft', JSON.stringify(draft));
+      }
+    }
+  } catch (err) {
+    console.warn('[DB] Error syncing shared settings to the editor draft:', err);
+  }
+
   // 3. Clear cached official stories to force re-fetch
   _cachedOfficialStories = null;
   try { sessionStorage.removeItem('drive_cached_official_stories'); } catch {}
+  return remoteUpdated;
 }
 
 /** Toggle Featured status on an official story */
@@ -1709,6 +1780,11 @@ export async function createSquad(storyId: string, squadName: string): Promise<{
 
   const inviteCode = generateInviteCode();
 
+  let isSpm = false;
+  try {
+    isSpm = sessionStorage.getItem('drive_spm') === 'true';
+  } catch {}
+
   const { data: squad, error: squadError } = await supabase
     .from('squads')
     .insert({
@@ -1717,8 +1793,8 @@ export async function createSquad(storyId: string, squadName: string): Promise<{
       name: squadName || 'DRiVE Squad',
       invite_code: inviteCode,
       status: 'forming',
-      min_size: 3,
-      max_size: 5,
+      min_size: isSpm ? 1 : 3,
+      max_size: isSpm ? 1 : 5,
     })
     .select('id, invite_code')
     .single();
@@ -1772,7 +1848,7 @@ export async function joinSquadByCode(code: string): Promise<{ squadId: string; 
     .eq('squad_id', squad.id);
 
   if (!countError && count !== null && count >= squad.max_size) {
-    throw new Error('Squad is full! (Maximum 5 players allowed)');
+    throw new Error(`Squad is full! (Maximum ${squad.max_size} players allowed)`);
   }
 
   // Insert current user as member
@@ -1925,7 +2001,7 @@ export async function updateSquadStatus(squadId: string, status: 'forming' | 'in
 
 /** Fetch all squads that the current user is a member of, with full details */
 export async function getUserSquads(): Promise<Array<{
-  squad: { id: string; driverId: string; storyId: string; name: string; inviteCode: string; status: 'forming' | 'in-progress' | 'completed' };
+  squad: { id: string; driverId: string; storyId: string; name: string; inviteCode: string; status: 'forming' | 'in-progress' | 'completed'; minSize: number; maxSize: number };
   members: Array<{ userId: string; username: string; avatarIndex: number; role: 'driver' | 'player'; isReady: boolean }>;
   session: SquadSession | null;
   sparcGreenlitCount: number;
@@ -1981,6 +2057,8 @@ export async function getUserSquads(): Promise<Array<{
         name: sq.name || 'DRiVE Squad',
         inviteCode: sq.invite_code,
         status: sq.status as 'forming' | 'in-progress' | 'completed',
+        minSize: sq.min_size || 3,
+        maxSize: sq.max_size || 5,
       },
       members,
       session,
@@ -2717,6 +2795,14 @@ export async function checkAllSparcCompleted(
   if (error) {
     console.error('[DB] Error checking all SPARC completions:', error);
     return false;
+  }
+
+  const isSpm = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('drive_spm') === 'true';
+  if (isSpm) {
+    return (data || []).some((member: any) => {
+      const completed: number[] = member.sparc_completed_episodes || [];
+      return completed.includes(episodeNumber);
+    });
   }
 
   return (data || []).every((member: any) => {

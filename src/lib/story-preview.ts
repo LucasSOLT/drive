@@ -13,7 +13,8 @@
 
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import type { Story, DialogueLine, StoryCharacter } from '../types.ts';
-import { isNarrationLine, narrationColorFor } from './cast-voices.ts';
+import { isNarrationLine, narrationColorFor, isLineMuted, areAllLinesMuted } from './cast-voices.ts';
+import { resolveSpeakerColor } from './screenplay.ts';
 
 function escapeHtml(str: string): string {
   if (!str) return '';
@@ -40,27 +41,35 @@ export function buildDialogueHtml(
   if (dialogueLines.length > 0) {
     return dialogueLines.map((line, idx) => {
       const isNarrator = isNarrationLine(line);
+      const isMuted = isLineMuted(line, characters);
+      const mutedClass = isMuted ? ' reader-dialogue-row--muted' : '';
+      const mutedAttr = isMuted ? ' data-muted="true"' : '';
       const matchedChar = isNarrator ? null :
         characters.find(c => c.id === line.characterId || c.name?.toLowerCase() === line.characterName?.toLowerCase());
-      const charColor = isNarrator ? narrationColorFor(line, { characters, narratorHighlightColor: narratorColor }) : (matchedChar?.color || '#3b82f6');
+      const charColor = isNarrator
+        ? narrationColorFor(line, { characters, narratorHighlightColor: narratorColor })
+        : (matchedChar?.color || resolveSpeakerColor(line.characterId !== 'unknown' ? line.characterId : line.characterName, { storyCharacters: characters, narratorColor }));
       const wordsHtml = wrapWords(line.text, idx, charColor);
 
       if (isNarrator) {
-        return `<div class="reader-dialogue-row reader-dialogue-row--narrator" data-line-idx="${idx}">
-          <div class="reader-dialogue-text">${wordsHtml}</div>
+        return `<div class="reader-dialogue-row reader-dialogue-row--narrator${mutedClass}" data-line-idx="${idx}"${mutedAttr}>
+          <div class="reader-dialogue-text" style="color:${charColor};">${wordsHtml}</div>
         </div>`;
       }
-      return `<div class="reader-dialogue-row" data-line-idx="${idx}">
-        <div class="reader-dialogue-speaker" style="color:${charColor};" title="${escapeHtml(line.characterName)}">${escapeHtml(line.characterName)}:</div>
-        <div class="reader-dialogue-text">${wordsHtml}</div>
+      return `<div class="reader-dialogue-row${mutedClass}" data-line-idx="${idx}"${mutedAttr}>
+        <div class="reader-dialogue-speaker" style="color:var(--color-text-muted);" title="${escapeHtml(line.characterName)}">${escapeHtml(line.characterName)}:</div>
+        <div class="reader-dialogue-text" style="color:${charColor};">${wordsHtml}</div>
       </div>`;
     }).join('');
   }
 
   if (scriptText) {
+    const isMuted = areAllLinesMuted([], characters, scriptText);
+    const mutedClass = isMuted ? ' reader-dialogue-row--muted' : '';
+    const mutedAttr = isMuted ? ' data-muted="true"' : '';
     const wordsHtml = wrapWords(scriptText, 0, narratorColor);
-    return `<div class="reader-dialogue-row reader-dialogue-row--narrator" data-line-idx="0">
-      <div class="reader-dialogue-text">${wordsHtml}</div>
+    return `<div class="reader-dialogue-row reader-dialogue-row--narrator${mutedClass}" data-line-idx="0"${mutedAttr}>
+      <div class="reader-dialogue-text" style="color:${narratorColor};">${wordsHtml}</div>
     </div>`;
   }
 

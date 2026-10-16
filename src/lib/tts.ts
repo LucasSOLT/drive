@@ -8,6 +8,9 @@ import { getSelectedVoiceId } from './settings.ts';
 import { supabase } from './supabase.ts';
 import { resolveVoiceForLine } from './voice-lab.ts';
 import { LINE_GAP_SECONDS } from './karaoke.ts';
+import { isLineMuted } from './cast-voices.ts';
+import { stripDialogueQuotes } from './screenplay.ts';
+import type { StoryCharacter } from '../types.ts';
 
 /** Split dialogue text into sentences with their terminal punctuation for mood-aware TTS. */
 export function splitDialogueIntoSentences(text: string): { text: string; punctuation: string }[] {
@@ -60,9 +63,11 @@ let currentObjectURL: string | null = null;
 
 function speakWithBrowserTTS(text: string): void {
   if (!('speechSynthesis' in window)) return;
+  const cleanText = stripDialogueQuotes(text).trim();
+  if (!cleanText) return;
   try {
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
     utterance.onboundary = (event) => {
@@ -131,7 +136,8 @@ export async function readProxyError(data: any, error: any): Promise<string | nu
 /** Speak the given text via ElevenLabs API using the user's selected voice. */
 export async function speakText(text: string): Promise<void> {
   stopSpeaking();
-  if (!text || !text.trim()) return;
+  const cleanText = stripDialogueQuotes(text).trim();
+  if (!cleanText) return;
 
   const voiceId = getSelectedVoiceId();
 
@@ -141,7 +147,7 @@ export async function speakText(text: string): Promise<void> {
         endpoint: `/v1/text-to-speech/${voiceId}/with-timestamps`,
         method: 'POST',
         body: {
-          text,
+          text: cleanText,
           model_id: 'eleven_multilingual_v2',
           voice_settings: { stability: 0.5, similarity_boost: 0.75 },
         }
@@ -151,7 +157,7 @@ export async function speakText(text: string): Promise<void> {
     if (error || data?.error || !data?.audio_base64) {
       const errMsg = data?.error || data?.detail?.message || error?.message || 'TTS failed';
       console.warn('[TTS] ElevenLabs failed (' + errMsg + '), falling back to browser Web Speech API...');
-      speakWithBrowserTTS(text);
+      speakWithBrowserTTS(cleanText);
       return;
     }
 
@@ -198,13 +204,13 @@ export async function speakText(text: string): Promise<void> {
       if (currentAudio === audio) {
         stopSpeaking();
       }
-      speakWithBrowserTTS(text);
+      speakWithBrowserTTS(cleanText);
     });
 
     await audio.play();
   } catch (err) {
     console.warn('[TTS] Failed to speak text via ElevenLabs, falling back to browser TTS:', err);
-    speakWithBrowserTTS(text);
+    speakWithBrowserTTS(cleanText);
   }
 }
 
@@ -215,12 +221,13 @@ export async function speakText(text: string): Promise<void> {
  * ? are inquisitive, . are calm/steady.
  */
 export async function preRecordAudio(text: string, stability = 0.5, customVoiceId?: string): Promise<string> {
-  if (!text || !text.trim()) {
+  const cleanText = stripDialogueQuotes(text).trim();
+  if (!cleanText) {
     throw new Error('No text provided to record.');
   }
 
   const voiceId = customVoiceId || getSelectedVoiceId();
-  const sentences = splitDialogueIntoSentences(text);
+  const sentences = splitDialogueIntoSentences(cleanText);
 
   // Check if all sentences share the same punctuation mood
   const moods = new Set(sentences.map(s => s.punctuation));
@@ -230,7 +237,7 @@ export async function preRecordAudio(text: string, stability = 0.5, customVoiceI
     // Single mood — synthesize in one call with that mood's settings
     const settings = getPunctuationVoiceSettings(sentences[0].punctuation);
     console.log('[TTS Pre-record] Single mood synthesis, voice:', voiceId, 'punctuation:', sentences[0].punctuation, 'settings:', settings);
-    return await synthesizeSingleSegment(text, voiceId, settings);
+    return await synthesizeSingleSegment(cleanText, voiceId, settings);
   }
 
   // Multiple moods — synthesize each sentence individually and concatenate
@@ -629,7 +636,7 @@ export function playAudioSequence(
 export async function preRecordPageAudio(
   dialogueLines: { text: string; characterId: string; characterName: string; voiceId?: string }[],
   narratorVoiceId: string,
-  characters: { id: string; name: string; voiceId: string }[] = [],
+  characters: { id: string; name: string; voiceId: string; muted?: boolean; color?: string }[] = [],
   onProgress?: (current: number, total: number) => void
 ): Promise<{
   audioUrl: string;
@@ -641,7 +648,9 @@ export async function preRecordPageAudio(
 
   for (let i = 0; i < dialogueLines.length; i++) {
     const line = dialogueLines[i];
-    if (!line.text?.trim()) continue;
+    const cleanLineText = stripDialogueQuotes(line.text || '').trim();
+    if (!cleanLineText) continue;
+    if (isLineMuted(line, characters as StoryCharacter[])) continue;
 
     onProgress?.(i + 1, dialogueLines.length);
 
@@ -654,7 +663,7 @@ export async function preRecordPageAudio(
         endpoint: `/v1/text-to-speech/${voiceId}/with-timestamps`,
         method: 'POST',
         body: {
-          text: line.text,
+          text: cleanLineText,
           model_id: 'eleven_multilingual_v2',
           voice_settings: {
             stability: 0.5,
@@ -668,7 +677,7 @@ export async function preRecordPageAudio(
 
     const proxyErr = await readProxyError(data, error);
     if (proxyErr || !data?.audio_base64) {
-      throw new Error(`Line ${i + 1} ("${line.text.substring(0, 30)}..."): ${proxyErr || 'No audio came back from the voice service.'}`);
+      throw new Error(`Line ${i + 1} ("${cleanLineText.substring(0, 30)}..."): ${proxyErr || 'No audio came back from the voice service.'}`);
     }
 
     const contentType = data.content_type || 'audio/mpeg';
@@ -691,12 +700,16 @@ export async function preRecordPageAudio(
     } catch { /* duration stays 0 */ }
 
     segments.push({
-      text: line.text,
+      text: cleanLineText,
       alignment: data.alignment || null,
       duration,
       lineIdx: i,
       dataUrl,
     });
+  }
+
+  if (segments.length === 0) {
+    throw new Error('All dialogue lines on this page are muted (silent).');
   }
 
   // Concatenate all segments into one audio file
@@ -762,7 +775,7 @@ export interface BatchPreRecordSummary {
 export async function batchPreRecordStory(
   pages: BatchPreRecordPage[],
   narratorVoiceId: string,
-  characters: { id: string; name: string; voiceId: string }[],
+  characters: { id: string; name: string; voiceId: string; muted?: boolean; color?: string }[],
   options: {
     signal?: AbortSignal;
     skipExisting?: boolean;
@@ -779,7 +792,9 @@ export async function batchPreRecordStory(
     interPageDelayMs = 500,
   } = options;
 
-  const recordablePages = pages.filter(p => p.dialogueLines.length > 0);
+  const recordablePages = pages.filter(p =>
+    p.dialogueLines.some(l => Boolean(l.text?.trim()) && !isLineMuted(l, characters as StoryCharacter[]))
+  );
   const totalPages = recordablePages.length;
   const summary: BatchPreRecordSummary = {
     recorded: 0,

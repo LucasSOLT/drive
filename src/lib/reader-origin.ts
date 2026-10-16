@@ -11,7 +11,6 @@
  */
 import { navigate } from '../router.ts';
 import {
-  ADMIN_SKIP_KEY,
   leavesReaderFamily,
   originForTransition,
   PREVIEW_FLAG_KEY,
@@ -38,7 +37,7 @@ export function initReaderOrigin(): void {
     }
     if (leavesReaderFamily(oldRoute, newRoute)) {
       try { sessionStorage.removeItem(PREVIEW_FLAG_KEY); } catch { /* storage unavailable */ }
-      try { sessionStorage.removeItem(ADMIN_SKIP_KEY); } catch { /* storage unavailable */ }
+      try { sessionStorage.removeItem('drive_spm'); } catch { /* storage unavailable */ }
     }
   });
 

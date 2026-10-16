@@ -8,7 +8,7 @@
  */
 
 import { getRouteParam, navigate } from '../router.ts';
-import { fetchStoryByIdFromDb, fetchOfficialStories, getCachedOfficialStories } from '../lib/db.ts';
+import { fetchStoryByIdFromDb, fetchOfficialStories, getCachedOfficialStories, hasAdminPrivileges } from '../lib/db.ts';
 import { isBookmarked, toggleBookmark } from '../state.ts';
 import { preloadEpisodeFirstPages } from '../lib/media-preloader.ts';
 import { seriesCoverDisplay, episodeThumbDisplay } from '../lib/cover-pick.ts';
@@ -304,6 +304,11 @@ export async function init(): Promise<void> {
           <span class="si-action-icon">${ICON.share}</span>
           <span class="si-action-label">Share</span>
         </button>
+        ${hasAdminPrivileges() ? `
+        <button class="si-action-btn ${sessionStorage.getItem('drive_spm') === 'true' ? 'si-action-btn--active' : ''}" id="si-single-player" data-episode-id="${ctaEpisodeId}">
+          <span class="si-action-icon">${ICON.play}</span>
+          <span class="si-action-label">Single-player mode</span>
+        </button>` : ''}
       </div>
 
       <!-- Synopsis -->
@@ -346,9 +351,7 @@ export async function init(): Promise<void> {
                 ${isRead ? `<span class="si-episode__watched">Read</span>` : ''}
               </div>
               <div class="si-episode__info">
-                <span class="si-episode__number">${epNum}.</span>
-                <span class="si-episode__title">${epTitle}</span>
-                <span class="si-episode__pages">${pageCount} ${pageCount === 1 ? 'page' : 'pages'}</span>
+                <span class="si-episode__title"><span class="si-episode__number">${epNum}.</span> ${epTitle}</span>
               </div>
             </div>
           `;
@@ -464,6 +467,7 @@ export async function init(): Promise<void> {
   document.getElementById('si-episode-list')?.addEventListener('click', (e) => {
     const epEl = (e.target as HTMLElement).closest('[data-episode-id]');
     if (!epEl) return;
+    try { sessionStorage.removeItem('drive_spm'); } catch {}
     const epId = epEl.getAttribute('data-episode-id')!;
     launchEpisode(epId, epEl as HTMLElement);
   });
@@ -472,8 +476,20 @@ export async function init(): Promise<void> {
   document.getElementById('si-cta')?.addEventListener('click', () => {
     const epId = document.getElementById('si-cta')?.getAttribute('data-episode-id');
     if (epId) {
+      try { sessionStorage.removeItem('drive_spm'); } catch {}
       const ctaBtn = document.getElementById('si-cta');
       launchEpisode(epId, ctaBtn as HTMLElement);
+    }
+  });
+
+  // Single-player mode button (admin / beta tester only)
+  document.getElementById('si-single-player')?.addEventListener('click', (e) => {
+    sessionStorage.setItem('drive_spm', 'true');
+    const spmBtn = e.currentTarget as HTMLElement;
+    spmBtn.classList.add('si-action-btn--active');
+    const epId = spmBtn.getAttribute('data-episode-id') || ctaEpisodeId;
+    if (epId) {
+      launchEpisode(epId, spmBtn);
     }
   });
 

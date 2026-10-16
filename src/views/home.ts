@@ -3,7 +3,7 @@ import { isContentManagementMode, getSlotOverride } from '../state.ts';
 import { openTileConfigModal } from '../components/tile-config-modal.ts';
 import { renderStoryCard, renderEmptySlot, initVideoCovers, initBookmarkButtons } from '../components/story-card.ts';
 import { stories, getFeaturedStories, getEditorPicks } from '../data/stories.ts';
-import { fetchFeaturedStories, fetchUnifiedExploreStories, getCachedOfficialStories } from '../lib/db.ts';
+import { fetchFeaturedStories, fetchUnifiedExploreStories, getCachedOfficialStories, hasAdminPrivileges } from '../lib/db.ts';
 import type { Story } from '../types.ts';
 
 function renderFeaturedLayout(card1: Story | null, card2: Story | null, card3: Story | null, card4: Story | null): string {
@@ -177,7 +177,7 @@ export function render(): string {
             <p class="hero__desc">Discover interactive webtoons, illustrated storybooks, and cooperative squad reading where you never read alone.</p>
             <div class="hero__cta-row">
               <button class="btn btn--primary hero__cta" id="hero-explore-btn">Start Exploring</button>
-              <button class="btn hero__cta-secondary" id="hero-create-btn">Create Story</button>
+              ${hasAdminPrivileges() ? '<button class="btn hero__cta-secondary" id="hero-create-btn">Create Story</button>' : ''}
             </div>
             <button class="hero__signup-link" id="hero-signup-btn">Sign Up Free</button>
           </div>
@@ -239,7 +239,7 @@ export function render(): string {
             <a href="#explore" class="footer__link" data-link="explore">Explore Stories</a>
             <a href="#featured" class="footer__link" data-link="featured">Featured</a>
             <a href="#library" class="footer__link" data-link="library">My Library</a>
-            <a href="#create" class="footer__link" data-link="create">Create a Story</a>
+            ${hasAdminPrivileges() ? '<a href="#admin" class="footer__link" data-link="admin">Create a Story</a>' : ''}
           </div>
           <div class="footer__links-col">
             <h4 class="footer__col-title">Company</h4>
@@ -366,11 +366,13 @@ export function init(): void {
       return;
     }
 
-    // Hero Create CTA
+    // Hero Create CTA (admins only)
     const createBtn = target.closest('#hero-create-btn');
     if (createBtn) {
       e.preventDefault();
-      navigate('admin-create?mode=user&format=book&new=true');
+      if (hasAdminPrivileges()) {
+        navigate('admin');
+      }
       return;
     }
 

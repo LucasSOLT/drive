@@ -12,7 +12,6 @@ import {
   leaveSquad,
 } from '../lib/db.ts';
 import { MONSTER_AVATARS } from '../data/avatars.ts';
-import { adminSkipButtonHtml, adminSkipToNextEpisode } from '../lib/admin-skip.ts';
 
 export interface SquadGateOptions {
   storyId: string;
@@ -28,6 +27,8 @@ export interface SquadGateOptions {
 let currentSquadId: string | null = null;
 let currentInviteCode: string | null = null;
 let currentSquadName: string | null = null;
+let currentMinSize = 3;
+let currentMaxSize = 5;
 let currentMembers: Array<{ userId: string; username: string; avatarIndex: number; role: string; isReady: boolean }> = [];
 
 export async function openSquadGateModal(options: SquadGateOptions): Promise<void> {
@@ -88,8 +89,11 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
       // Import getUserSquads dynamically to check existing squads
       const { getUserSquads } = await import('../lib/db.ts');
       const userSquads = await getUserSquads();
+      const isSpm = sessionStorage.getItem('drive_spm') === 'true';
       const existingSquad = userSquads.find(s => 
-        s.squad.storyId === options.storyId && s.squad.status !== 'completed'
+        s.squad.storyId === options.storyId &&
+        s.squad.status !== 'completed' &&
+        (isSpm ? s.squad.maxSize === 1 : s.squad.maxSize !== 1)
       );
 
       if (existingSquad) {
@@ -125,7 +129,7 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
 
               <div style="display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
                 ${memberAvatars}
-                <span style="font-size:0.78rem; color:var(--color-text-muted); margin-left:8px;">${existingSquad.members.length}/5 members</span>
+                <span style="font-size:0.78rem; color:var(--color-text-muted); margin-left:8px;">${existingSquad.members.length}/${existingSquad.squad.maxSize || 5} member${(existingSquad.squad.maxSize || 5) === 1 ? '' : 's'}</span>
               </div>
 
               ${existingSquad.squad.status === 'forming' ? `
@@ -181,14 +185,22 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
 
   try {
     const activeSquadId = localStorage.getItem('drive_active_squad_id');
+    const isSpm = sessionStorage.getItem('drive_spm') === 'true';
     let found = false;
 
     if (activeSquadId) {
       const squad = await fetchSquadById(activeSquadId);
-      if (squad && squad.storyId === options.storyId && squad.status === 'forming') {
+      if (
+        squad &&
+        squad.storyId === options.storyId &&
+        squad.status === 'forming' &&
+        (isSpm ? squad.maxSize === 1 : squad.maxSize !== 1)
+      ) {
         currentSquadId = squad.id;
         currentInviteCode = squad.inviteCode;
         currentSquadName = squad.name;
+        currentMinSize = squad.minSize;
+        currentMaxSize = squad.maxSize;
         found = true;
       }
     }
@@ -201,6 +213,8 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
         currentSquadId = result.squadId;
         currentInviteCode = result.inviteCode;
         currentSquadName = squadName;
+        currentMinSize = sessionStorage.getItem('drive_spm') === 'true' ? 1 : 3;
+        currentMaxSize = sessionStorage.getItem('drive_spm') === 'true' ? 1 : 5;
         localStorage.setItem('drive_active_squad_id', currentSquadId);
       }
     }
@@ -263,7 +277,7 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
       <div class="squad-gate-hero">
         <h2 class="squad-gate-title">Journey with a Squad</h2>
         <p class="squad-gate-subtitle">
-          You've completed <strong>${options.storyTitle} • Ep. ${options.episodeNumber || 1}</strong>. To unlock Episode ${(options.episodeNumber || 1) + 1} and continue your journey, form or join a Squad of <strong>3 to 5 players</strong>.
+          You've completed <strong>${options.storyTitle} • Ep. ${options.episodeNumber || 1}</strong>. To unlock Episode ${(options.episodeNumber || 1) + 1} and continue your journey, form or join a Squad of <strong>${currentMinSize === currentMaxSize ? currentMinSize : `${currentMinSize} to ${currentMaxSize}`} players</strong>.
         </p>
       </div>
 
@@ -282,7 +296,7 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
           Browse Stories
         </button>
-        ${adminSkipButtonHtml('sg-btn-admin-skip', 'Admin skip: read solo')}
+
       </div>
     </div>
   `;
@@ -296,12 +310,7 @@ export async function openSquadGateModal(options: SquadGateOptions): Promise<voi
 
   attachListeners(options, overlay);
 
-  // Admin-only: skip the squad gate and read solo (button is only rendered for admins)
-  overlay.querySelector('#sg-btn-admin-skip')?.addEventListener('click', async () => {
-    const groupId = options.storyGroupId || getStoryById(options.storyId)?.storyGroupId || options.storyId;
-    closeSquadGateModal();
-    await adminSkipToNextEpisode(groupId, options.episodeNumber || 1);
-  });
+
 
   // Live roster: friends who join show up without reopening the modal
   const rosterSig = (list: typeof currentMembers) =>
@@ -360,8 +369,8 @@ export async function shareSquadInvite(
 
 function renderBody(options: SquadGateOptions): string {
   const code = currentInviteCode || '...';
-  const minMembers = 3;
-  const maxMembers = 5;
+  const minMembers = currentMinSize;
+  const maxMembers = currentMaxSize;
 
   const slots = [];
   for (let i = 0; i < maxMembers; i++) {
@@ -386,7 +395,7 @@ function renderBody(options: SquadGateOptions): string {
           <div class="squad-slot-avatar empty">+</div>
           <div class="squad-slot-info">
             <span class="squad-slot-name">Open Slot ${i + 1}</span>
-            <span class="squad-slot-role">${isRequired ? 'Required (Min 3)' : 'Optional (Max 5)'}</span>
+            <span class="squad-slot-role">${isRequired ? `Required (Min ${minMembers})` : `Optional (Max ${maxMembers})`}</span>
           </div>
           <span class="squad-slot-status waiting">Waiting...</span>
         </div>

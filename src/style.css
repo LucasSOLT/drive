@@ -6208,9 +6208,9 @@ button.profile-avatar {
   border: none; border-top: 1px solid var(--color-border);
   font-family: var(--font-body); font-size: 0.82rem;
   color: var(--color-text-primary); background: transparent;
-  outline: none; resize: none; min-height: 80px; max-height: 140px; line-height: 1.5;
+  outline: none; resize: none; min-height: 80px; line-height: 1.5;
   box-sizing: border-box; margin-top: 4px;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 .book-tile__textarea:focus { background: rgba(16,185,129,0.02); }
 
@@ -6222,7 +6222,7 @@ button.profile-avatar {
 .sb-card__dialog-textarea,
 .book-tile__dd-textarea,
 .sb-card__dd-textarea {
-  overflow-y: auto;
+  overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(16, 185, 129, 0.3) transparent;
 }
@@ -16016,6 +16016,7 @@ body.content-management-mode .story-card:hover {
 .screenplay-textarea {
   touch-action: pan-y;
   overflow-x: hidden;
+  overflow-y: hidden;
 }
 
 /* Storyboard Draft Saved Toast (Desktop bottom-right) */
@@ -16898,3 +16899,248 @@ body.content-management-mode .story-card:hover {
   border-bottom: none;
   margin-bottom: 0;
 }
+/* --- Admin Dashboard: Story Settings modal (story fields + cast + mute) --- */
+.modal-card:has(.sset) {
+  max-width: 680px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-card:has(.sset) .modal-content {
+  overflow-y: auto;
+  min-height: 0;
+}
+.sset {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  text-align: left;
+}
+.sset-note {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: var(--color-text-secondary);
+}
+.sset-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sset-section .ss-field__label {
+  margin-top: 4px;
+}
+.sset-help {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+.sset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sset-row .ss-field__input {
+  flex: 1;
+  min-width: 0;
+}
+.sset-row input[type="color"] {
+  width: 44px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.sset-hex {
+  max-width: 120px;
+  font-family: monospace;
+}
+.sset-upload {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sset-fixed-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--color-text-primary);
+}
+.sset-fixed-desc {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+.sset-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+.sset-error[hidden] {
+  display: none;
+}
+
+/* Mute toggle on every cast card */
+.ss-mute-btn {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.ss-mute-btn:hover {
+  border-color: var(--color-purple);
+}
+.ss-mute-btn--on {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+}
+/* A muted voice looks faded so it is obvious it is silent (the mute button itself stays bright) */
+.ss-char-card--muted .ss-char-card__badge,
+.ss-char-card--muted .ss-char-card__name-wrap,
+.ss-char-card--muted .ss-char-card__palette-wrap,
+.ss-char-card--muted .ss-char-card__voice-wrap {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+
+/* Visually fade dialogue lines belonging to a muted speaker across reader, preview, book viewer, and editor */
+.reader-dialogue-row--muted,
+.bv-caption-line--muted,
+.book-viewer__text--muted {
+  opacity: 0.48;
+  filter: saturate(0.45);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.reader-dialogue-row--muted .cc-word {
+  cursor: default;
+}
+
+.screenplay-line-detail--muted {
+  opacity: 0.48;
+  filter: saturate(0.45);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+}
+
+.sb-dialog-line--muted {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.sb-dialog-line__text--muted {
+  opacity: 0.65;
+  color: var(--color-text-muted);
+}
+
+/* --- Screenplay Editor Live Quote Highlighting & Underlining (TXT-4) --- */
+.screenplay-input-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.screenplay-input-wrap:focus-within {
+  border-color: var(--color-purple);
+}
+
+.screenplay-backdrop {
+  position: absolute;
+  inset: 0;
+  padding: 10px 12px;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-align: left;
+  tab-size: 4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  overflow-y: hidden;
+  overflow-x: hidden;
+  pointer-events: none;
+  color: var(--color-text-primary);
+  z-index: 1;
+}
+
+.screenplay-textarea,
+html.dark-mode .screenplay-textarea,
+html.dark-mode .book-tile__textarea.screenplay-textarea,
+html.dark-mode .sb-card__textarea.screenplay-textarea {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-align: left;
+  tab-size: 4;
+  border-radius: 10px;
+  border: none !important;
+  background: transparent !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--color-text-primary, #ffffff);
+  padding: 10px 12px;
+  margin: 0;
+  resize: vertical;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  overflow-y: hidden;
+  overflow-x: hidden;
+  display: block;
+}
+
+.screenplay-textarea::placeholder,
+html.dark-mode .screenplay-textarea::placeholder {
+  color: var(--color-text-muted);
+  -webkit-text-fill-color: var(--color-text-muted);
+}
+
+.screenplay-textarea::selection {
+  background: rgba(139, 92, 246, 0.32);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.screenplay-quote-open,
+.screenplay-quote-open .screenplay-quote-text {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.screenplay-speaker-tag {
+  color: var(--color-text-primary);
+}
+

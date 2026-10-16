@@ -40,6 +40,8 @@ import { navigate } from '../router.ts';
 import { markPreviewEntry } from '../lib/reader-mode.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import { setContentManagementMode } from '../state.ts';
+import { openStorySettingsModal } from './admin-story-settings.ts';
+import { realCharacters, readReservedVoices } from '../lib/cast-voices.ts';
 
 // ─── SVG Icons ───
 const ICON = {
@@ -221,6 +223,16 @@ export function init(): void {
     activeTab = 'originals';
   }
 
+  // Deep link: #admin?edit_settings=<storyGroupId>[&return=<admin-create route>]
+  const settingsMatch = hash.match(/[?&]edit_settings=([^&]+)/);
+  if (settingsMatch) {
+    const decode = (v: string): string => { try { return decodeURIComponent(v); } catch { return v; } };
+    pendingSettingsGroupId = decode(settingsMatch[1]);
+    const returnMatch = hash.match(/[?&]return=([^&]+)/);
+    pendingSettingsReturn = returnMatch ? decode(returnMatch[1]) : null;
+    activeTab = 'originals';
+  }
+
   // Update tab headers active state to match activeTab
   const mainTabs = document.querySelectorAll('#admin-main-tabs .admin-main-tab');
   mainTabs.forEach(t => {
@@ -387,6 +399,98 @@ async function loadOriginalsTab(area: HTMLElement): Promise<void> {
   }
 
   renderOriginalsContent(area);
+  openPendingStorySettings();
+}
+
+/** Story group asked for by `#admin?edit_settings=<groupId>` (and where to go back to afterwards). */
+let pendingSettingsGroupId: string | null = null;
+let pendingSettingsReturn: string | null = null;
+
+/** Only ever go back to the episode editor; never follow an arbitrary route from the URL. */
+function safeReturnRoute(route: string | null | undefined): string | undefined {
+  return route && route.startsWith('admin-create') ? route : undefined;
+}
+
+function openPendingStorySettings(): void {
+  const groupId = pendingSettingsGroupId;
+  if (!groupId) return;
+  const back = safeReturnRoute(pendingSettingsReturn);
+  pendingSettingsGroupId = null;
+  pendingSettingsReturn = null;
+  // Drop the deep-link params so a refresh does not re-open the modal.
+  history.replaceState(null, '', '#admin');
+  openStorySettingsFor(groupId, back);
+}
+
+/**
+ * Opens the Story Settings modal (story fields + cast + mute) for a story group.
+ * Deliberately NOT blocked when episodes are live: shared settings stay editable.
+ */
+function openStorySettingsFor(groupId: string, returnRoute?: string): void {
+  const opened = openStorySettingsModal({
+    groupId,
+    stories: currentOfficialStories,
+    onSaved: (patch) => {
+      // Keep the dashboard cache in step with what was just saved to every episode.
+      const groupEpisodeIds = new Set(
+        currentOfficialStories
+          .filter(s => (s.storyGroupId || s.id) === groupId)
+          .map(s => s.id)
+      );
+      currentOfficialStories = currentOfficialStories.map(s =>
+        (s.storyGroupId || s.id) === groupId ? { ...s, ...patch } : s
+      );
+      // Also update any cached admin-create draft for this story group so returning to the editor preserves mute/voice/cast changes.
+      try {
+        const rawDraft = localStorage.getItem('drive_admin_create_draft');
+        if (rawDraft) {
+          const draft = JSON.parse(rawDraft);
+          if (
+            draft &&
+            (draft.episodeStoryGroupId === groupId ||
+              draft.editStoryId === groupId ||
+              (draft.editStoryId && groupEpisodeIds.has(draft.editStoryId)))
+          ) {
+            if (patch.title) draft.storyTitle = patch.title;
+            if (patch.synopsis !== undefined) draft.storySynopsis = patch.synopsis;
+            if (patch.genre) draft.storyGenre = patch.genre;
+            if (patch.themeColor) draft.storyThemeColor = patch.themeColor;
+            if (patch.coverImage !== undefined && (draft.episodeNumber || 1) === 1) {
+              draft.coverThumbnail = patch.coverImage;
+            }
+            if (patch.coverVideo !== undefined) draft.storyCoverVideo = patch.coverVideo || '';
+            if (patch.manualNumbering !== undefined) draft.manualNumbering = patch.manualNumbering;
+            if (patch.characters) {
+              draft.storyCharacters = realCharacters(patch.characters);
+              const rv = readReservedVoices(patch.characters, {
+                narratorVoiceId: patch.narratorVoiceId,
+                narratorHighlightColor: patch.narratorHighlightColor,
+              });
+              draft.castVoices = {
+                ...rv,
+                manualNumbering: Boolean(patch.manualNumbering ?? rv.manualNumbering),
+              };
+              draft.manualNumbering = Boolean(patch.manualNumbering ?? rv.manualNumbering);
+            }
+            localStorage.setItem('drive_admin_create_draft', JSON.stringify(draft));
+          }
+        }
+      } catch {}
+      const area = document.getElementById('admin-content-area');
+      if (area && activeTab === 'originals') renderOriginalsContent(area);
+    },
+    onClose: returnRoute ? () => navigate(returnRoute) : undefined,
+  });
+  if (!opened) {
+    const goBack = () => { if (returnRoute) navigate(returnRoute); };
+    showModal({
+      title: 'Story not found',
+      content: '<p>That story could not be found. It may have been deleted or archived.</p>',
+      confirmText: 'OK',
+      onConfirm: goBack,
+      onCancel: goBack,
+    });
+  }
 }
 
 function renderOriginalsContent(area: HTMLElement): void {
@@ -619,9 +723,9 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
         <!-- Left: episode cover -->
         ${epCoverHtml}
         <!-- Middle: episode info -->
-        <div style="flex: 1; min-width: 0;">
-          <div style="font-weight: 700; font-size: 0.88rem; color: var(--color-text-primary);">Episode ${epNum}</div>
-          <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 2px;">${story.panels?.length || 0} pages · ${epStatus}</div>
+        <div style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div style="font-weight: 700; font-size: 0.88rem; color: var(--color-text-primary);">${story.episodeTitle ? `Episode ${epNum} · ${escapeHtml(story.episodeTitle)}` : `Episode ${epNum}`}</div>
+          <span style="font-size: 0.72rem; font-weight: 800; padding: 2px 7px; border-radius: 6px; white-space: nowrap; background: ${epIsLive ? 'rgba(5,150,105,0.12)' : 'rgba(161,98,7,0.12)'}; color: ${epIsLive ? '#059669' : '#a16207'};">${epStatus}</span>
         </div>
         <!-- Right: three-dot menu -->
         <button class="ep-menu-btn" data-ep-menu-for="${story.id}" style="
@@ -638,6 +742,8 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
       </div>
     `;
   }).join('');
+
+  const nextEpNum = Math.floor(Math.max(0, ...episodes.map((e, idx) => e.episodeNumber ?? (idx + 1))) + 1);
 
   return `
     <div class="story-group" data-group-id="${groupId}" data-expanded="false" style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; overflow: visible; display: flex; flex-direction: column; position: relative; margin-bottom: 16px;">
@@ -677,7 +783,7 @@ function renderStoryStack(episodes: Story[], groupIndex: number): string {
         <div style="display: flex; flex-direction: column;">
           ${episodeRows}
         </div>
-        <button data-add-episode="${groupId}" data-group-format="${ep1.format}" data-group-title="${escapeHtml(ep1.title)}" data-next-ep="${episodes.length + 1}"
+        <button data-add-episode="${groupId}" data-group-format="${ep1.format}" data-group-title="${escapeHtml(ep1.title)}" data-next-ep="${nextEpNum}"
                 style="
                   display: flex; align-items: center; justify-content: center; gap: 6px;
                   width: 100%;
@@ -1006,6 +1112,7 @@ function attachOfficialCardListeners(): void {
         `;
         dropdown.innerHTML = `
           <div class="menu-item" data-edit-official="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">✏️ Edit Story</div>
+          <div class="menu-item" data-edit-settings="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">⚙️ Edit Story Settings</div>
           <div class="menu-item" data-preview-admin="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">👁 Preview Story</div>
           <div class="menu-item" data-toggle-episodes="${groupId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">${isExpanded ? '▲ Collapse' : '📋 Show All Episodes'}</div>
           ${anyOffline ? `<div class="menu-item" data-go-live-story="${storyId}" style="padding: 10px 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--color-text-primary);" onmouseover="this.style.background='rgba(16,185,129,0.1)'" onmouseout="this.style.background='transparent'">🚀 ${anyLive ? 'Go Live (Remaining Episodes)' : 'Go Live'}</div>` : ''}
@@ -1060,6 +1167,8 @@ function attachOfficialCardListeners(): void {
 
         if (menuItem.dataset.editOfficial) {
           navigate('admin-create/' + menuItem.dataset.editOfficial);
+        } else if (menuItem.dataset.editSettings) {
+          openStorySettingsFor(menuItem.dataset.editSettings);
         } else if (menuItem.dataset.previewAdmin) {
           const sid = menuItem.dataset.previewAdmin;
           // Register from admin cache so reader finds it even if not live

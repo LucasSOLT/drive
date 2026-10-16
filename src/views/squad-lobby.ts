@@ -16,7 +16,7 @@ import {
 } from '../lib/db.ts';
 import { shareSquadInvite } from '../components/squad-gate-modal.ts';
 import { getFirstSquadEpisode } from '../lib/squad-engine.ts';
-import { adminSkipButtonHtml, adminSkipToNextEpisode } from '../lib/admin-skip.ts';
+
 import { supabase } from '../lib/supabase.ts';
 import { getStoryById, stories } from '../data/stories.ts';
 import type { Story } from '../types.ts';
@@ -151,6 +151,7 @@ async function loadLiveSquadData(targetIdOrCode: string): Promise<boolean> {
       }
     }
 
+    const isSpm = sessionStorage.getItem('drive_spm') === 'true' || squadRecord.maxSize === 1;
     currentSquad = {
       id: squadRecord.id,
       name: squadRecord.name,
@@ -160,8 +161,8 @@ async function loadLiveSquadData(targetIdOrCode: string): Promise<boolean> {
       storyCoverImage: storyCover || undefined,
       inviteCode: squadRecord.inviteCode,
       status: squadRecord.status,
-      minSize: squadRecord.minSize || 3,
-      maxSize: squadRecord.maxSize || 5,
+      minSize: isSpm ? 1 : (squadRecord.minSize || 3),
+      maxSize: isSpm ? 1 : (squadRecord.maxSize || 5),
       members: membersData.map(m => ({
         userId: m.userId,
         username: m.username,
@@ -185,8 +186,9 @@ export function render(): string {
   const readyMembers = members.filter(m => m.isReady);
   const readyCount = readyMembers.length;
 
-  const minRequired = currentSquad.minSize || 3;
-  const maxAllowed = currentSquad.maxSize || 5;
+  const isSpm = sessionStorage.getItem('drive_spm') === 'true' || currentSquad.maxSize === 1;
+  const minRequired = isSpm ? 1 : (currentSquad.minSize || 3);
+  const maxAllowed = isSpm ? 1 : (currentSquad.maxSize || 5);
 
   const hasEnoughPlayers = memberCount >= minRequired;
   const allMembersReady = hasEnoughPlayers && readyCount === memberCount;
@@ -313,7 +315,7 @@ export function render(): string {
           </p>
         ` : `
           <p style="font-size: 0.88rem; color: var(--color-text-secondary); margin: 0 0 16px 0;">
-            Assemble 3 to 5 players to embark on the squad-gated episodes!
+            ${maxAllowed === 1 ? 'Single-player mode active — 1 player required to launch!' : `Assemble ${minRequired} to ${maxAllowed} players to embark on the squad-gated episodes!`}
           </p>
         `}
 
@@ -349,7 +351,7 @@ export function render(): string {
               Squad Readiness
             </span>
             <span style="font-size: 0.78rem; color: var(--color-text-muted); margin-left: 6px;">
-              (${readyCount}/${memberCount} Ready · Min 3 required)
+              (${readyCount}/${memberCount} Ready · Min ${minRequired} required)
             </span>
           </div>
           <span style="
@@ -369,9 +371,9 @@ export function render(): string {
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 0.76rem; color: var(--color-text-muted);">
-          <span>Min 3 Members</span>
+          <span>Min ${minRequired} Member${minRequired === 1 ? '' : 's'}</span>
           <span>48-Hour Timer Starts When Launched</span>
-          <span>Max 5 Members</span>
+          <span>Max ${maxAllowed} Member${maxAllowed === 1 ? '' : 's'}</span>
         </div>
       </div>
 
@@ -438,7 +440,7 @@ export function render(): string {
           <span>${isUserReady ? "YOU ARE READY! · CLICK TO UNREADY" : "I'M READY"}</span>
         </button>
 
-        <!-- LAUNCH BUTTON (Active only when >=3 members AND all ready) -->
+        <!-- LAUNCH BUTTON (Active only when >=minRequired members AND all ready) -->
         ${isDriver ? `
         <button id="start-story-btn" class="btn btn--primary" ${!allMembersReady ? 'disabled' : ''} style="
           width: 100%;
@@ -467,7 +469,7 @@ export function render(): string {
           `}
         ">
           ${!hasEnoughPlayers
-            ? `🚀 Need ${minRequired - memberCount} More Player${(minRequired - memberCount) > 1 ? 's' : ''} to Launch (Min 3)`
+            ? `🚀 Need ${minRequired - memberCount} More Player${(minRequired - memberCount) > 1 ? 's' : ''} to Launch (Min ${minRequired})`
             : !allMembersReady
               ? `⏳ Waiting on ${memberCount - readyCount} Player${(memberCount - readyCount) > 1 ? 's' : ''} to Press "I'M READY"`
               : `🚀 Launch Episode Now (48h Clock Starts!)`}
@@ -478,13 +480,7 @@ export function render(): string {
         </div>
         `}
 
-        ${isDriver && !allMembersReady && hasAdminPrivileges() ? `
-        <button id="admin-force-launch-btn" type="button" style="width:100%; padding:10px; background:none; border:1.5px dashed #f59e0b; color:#b45309; border-radius:var(--radius-lg); font-size:0.82rem; font-weight:700; cursor:pointer;">
-          🧪 Admin test launch (skips player/ready requirements)
-        </button>
-        ` : ''}
 
-        ${adminSkipButtonHtml('admin-skip-btn', 'Admin skip: read solo (no squad)')}
 
       </div>
 
@@ -644,14 +640,6 @@ function attachLobbyEventListeners(squadId: string): void {
   launchBtn?.addEventListener('click', () => {
     if (launchBtn.hasAttribute('disabled')) return;
     launchSquad(false);
-  });
-  // Admin-only test launch (skips the 3-player + ready requirements)
-  document.getElementById('admin-force-launch-btn')?.addEventListener('click', () => launchSquad(true));
-  // Admin-only: skip the squad lobby entirely and read the story solo
-  document.getElementById('admin-skip-btn')?.addEventListener('click', async () => {
-    const story = getStoryById(currentSquad.storyId) || (await fetchStoryByIdFromDb(currentSquad.storyId)) || undefined;
-    const groupId = story?.storyGroupId || currentSquad.storyId;
-    await adminSkipToNextEpisode(groupId, story?.soloEpisodeCount || 1);
   });
 
   // ─── Copy Invite Code ───

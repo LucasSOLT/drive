@@ -15,7 +15,7 @@ import {
 } from '../lib/db.ts';
 import { tryAdvanceSquad, isEpisodeTimerExpired } from '../lib/squad-engine.ts';
 import { uploadMedia } from '../lib/storage.ts';
-import { adminSkipButtonHtml, adminSkipToNextEpisode } from '../lib/admin-skip.ts';
+
 import { MONSTER_AVATARS } from '../data/avatars.ts';
 import { type SparcPost, type SquadMemberState, type SquadSession } from '../types.ts';
 
@@ -224,13 +224,14 @@ function renderAttachments(): string {
 }
 
 function updateProgressBar() {
+  const isSpm = sessionStorage.getItem('drive_spm') === 'true';
   const postedCount = new Set(posts.map(p => p.userId)).size;
-  const totalCount = members.length;
+  const totalCount = isSpm ? 1 : members.length;
   const progressEl = document.getElementById('sparc-progress-text');
   const barEl = document.getElementById('sparc-progress-bar-fill');
-  if (progressEl) progressEl.textContent = `${postedCount}/${totalCount} members greenlit`;
+  if (progressEl) progressEl.textContent = `${Math.min(postedCount, totalCount)}/${totalCount} member${totalCount === 1 ? '' : 's'} greenlit`;
   if (barEl) {
-    const pct = totalCount > 0 ? (postedCount / totalCount) * 100 : 0;
+    const pct = totalCount > 0 ? Math.min(100, (postedCount / totalCount) * 100) : 0;
     barEl.style.width = `${pct}%`;
   }
 }
@@ -288,7 +289,7 @@ export function render(): string {
         <div class="sparc-feed" id="sparc-feed" style="margin-bottom:24px;"></div>
 
         <button id="btn-next-episode" class="sparc-advance-btn btn btn--primary" style="width:100%; margin-top:24px;" disabled>Next Episode</button>
-        ${adminSkipButtonHtml('btn-admin-skip', 'Admin skip: continue solo')}
+
       </div>
     </div>
   `;
@@ -518,8 +519,10 @@ function refreshFeedUI(force = false) {
   }
   updateProgressBar();
 
+  const isSpm = sessionStorage.getItem('drive_spm') === 'true';
   const postedCount = new Set(posts.map(p => p.userId)).size;
-  const allGreenlit = postedCount === members.length && members.length > 0;
+  const requiredCount = isSpm ? 1 : members.length;
+  const allGreenlit = postedCount >= requiredCount && requiredCount > 0;
 
   const nextBtn = document.getElementById('btn-next-episode') as HTMLButtonElement;
   if (nextBtn && currentSession) {
@@ -751,12 +754,7 @@ function setupEventListeners() {
     }
   });
 
-  // Admin-only: skip the squad requirement and keep reading solo (button only exists for admins)
-  document.getElementById('btn-admin-skip')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-admin-skip') as HTMLButtonElement | null;
-    if (btn) { btn.disabled = true; btn.textContent = 'Skipping...'; }
-    await adminSkipToNextEpisode(currentStoryGroupId, currentEpisodeNumber);
-  });
+
 
   document.getElementById('btn-next-episode')?.addEventListener('click', async () => {
     if (!currentSession) return;

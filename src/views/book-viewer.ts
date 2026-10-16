@@ -5,7 +5,16 @@ import { speakText, stopSpeaking, isSpeaking, playAudioUrl, playAudioSequence } 
 import { getSettings } from '../lib/settings.ts';
 import { isVideoMedia, ensureVideoPlayback } from '../lib/media.ts';
 import type { DialogueLine } from '../types.ts';
-import { isNarrationLine } from '../lib/cast-voices.ts';
+import {
+  isNarrationLine,
+  narrationColorFor,
+  isLineMuted,
+  areAllLinesMuted,
+  getAudibleDialogueLines,
+  buildAudiblePageWordMap,
+  getSilentRangeAction,
+  PLAIN_TEXT_ID,
+} from '../lib/cast-voices.ts';
 
 // ─── Types ───
 interface StoryPage {
@@ -136,21 +145,34 @@ function renderPageContent(page: StoryPage, pageIndex: number, totalPages: numbe
       </div>
     </nav>
 
-    ${textCollapsed ? '' : `
-      <div class="book-viewer__text-area" id="bv-text">
-        <p class="book-viewer__text">${page.text}</p>
+    ${textCollapsed ? '' : (() => {
+      const story = getStory();
+      const chars = (story as any)?.storyCharacters || (story as any)?.characters || [];
+      const pageTextMuted = areAllLinesMuted(dialogueLines, chars, page.text);
+      return `
+      <div class="book-viewer__text-area${pageTextMuted ? ' book-viewer__text-area--muted' : ''}" id="bv-text"${pageTextMuted ? ' data-muted="true"' : ''}>
+        <p class="book-viewer__text${pageTextMuted ? ' book-viewer__text--muted' : ''}">${page.text}</p>
         <div class="book-viewer__page-indicator">${pageIndex + 1} / ${totalPages}</div>
       </div>
-    `}
+      `;
+    })()}
     ${captionsOpen ? (() => {
+      const story = getStory();
+      const chars = (story as any)?.storyCharacters || (story as any)?.characters || [];
       // Check if dialogue lines or manual captions exist
       if (dialogueLines.length > 0) {
         const captionLines = dialogueLines.map((line: DialogueLine) => {
           const isNarrator = isNarrationLine(line);
+          const isPlain = line.characterId === PLAIN_TEXT_ID;
+          const isMuted = isLineMuted(line, chars);
+          const mutedClass = isMuted ? ' bv-caption-line--muted' : '';
+          const mutedAttr = isMuted ? ' data-muted="true"' : '';
           const speakerName = isNarrator ? '🎙️ Narrator' : (line.characterName || 'Speaker');
-          return `<div class="bv-caption-line">
-            <span class="bv-caption-speaker">${speakerName}</span>
-            <span class="bv-caption-text">${line.text}</span>
+          const matchedChar = isNarrator ? null : chars.find((c: any) => c.id === line.characterId || c.name?.toLowerCase() === line.characterName?.toLowerCase());
+          const charColor = isNarrator ? narrationColorFor(line, { characters: chars }) : (matchedChar?.color || '#3b82f6');
+          return `<div class="bv-caption-line${mutedClass}"${mutedAttr}>
+            ${isPlain ? '' : `<span class="bv-caption-speaker" style="color:var(--color-text-muted);">${speakerName}:</span>`}
+            <span class="bv-caption-text" style="color:${charColor};">${line.text}</span>
           </div>`;
         }).join('');
         return `<div class="book-viewer__captions-card" id="bv-captions">
@@ -161,12 +183,15 @@ function renderPageContent(page: StoryPage, pageIndex: number, totalPages: numbe
           ${captionLines}
         </div>`;
       } else if (manualCaptions) {
+        const isMuted = areAllLinesMuted([], chars, manualCaptions);
+        const mutedClass = isMuted ? ' bv-caption-line--muted' : '';
+        const mutedAttr = isMuted ? ' data-muted="true"' : '';
         return `<div class="book-viewer__captions-card" id="bv-captions">
           <div class="bv-captions-header">
             <span>Dialogue Captions</span>
             <button class="bv-captions-close" id="bv-cc-close" aria-label="Close captions">✕</button>
           </div>
-          <div class="bv-caption-line">
+          <div class="bv-caption-line${mutedClass}"${mutedAttr}>
             <span class="bv-caption-text">${manualCaptions}</span>
           </div>
         </div>`;
@@ -205,6 +230,13 @@ export function render(): string {
     `;
   }
 
+  const chars0 = (story as any).storyCharacters || (story as any).characters || [];
+  const lines0: DialogueLine[] = (story as any).page_dialogue?.[0] || (story as any).pageDialogue?.[0] || [];
+  const hasAudio0 = !areAllLinesMuted(lines0, chars0, pages[0]?.text) && (
+    !!(story as any).page_audio?.[0] ||
+    lines0.some((l: DialogueLine) => !!l.audioUrl && !isLineMuted(l, chars0))
+  );
+
   return `
     <div class="book-viewer" id="book-viewer" data-story-id="${story.id}">
       <button class="book-viewer__back" id="bv-back" aria-label="Go back">
@@ -212,7 +244,7 @@ export function render(): string {
       </button>
 
       <div class="book-viewer__body" id="bv-body">
-        ${renderPageContent(pages[0], 0, pages.length, false, !!(story as any).page_audio?.[0], true, false, [], '', ((story as any).pageFocalPositions?.[0] || (story as any).page_focal_positions?.[0]) as string | undefined)}
+        ${renderPageContent(pages[0], 0, pages.length, false, hasAudio0, true, false, lines0, '', ((story as any).pageFocalPositions?.[0] || (story as any).page_focal_positions?.[0]) as string | undefined)}
       </div>
     </div>
   `;
@@ -256,15 +288,38 @@ export function init(): void {
     }
   };
 
+  function playPageCombinedAudio(url: string, dialogueLines: DialogueLine[], scriptText: string, chars: any[]) {
+    const { wordMap, silentRanges } = buildAudiblePageWordMap(dialogueLines, scriptText, chars);
+    let audioEl: HTMLAudioElement | null = null;
+    const handleSilentSkip = (cur: number, dur: number) => {
+      if (!audioEl || !silentRanges.length) return;
+      const action = getSilentRangeAction(cur, silentRanges, wordMap, dur);
+      if (!action) return;
+      if (action.type === 'finish') {
+        stopSpeaking();
+        onAudioFinished();
+      } else if (typeof action.seekTo === 'number') {
+        try {
+          audioEl.currentTime = action.seekTo;
+        } catch {}
+      }
+    };
+    audioEl = playAudioUrl(url, onAudioFinished, handleSilentSkip);
+    handleSilentSkip(0, audioEl.duration || 0);
+  }
+
   // ─── Update page content without full re-render ───
   function updatePage() {
     const body = document.getElementById('bv-body');
     if (!body) return;
 
-    const hasAudio = !!pageAudio[currentPage];
+    const chars = (story as any).storyCharacters || (story as any).characters || [];
     const dialogueLines = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage] || [];
     const pageScripts = (story as any).pageScripts || (story as any).page_scripts || {};
     const manualCaptions = pageScripts[currentPage] || '';
+    const pageAllMuted = areAllLinesMuted(dialogueLines, chars, pages[currentPage]?.text || manualCaptions);
+    const hasAudibleDialogueAudio = dialogueLines.some((l: DialogueLine) => !!l.audioUrl && !isLineMuted(l, chars));
+    const hasAudio = !pageAllMuted && (!!pageAudio[currentPage] || hasAudibleDialogueAudio);
     const focalPos = ((story as any).pageFocalPositions?.[currentPage] || (story as any).page_focal_positions?.[currentPage]) as string | undefined;
     body.innerHTML = renderPageContent(pages[currentPage], currentPage, totalPages, speaking, hasAudio, textCollapsed, captionsOpen, dialogueLines, manualCaptions, focalPos);
     wirePageControls();
@@ -275,17 +330,17 @@ export function init(): void {
     // Autoplay if setting is on and page has pre-recorded audio
     if (getSettings().autoPlay && hasAudio && !speaking) {
       speaking = true;
-      const dialogueLines = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage];
+      const fallbackText = pages[currentPage]?.text || manualCaptions;
       if (dialogueLines && dialogueLines.length > 0) {
-        const audioUrls = dialogueLines.map((l: DialogueLine) => l.audioUrl || null);
+        const audioUrls = dialogueLines.map((l: DialogueLine) => isLineMuted(l, chars) ? null : (l.audioUrl || null));
         const hasDialogueAudio = audioUrls.some((u: string | null) => !!u);
         if (hasDialogueAudio) {
           playAudioSequence(audioUrls, undefined, onAudioFinished);
-        } else {
-          playAudioUrl(pageAudio[currentPage], onAudioFinished);
+        } else if (pageAudio[currentPage]) {
+          playPageCombinedAudio(pageAudio[currentPage], dialogueLines, fallbackText, chars);
         }
-      } else {
-        playAudioUrl(pageAudio[currentPage], onAudioFinished);
+      } else if (pageAudio[currentPage]) {
+        playPageCombinedAudio(pageAudio[currentPage], dialogueLines, fallbackText, chars);
       }
       // Update UI to show speaking state
       const audioBtn = document.getElementById('bv-audio-toggle');
@@ -324,20 +379,22 @@ export function init(): void {
         speaking = false;
         updatePage();
       } else {
+        const chars = (story as any).storyCharacters || (story as any).characters || [];
+        const dialogueLines: DialogueLine[] = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage] || [];
+        const pageScripts = (story as any).pageScripts || (story as any).page_scripts || {};
+        const manualCaptions = pageScripts[currentPage] || '';
+        const fallbackText = pages[currentPage]?.text || manualCaptions;
+        if (areAllLinesMuted(dialogueLines, chars, fallbackText)) return;
+
         const audioUrl = pageAudio[currentPage];
-        if (audioUrl) {
+        const audioUrls = dialogueLines.map((l: DialogueLine) => isLineMuted(l, chars) ? null : (l.audioUrl || null));
+        const hasDialogueAudio = audioUrls.some((u: string | null) => !!u);
+        if (audioUrl || hasDialogueAudio) {
           speaking = true;
-          const dialogueLines = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage];
-          if (dialogueLines && dialogueLines.length > 0) {
-            const audioUrls = dialogueLines.map((l: DialogueLine) => l.audioUrl || null);
-            const hasDialogueAudio = audioUrls.some((u: string | null) => !!u);
-            if (hasDialogueAudio) {
-              playAudioSequence(audioUrls, undefined, onAudioFinished);
-            } else {
-              playAudioUrl(audioUrl, onAudioFinished);
-            }
-          } else {
-            playAudioUrl(audioUrl, onAudioFinished);
+          if (hasDialogueAudio) {
+            playAudioSequence(audioUrls, undefined, onAudioFinished);
+          } else if (audioUrl) {
+            playPageCombinedAudio(audioUrl, dialogueLines, fallbackText, chars);
           }
           updatePage();
         }
@@ -351,8 +408,14 @@ export function init(): void {
         speaking = false;
         updatePage();
       } else {
-        const text = pages[currentPage].text;
-        if (text) {
+        const chars = (story as any).storyCharacters || (story as any).characters || [];
+        const dialogueLines: DialogueLine[] = (story as any).page_dialogue?.[currentPage] || (story as any).pageDialogue?.[currentPage] || [];
+        const pageAllMuted = areAllLinesMuted(dialogueLines, chars, pages[currentPage]?.text);
+        if (pageAllMuted) return;
+        const text = dialogueLines.length > 0
+          ? getAudibleDialogueLines(dialogueLines, chars).map(l => l.text).join(' ')
+          : pages[currentPage].text;
+        if (text && text.trim()) {
           speaking = true;
           updatePage();
           speakText(text).then(() => {
